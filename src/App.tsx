@@ -100,6 +100,7 @@ function App() {
             museDeviceName={muse.state.deviceName}
             connectionQuality={muse.state.connectionQuality}
             electrodeStatus={muse.electrodeStatus}
+            batteryLevel={muse.state.batteryLevel}
             onConnectBluetooth={muse.connectBluetooth}
             onConnectOSC={muse.connectOSC}
             onDisconnect={muse.disconnect}

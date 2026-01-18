@@ -21,6 +21,7 @@ interface SessionSetupProps {
   museDeviceName: string | null;
   connectionQuality: number;
   electrodeStatus: ElectrodeStatusType;
+  batteryLevel: number;
   onConnectBluetooth: () => void;
   onConnectOSC: (url?: string) => void;
   onDisconnect: () => void;
@@ -64,6 +65,7 @@ export function SessionSetup({
   museDeviceName,
   connectionQuality,
   electrodeStatus,
+  batteryLevel,
   onConnectBluetooth,
   onConnectOSC,
   onDisconnect,
@@ -134,6 +136,24 @@ export function SessionSetup({
         {museConnected && (
           <section className="setup-section">
             <ElectrodeStatus status={electrodeStatus} />
+            {batteryLevel >= 0 && (
+              <div className={`battery-display ${batteryLevel <= 20 ? 'low' : ''}`}>
+                <svg viewBox="0 0 24 24" fill="currentColor" width="20" height="20">
+                  {batteryLevel > 75 ? (
+                    <path d="M15.67 4H14V2h-4v2H8.33C7.6 4 7 4.6 7 5.33v15.33C7 21.4 7.6 22 8.33 22h7.33c.74 0 1.34-.6 1.34-1.33V5.33C17 4.6 16.4 4 15.67 4z" />
+                  ) : batteryLevel > 50 ? (
+                    <path d="M15.67 4H14V2h-4v2H8.33C7.6 4 7 4.6 7 5.33v15.33C7 21.4 7.6 22 8.33 22h7.33c.74 0 1.34-.6 1.34-1.33V5.33C17 4.6 16.4 4 15.67 4zM13 18H11V9h2v9z" />
+                  ) : batteryLevel > 25 ? (
+                    <path d="M15.67 4H14V2h-4v2H8.33C7.6 4 7 4.6 7 5.33v15.33C7 21.4 7.6 22 8.33 22h7.33c.74 0 1.34-.6 1.34-1.33V5.33C17 4.6 16.4 4 15.67 4zM13 18H11V13h2v5z" />
+                  ) : (
+                    <path d="M15.67 4H14V2h-4v2H8.33C7.6 4 7 4.6 7 5.33v15.33C7 21.4 7.6 22 8.33 22h7.33c.74 0 1.34-.6 1.34-1.33V5.33C17 4.6 16.4 4 15.67 4zM13 18H11V16h2v2z" />
+                  )}
+                </svg>
+                <span className="battery-text">
+                  {batteryLevel}%
+                </span>
+              </div>
+            )}
           </section>
         )}
 

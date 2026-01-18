@@ -75,11 +75,12 @@ export function SessionSummary({
 
   // Export PDF report
   const exportPDF = () => {
-    const pdf = new jsPDF({
-      orientation: 'portrait',
-      unit: 'mm',
-      format: 'a4',
-    });
+    try {
+      const pdf = new jsPDF({
+        orientation: 'portrait',
+        unit: 'mm',
+        format: 'a4',
+      });
 
     const pageWidth = pdf.internal.pageSize.getWidth();
     const margin = 20;
@@ -183,8 +184,12 @@ export function SessionSummary({
       { align: 'center' }
     );
 
-    // Save
-    pdf.save(`session-report-${new Date().toISOString().split('T')[0]}.pdf`);
+      // Save
+      pdf.save(`session-report-${new Date().toISOString().split('T')[0]}.pdf`);
+    } catch (error) {
+      console.error('[SessionSummary] PDF export failed:', error);
+      alert('Failed to export PDF. Please try again or check the console for details.');
+    }
   };
 
   // Draw mini graph on mount

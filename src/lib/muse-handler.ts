@@ -666,9 +666,12 @@ export class MuseHandler {
 
   /**
    * Check if still receiving data
+   * Uses a more lenient timeout to avoid false disconnections
    */
   isReceivingData(): boolean {
-    return Date.now() - this._lastUpdate < 2000;
+    // Increased timeout to 5 seconds to avoid false disconnections
+    // This handles brief data gaps that can occur with Bluetooth
+    return Date.now() - this._lastUpdate < 5000;
   }
 
   /**
@@ -676,7 +679,7 @@ export class MuseHandler {
    */
   getState(): MuseState {
     return {
-      connected: this._connected && this.isReceivingData(),
+      connected: this.connected, // Use the getter which has improved logic
       connectionMode: this._connectionMode,
       deviceName: this._deviceName,
       touching: this._touching,
@@ -710,7 +713,18 @@ export class MuseHandler {
 
   // Getters
   get connected(): boolean {
-    return this._connected && this.isReceivingData();
+    // Only check data reception if we're actually connected
+    // This prevents false disconnections when connection is stable
+    if (!this._connected) return false;
+    
+    // For Bluetooth, check if we're still receiving data
+    // For OSC, trust the connection status more
+    if (this._connectionMode === 'bluetooth') {
+      return this.isReceivingData();
+    }
+    
+    // For OSC, connection status is more reliable
+    return this._connected;
   }
   get connectionMode(): ConnectionMode {
     return this._connectionMode;

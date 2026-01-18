@@ -111,9 +111,11 @@ export class AudioEngine {
   private rewardGain: GainNode | null = null;
   private rewardSubOsc: OscillatorNode | null = null;
   private rewardSynthOsc: OscillatorNode | null = null;
+  private rewardSynthOsc2: OscillatorNode | null = null;
   private rewardSubGain: GainNode | null = null;
   private rewardSynthGain: GainNode | null = null;
   private rewardFilter: BiquadFilterNode | null = null;
+  private rewardStopTimeout: ReturnType<typeof setTimeout> | null = null;
 
   private config: AudioEngineConfig;
   private isEntrainmentPlaying = false;
@@ -161,6 +163,15 @@ export class AudioEngine {
       await this.init();
     }
 
+    // Ensure audio context is running
+    if (this.ctx!.state === 'suspended') {
+      await this.ctx!.resume();
+    }
+
+    // Capture the current type before updating (for comparison)
+    const currentType = this.config.entrainmentType;
+    const targetType = type || this.config.entrainmentType;
+
     if (type) {
       this.config.entrainmentType = type;
     }
@@ -170,7 +181,12 @@ export class AudioEngine {
       return;
     }
 
-    this.stopEntrainment(); // Clean up any existing
+    // Only stop if we're already playing a different type
+    if (this.isEntrainmentPlaying && currentType !== targetType) {
+      this.stopEntrainment();
+      // Wait a bit for cleanup
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
 
     const now = this.ctx!.currentTime;
 
@@ -180,11 +196,12 @@ export class AudioEngine {
       this.startIsochronic(now);
     }
 
-    // Fade in
-    this.entrainmentGain!.gain.setValueAtTime(0, now);
-    this.entrainmentGain!.gain.linearRampToValueAtTime(
-      this.config.entrainmentVolume,
-      now + 2
+    // Smooth fade in with exponential curve
+    // Must start from non-zero value for exponential ramp to work
+    this.entrainmentGain!.gain.setValueAtTime(0.001, now);
+    this.entrainmentGain!.gain.exponentialRampToValueAtTime(
+      this.config.entrainmentVolume + 0.001, // Small offset for exponential
+      now + 1.5
     );
 
     this.isEntrainmentPlaying = true;
@@ -281,14 +298,15 @@ export class AudioEngine {
    * Stop entrainment audio
    */
   stopEntrainment(): void {
-    if (!this.ctx) return;
+    if (!this.ctx || !this.isEntrainmentPlaying) return;
 
     const now = this.ctx.currentTime;
 
-    // Fade out
+    // Smooth exponential fade out
     if (this.entrainmentGain) {
-      this.entrainmentGain.gain.setValueAtTime(this.entrainmentGain.gain.value, now);
-      this.entrainmentGain.gain.linearRampToValueAtTime(0, now + 0.5);
+      const currentGain = Math.max(0.001, this.entrainmentGain.gain.value);
+      this.entrainmentGain.gain.setValueAtTime(currentGain, now);
+      this.entrainmentGain.gain.exponentialRampToValueAtTime(0.001, now + 0.8);
     }
 
     // Capture current oscillator references before setTimeout
@@ -321,7 +339,7 @@ export class AudioEngine {
           // Ignore if already stopped
         }
       });
-    }, 600);
+    }, 900);
 
     this.isEntrainmentPlaying = false;
     console.log('[AudioEngine] Stopped entrainment');
@@ -336,7 +354,17 @@ export class AudioEngine {
       await this.init();
     }
 
+    // If already playing, don't restart
     if (this.isRewardPlaying) return;
+
+    // Cancel any pending stop operations
+    if (this.rewardStopTimeout) {
+      clearTimeout(this.rewardStopTimeout);
+      this.rewardStopTimeout = null;
+    }
+
+    // Clean up any existing oscillators first
+    this.cleanupRewardOscillators();
 
     const now = this.ctx!.currentTime;
 
@@ -367,11 +395,10 @@ export class AudioEngine {
     this.rewardSynthGain.gain.value = 0;
 
     // Add subtle detuned second osc for shimmer
-    const synthOsc2 = this.ctx!.createOscillator();
-    synthOsc2.type = 'sine';
-    synthOsc2.frequency.value = 528 * 1.5; // Perfect fifth above
-    synthOsc2.connect(this.rewardSynthGain);
-    synthOsc2.start(now);
+    this.rewardSynthOsc2 = this.ctx!.createOscillator();
+    this.rewardSynthOsc2.type = 'sine';
+    this.rewardSynthOsc2.frequency.value = 528 * 1.5; // Perfect fifth above
+    this.rewardSynthOsc2.connect(this.rewardSynthGain);
 
     this.rewardSynthOsc.connect(this.rewardSynthGain);
     this.rewardSynthGain.connect(this.rewardGain!);
@@ -379,26 +406,57 @@ export class AudioEngine {
     // Start oscillators
     this.rewardSubOsc.start(now);
     this.rewardSynthOsc.start(now);
+    this.rewardSynthOsc2.start(now);
 
-    // Fade in smoothly over 2 seconds
-    this.rewardSubGain.gain.setValueAtTime(0, now);
-    this.rewardSubGain.gain.linearRampToValueAtTime(
-      this.config.rewardVolume * 0.7,
-      now + 2
+    // Smooth fade in with exponential curve (more natural)
+    const fadeInTime = 2.5; // Slightly longer for smoother entry
+    // Must start from non-zero value for exponential ramp to work
+    this.rewardSubGain.gain.setValueAtTime(0.001, now);
+    this.rewardSubGain.gain.exponentialRampToValueAtTime(
+      this.config.rewardVolume * 0.7 + 0.001, // Add small offset for exponential
+      now + fadeInTime
     );
 
-    this.rewardSynthGain.gain.setValueAtTime(0, now);
-    this.rewardSynthGain.gain.linearRampToValueAtTime(
-      this.config.rewardVolume * 0.15,
-      now + 2
+    this.rewardSynthGain.gain.setValueAtTime(0.001, now);
+    this.rewardSynthGain.gain.exponentialRampToValueAtTime(
+      this.config.rewardVolume * 0.15 + 0.001,
+      now + fadeInTime
     );
 
-    // Overall reward gain
-    this.rewardGain!.gain.setValueAtTime(0, now);
-    this.rewardGain!.gain.linearRampToValueAtTime(1, now + 2);
+    // Overall reward gain with smooth exponential fade
+    this.rewardGain!.gain.setValueAtTime(0.001, now);
+    this.rewardGain!.gain.exponentialRampToValueAtTime(1.001, now + fadeInTime);
 
     this.isRewardPlaying = true;
     console.log('[AudioEngine] Started reward signal');
+  }
+
+  /**
+   * Clean up reward oscillators (internal helper)
+   */
+  private cleanupRewardOscillators(): void {
+    try {
+      this.rewardSubOsc?.stop();
+    } catch {
+      // Ignore if already stopped
+    }
+    try {
+      this.rewardSynthOsc?.stop();
+    } catch {
+      // Ignore if already stopped
+    }
+    try {
+      this.rewardSynthOsc2?.stop();
+    } catch {
+      // Ignore if already stopped
+    }
+
+    this.rewardSubOsc = null;
+    this.rewardSynthOsc = null;
+    this.rewardSynthOsc2 = null;
+    this.rewardSubGain = null;
+    this.rewardSynthGain = null;
+    this.rewardFilter = null;
   }
 
   /**
@@ -410,23 +468,38 @@ export class AudioEngine {
 
     const now = this.ctx.currentTime;
 
-    // Fade out over 1.5 seconds
-    if (this.rewardGain) {
-      this.rewardGain.gain.setValueAtTime(this.rewardGain.gain.value, now);
-      this.rewardGain.gain.linearRampToValueAtTime(0, now + 1.5);
+    // Cancel any pending stop operations
+    if (this.rewardStopTimeout) {
+      clearTimeout(this.rewardStopTimeout);
+      this.rewardStopTimeout = null;
     }
 
-    // Stop oscillators after fade
-    setTimeout(() => {
-      this.rewardSubOsc?.stop();
-      this.rewardSynthOsc?.stop();
+    // Smooth exponential fade out (more natural than linear)
+    const fadeOutTime = 2.0; // Longer fade for smoother exit
+    
+    if (this.rewardGain) {
+      const currentGain = Math.max(0.001, this.rewardGain.gain.value); // Ensure non-zero for exponential
+      this.rewardGain.gain.setValueAtTime(currentGain, now);
+      this.rewardGain.gain.exponentialRampToValueAtTime(0.001, now + fadeOutTime);
+    }
 
-      this.rewardSubOsc = null;
-      this.rewardSynthOsc = null;
-      this.rewardSubGain = null;
-      this.rewardSynthGain = null;
-      this.rewardFilter = null;
-    }, 1600);
+    if (this.rewardSubGain) {
+      const currentGain = Math.max(0.001, this.rewardSubGain.gain.value);
+      this.rewardSubGain.gain.setValueAtTime(currentGain, now);
+      this.rewardSubGain.gain.exponentialRampToValueAtTime(0.001, now + fadeOutTime);
+    }
+
+    if (this.rewardSynthGain) {
+      const currentGain = Math.max(0.001, this.rewardSynthGain.gain.value);
+      this.rewardSynthGain.gain.setValueAtTime(currentGain, now);
+      this.rewardSynthGain.gain.exponentialRampToValueAtTime(0.001, now + fadeOutTime);
+    }
+
+    // Stop oscillators after fade completes
+    this.rewardStopTimeout = setTimeout(() => {
+      this.cleanupRewardOscillators();
+      this.rewardStopTimeout = null;
+    }, (fadeOutTime + 0.1) * 1000);
 
     this.isRewardPlaying = false;
     console.log('[AudioEngine] Stopped reward signal');
@@ -608,6 +681,15 @@ export class AudioEngine {
   dispose(): void {
     this.stopEntrainment();
     this.stopReward();
+
+    // Cancel any pending timeouts
+    if (this.rewardStopTimeout) {
+      clearTimeout(this.rewardStopTimeout);
+      this.rewardStopTimeout = null;
+    }
+
+    // Immediate cleanup
+    this.cleanupRewardOscillators();
 
     if (this.ctx) {
       this.ctx.close();

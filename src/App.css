@@ -584,6 +584,33 @@ body {
   color: var(--text-secondary);
 }
 
+.battery-display {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  padding: 8px 12px;
+  background: var(--bg-elevated);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+}
+
+.battery-display svg {
+  color: var(--success);
+  flex-shrink: 0;
+}
+
+.battery-display.low svg,
+.battery-display.low .battery-text {
+  color: var(--error);
+}
+
+.battery-display .battery-text {
+  font-size: 13px;
+  font-weight: 500;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+}
+
 .header-right {
   display: flex;
   align-items: center;
