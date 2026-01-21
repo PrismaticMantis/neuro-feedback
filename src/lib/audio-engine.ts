@@ -577,13 +577,17 @@ export class AudioEngine {
       await this.init();
     }
 
-    // Ensure audio context is running
-    if (this.ctx!.state === 'suspended') {
-      await this.ctx!.resume();
-      console.log('[AudioEngine] Resumed suspended audio context for entrainment');
-    }
-    if (this.ctx!.state === 'suspended') {
-      await this.ctx!.resume();
+    // Ensure audio context is running (critical for iOS)
+    const ctx = this.ctx!;
+    if (ctx.state === 'suspended') {
+      console.log('[AudioEngine] Audio context is suspended, attempting to resume for entrainment...');
+      try {
+        await ctx.resume();
+        console.log('[AudioEngine] Audio context resumed successfully for entrainment, state:', ctx.state);
+      } catch (error) {
+        console.error('[AudioEngine] Failed to resume audio context for entrainment:', error);
+        throw new Error('Failed to resume audio context for entrainment. User interaction may be required.');
+      }
     }
 
     // Capture the current type before updating (for comparison)
