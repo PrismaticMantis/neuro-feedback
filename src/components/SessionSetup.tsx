@@ -6,13 +6,10 @@ import { ConnectionStatus } from './ConnectionStatus';
 import { ElectrodeStatus } from './ElectrodeStatus';
 import { BINAURAL_PRESETS } from '../hooks/useAudio';
 import type {
-  EntrainmentType,
   User,
   BinauralPresetName,
   ElectrodeStatus as ElectrodeStatusType,
   ThresholdSettings,
-  IsochronicPresetName,
-  IsochronicTone,
 } from '../types';
 
 interface SessionSetupProps {
@@ -29,22 +26,12 @@ interface SessionSetupProps {
   connectionError: string | null;
 
   // Audio
-  entrainmentType: EntrainmentType;
   entrainmentEnabled: boolean;
   entrainmentVolume: number;
   binauralPreset: BinauralPresetName;
-  binauralBeatFreq: number;
-  isochronicPreset: IsochronicPresetName;
-  isochronicTones: IsochronicTone[];
-  onEntrainmentTypeChange: (type: EntrainmentType) => void;
   onEntrainmentEnabledChange: (enabled: boolean) => void;
   onEntrainmentVolumeChange: (volume: number) => void;
   onBinauralPresetChange: (preset: BinauralPresetName) => void;
-  onBinauralBeatFreqChange: (freq: number) => void;
-  onIsochronicPresetChange: (preset: IsochronicPresetName) => void;
-  onIsochronicToneChange: (id: string, partial: Partial<IsochronicTone>) => void;
-  onIsochronicToneAdd: () => void;
-  onIsochronicToneRemove: (id: string) => void;
 
   // Threshold settings
   thresholdSettings: ThresholdSettings;
@@ -71,22 +58,12 @@ export function SessionSetup({
   onDisconnect,
   isBluetoothAvailable,
   connectionError,
-  entrainmentType,
   entrainmentEnabled,
   entrainmentVolume,
   binauralPreset,
-  binauralBeatFreq,
-  isochronicPreset,
-  isochronicTones,
-  onEntrainmentTypeChange,
   onEntrainmentEnabledChange,
   onEntrainmentVolumeChange,
   onBinauralPresetChange,
-  onBinauralBeatFreqChange,
-  onIsochronicPresetChange,
-  onIsochronicToneChange,
-  onIsochronicToneAdd,
-  onIsochronicToneRemove,
   thresholdSettings,
   onThresholdSettingsChange,
   currentUser,
@@ -277,48 +254,10 @@ export function SessionSetup({
           </div>
 
           <div className={`audio-options ${!entrainmentEnabled ? 'disabled' : ''}`}>
-            <div className="radio-group">
-              <label className="radio-option">
-                <input
-                  type="radio"
-                  name="entrainment"
-                  value="binaural"
-                  checked={entrainmentType === 'binaural'}
-                  onChange={() => onEntrainmentTypeChange('binaural')}
-                  disabled={!entrainmentEnabled}
-                />
-                <span className="radio-label">Binaural Beats</span>
-              </label>
-
-              <label className="radio-option">
-                <input
-                  type="radio"
-                  name="entrainment"
-                  value="isochronic"
-                  checked={entrainmentType === 'isochronic'}
-                  onChange={() => onEntrainmentTypeChange('isochronic')}
-                  disabled={!entrainmentEnabled}
-                />
-                <span className="radio-label">Isochronic Tones</span>
-              </label>
-
-              <label className="radio-option">
-                <input
-                  type="radio"
-                  name="entrainment"
-                  value="none"
-                  checked={entrainmentType === 'none'}
-                  onChange={() => onEntrainmentTypeChange('none')}
-                  disabled={!entrainmentEnabled}
-                />
-                <span className="radio-label">None</span>
-              </label>
-            </div>
-
-            {/* Binaural Presets (shown when binaural is selected) */}
-            {entrainmentType === 'binaural' && (
+            {/* Binaural Presets (shown when guidance audio is enabled) */}
+            {entrainmentEnabled && (
               <div className="binaural-settings">
-                <h3 className="subsection-title">Binaural Preset</h3>
+                <h3 className="subsection-title">Preset</h3>
                 <div className="preset-grid">
                   {(['delta', 'theta', 'alpha', 'beta'] as const).map((preset) => (
                     <button
@@ -333,152 +272,9 @@ export function SessionSetup({
                     </button>
                   ))}
                 </div>
-
-                <div className="custom-freq">
-                  <label className="setting-label">
-                    <span>Custom Frequency</span>
-                    <span className="setting-value">{binauralBeatFreq} Hz</span>
-                  </label>
-                  <input
-                    type="range"
-                    min="1"
-                    max="40"
-                    step="1"
-                    value={binauralBeatFreq}
-                    onChange={(e) => onBinauralBeatFreqChange(parseInt(e.target.value))}
-                    disabled={!entrainmentEnabled}
-                    className="setting-slider"
-                  />
-                </div>
               </div>
             )}
 
-            {/* Isochronic Advanced Panel (shown when isochronic is selected) */}
-            {entrainmentType === 'isochronic' && (
-              <div className="isochronic-settings">
-                <details className="iso-advanced" open>
-                  <summary className="iso-advanced-summary">Advanced Isochronic Editor</summary>
-                  <div className="iso-advanced-body">
-                    <div className="iso-preset-row">
-                      <label className="setting-label">
-                        <span>Isochronic Preset</span>
-                      </label>
-                      <select
-                        className="iso-preset-select"
-                        value={isochronicPreset}
-                        onChange={(e) => onIsochronicPresetChange(e.target.value as IsochronicPresetName)}
-                        disabled={!entrainmentEnabled}
-                      >
-                        <option value="single_focus">Single Focus Pulse</option>
-                        <option value="dual_layer_focus">Dual Layer Focus</option>
-                        <option value="deep_relax">Deep Relax</option>
-                      </select>
-                    </div>
-
-                    <div className="iso-tone-list">
-                      {isochronicTones.map((tone) => (
-                        <div key={tone.id} className="iso-tone-row">
-                          <div className="iso-tone-header">
-                            <span className="iso-tone-title">Tone</span>
-                            <label className="toggle small">
-                              <input
-                                type="checkbox"
-                                checked={tone.enabled}
-                                onChange={(e) =>
-                                  onIsochronicToneChange(tone.id, { enabled: e.target.checked })
-                                }
-                              />
-                              <span className="toggle-slider" />
-                            </label>
-                            <button
-                              type="button"
-                              className="iso-tone-remove"
-                              onClick={() => onIsochronicToneRemove(tone.id)}
-                            >
-                              ×
-                            </button>
-                          </div>
-
-                          <div className="setting-row">
-                            <label className="setting-label">
-                              <span>Carrier</span>
-                              <span className="setting-value">{Math.round(tone.carrierFreq)} Hz</span>
-                            </label>
-                            <input
-                              type="range"
-                              min="100"
-                              max="800"
-                              step="5"
-                              value={tone.carrierFreq}
-                              onChange={(e) =>
-                                onIsochronicToneChange(tone.id, {
-                                  carrierFreq: parseFloat(e.target.value),
-                                })
-                              }
-                              className="setting-slider"
-                              disabled={!entrainmentEnabled}
-                            />
-                          </div>
-
-                          <div className="setting-row">
-                            <label className="setting-label">
-                              <span>Pulse</span>
-                              <span className="setting-value">{tone.pulseFreq.toFixed(1)} Hz</span>
-                            </label>
-                            <input
-                              type="range"
-                              min="0.5"
-                              max="40"
-                              step="0.5"
-                              value={tone.pulseFreq}
-                              onChange={(e) =>
-                                onIsochronicToneChange(tone.id, {
-                                  pulseFreq: parseFloat(e.target.value),
-                                })
-                              }
-                              className="setting-slider"
-                              disabled={!entrainmentEnabled}
-                            />
-                          </div>
-
-                          <div className="setting-row">
-                            <label className="setting-label">
-                              <span>Volume</span>
-                              <span className="setting-value">
-                                {Math.round(tone.volume * 100)}%
-                              </span>
-                            </label>
-                            <input
-                              type="range"
-                              min="0"
-                              max="1"
-                              step="0.05"
-                              value={tone.volume}
-                              onChange={(e) =>
-                                onIsochronicToneChange(tone.id, {
-                                  volume: parseFloat(e.target.value),
-                                })
-                              }
-                              className="setting-slider"
-                              disabled={!entrainmentEnabled}
-                            />
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-
-                    <button
-                      type="button"
-                      className="btn btn-secondary iso-add-tone"
-                      onClick={onIsochronicToneAdd}
-                      disabled={!entrainmentEnabled || isochronicTones.length >= 4}
-                    >
-                      Add Tone
-                    </button>
-                  </div>
-                </details>
-              </div>
-            )}
 
             <div className="volume-control">
               <svg viewBox="0 0 24 24" fill="currentColor" width="20" height="20">

@@ -8,6 +8,7 @@ import { useSession } from './hooks/useSession';
 import { SessionSetup } from './components/SessionSetup';
 import { ActiveSession } from './components/ActiveSession';
 import { SessionSummary } from './components/SessionSummary';
+import { audioEngine } from './lib/audio-engine';
 import type { ThresholdSettings } from './types';
 import './App.css';
 
@@ -40,19 +41,14 @@ function App() {
     return goodCount >= 3;
   })();
 
-  // Handle flow state changes for rewards
+  // Handle coherence updates for crossfade system
   useEffect(() => {
-    if (session.isSessionActive) {
+    if (session.isSessionActive && hasGoodContact && muse.state.touching) {
+      // Update session flow state
       session.updateFlowState(muse.flowState.isActive, muse.coherence);
-
-      // Trigger reward on flow state ONLY if we have good electrode contact
-      const canReward = muse.flowState.isActive && hasGoodContact && muse.state.touching;
       
-      if (canReward && !audio.isRewardPlaying) {
-        audio.startReward();
-      } else if ((!canReward || !muse.flowState.isActive) && audio.isRewardPlaying) {
-        audio.stopReward();
-      }
+      // Update audio engine coherence (drives crossfade)
+      audioEngine.updateCoherence(muse.coherence);
     }
   }, [
     muse.flowState.isActive,
@@ -60,12 +56,14 @@ function App() {
     muse.state.touching,
     hasGoodContact,
     session.isSessionActive,
-    audio.isRewardPlaying,
   ]);
 
   // Handle start session
   const handleStartSession = useCallback(async () => {
     await audio.init();
+    // Start baseline/coherence audio session
+    await audioEngine.startSession();
+    
     if (audio.entrainmentEnabled) {
       await audio.setEntrainmentEnabled(true);
     }
@@ -74,7 +72,8 @@ function App() {
 
   // Handle end session
   const handleEndSession = useCallback(() => {
-    audio.stopReward();
+    // Stop baseline/coherence audio session
+    audioEngine.stopSession();
     audio.setEntrainmentEnabled(false);
     session.endSession();
   }, [audio, session]);
@@ -107,29 +106,12 @@ function App() {
             isBluetoothAvailable={muse.isBluetoothAvailable}
             connectionError={muse.error}
             // Audio
-            entrainmentType={audio.entrainmentType}
             entrainmentEnabled={audio.entrainmentEnabled}
             entrainmentVolume={audio.entrainmentVolume}
             binauralPreset={audio.binauralPreset}
-            binauralBeatFreq={audio.binauralBeatFreq}
-            isochronicPreset={audio.isochronicPreset}
-            isochronicTones={audio.isochronicTones}
-            onEntrainmentTypeChange={audio.setEntrainmentType}
             onEntrainmentEnabledChange={audio.setEntrainmentEnabled}
             onEntrainmentVolumeChange={audio.setEntrainmentVolume}
             onBinauralPresetChange={audio.setBinauralPreset}
-            onBinauralBeatFreqChange={audio.setBinauralBeatFreq}
-            onIsochronicPresetChange={audio.setIsochronicPreset}
-            onIsochronicToneChange={audio.updateIsochronicTone}
-            onIsochronicToneAdd={() =>
-              audio.addIsochronicTone({
-                carrierFreq: 220,
-                pulseFreq: 10,
-                volume: 0.4,
-                enabled: true,
-              })
-            }
-            onIsochronicToneRemove={audio.removeIsochronicTone}
             // Threshold settings
             thresholdSettings={thresholdSettings}
             onThresholdSettingsChange={setThresholdSettings}
@@ -150,6 +132,7 @@ function App() {
             coherenceHistory={session.coherenceHistory}
             currentCoherence={muse.coherence}
             coherenceZone={muse.coherenceZone}
+            coherenceState={audio.coherenceState}
             flowStateActive={muse.flowState.isActive}
             currentStreak={session.currentStreak}
             museConnected={muse.state.connected}
@@ -160,7 +143,6 @@ function App() {
             batteryLevel={muse.state.batteryLevel}
             entrainmentEnabled={audio.entrainmentEnabled}
             onEntrainmentToggle={handleEntrainmentToggle}
-            isRewardPlaying={audio.isRewardPlaying}
             onEndSession={handleEndSession}
           />
         )}

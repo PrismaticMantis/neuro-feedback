@@ -1,5 +1,6 @@
 // Session Summary Screen Component with PDF Export
 
+import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { jsPDF } from 'jspdf';
 import type { Session, SessionStats, User } from '../types';
@@ -13,6 +14,15 @@ interface SessionSummaryProps {
   onExportData: () => void;
 }
 
+/**
+ * Detect if running on iOS (iPhone/iPad)
+ */
+function isIOS(): boolean {
+  if (typeof navigator === 'undefined') return false;
+  return /iPad|iPhone|iPod/.test(navigator.userAgent) || 
+    (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+}
+
 export function SessionSummary({
   session,
   stats,
@@ -20,6 +30,8 @@ export function SessionSummary({
   onNewSession,
   onExportData,
 }: SessionSummaryProps) {
+  const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
+  const [pdfError, setPdfError] = useState<string | null>(null);
 
   // Draw mini graph
   const drawMiniGraph = (canvas: HTMLCanvasElement, history: number[]) => {
@@ -73,14 +85,15 @@ export function SessionSummary({
     ctx.fill();
   };
 
-  // Export PDF report
-  const exportPDF = () => {
-    try {
-      const pdf = new jsPDF({
-        orientation: 'portrait',
-        unit: 'mm',
-        format: 'a4',
-      });
+  /**
+   * Generate PDF as Blob
+   */
+  const generatePdfBlob = async (): Promise<Blob> => {
+    const pdf = new jsPDF({
+      orientation: 'portrait',
+      unit: 'mm',
+      format: 'a4',
+    });
 
     const pageWidth = pdf.internal.pageSize.getWidth();
     const margin = 20;
@@ -184,11 +197,103 @@ export function SessionSummary({
       { align: 'center' }
     );
 
-      // Save
-      pdf.save(`session-report-${new Date().toISOString().split('T')[0]}.pdf`);
+    // Convert to Blob using arraybuffer (more reliable cross-platform)
+    const arrayBuffer = pdf.output('arraybuffer');
+    return new Blob([arrayBuffer], { type: 'application/pdf' });
+  };
+
+  /**
+   * Open PDF in browser for iOS (new tab or same tab)
+   */
+  const openPdfForIos = (blob: Blob, newWindow: Window | null): void => {
+    const url = URL.createObjectURL(blob);
+    
+    if (newWindow && !newWindow.closed) {
+      // New tab opened successfully - navigate it to the blob URL
+      try {
+        newWindow.location.href = url;
+        // Revoke URL after a delay to allow navigation
+        setTimeout(() => {
+          URL.revokeObjectURL(url);
+        }, 2000);
+      } catch (e) {
+        // If that fails, navigate same tab
+        window.location.href = url;
+        setTimeout(() => {
+          URL.revokeObjectURL(url);
+        }, 2000);
+      }
+    } else {
+      // Popup blocked or failed - navigate same tab
+      window.location.href = url;
+      // Revoke URL after navigation
+      setTimeout(() => {
+        URL.revokeObjectURL(url);
+      }, 2000);
+    }
+  };
+
+  /**
+   * Download PDF for desktop browsers
+   */
+  const downloadPdfForDesktop = (blob: Blob): void => {
+    const url = URL.createObjectURL(blob);
+    const filename = `session-report-${new Date().toISOString().split('T')[0]}.pdf`;
+    
+    // Create temporary anchor element
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    link.style.display = 'none';
+    
+    document.body.appendChild(link);
+    link.click();
+    
+    // Clean up
+    setTimeout(() => {
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    }, 100);
+  };
+
+  /**
+   * Export PDF report handler
+   */
+  const exportPDF = async () => {
+    setIsGeneratingPdf(true);
+    setPdfError(null);
+
+    try {
+      // Try to open new window synchronously from user gesture (for iOS)
+      // This must happen before async operations
+      const isIOSDevice = isIOS();
+      let newWindow: Window | null = null;
+      
+      if (isIOSDevice) {
+        // Create window placeholder synchronously from user gesture
+        newWindow = window.open('', '_blank');
+      }
+
+      // Generate PDF (async)
+      const blob = await generatePdfBlob();
+
+      // Handle based on platform
+      if (isIOSDevice) {
+        openPdfForIos(blob, newWindow);
+      } else {
+        downloadPdfForDesktop(blob);
+      }
     } catch (error) {
       console.error('[SessionSummary] PDF export failed:', error);
-      alert('Failed to export PDF. Please try again or check the console for details.');
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+      setPdfError(errorMessage);
+      
+      // Show error for a few seconds
+      setTimeout(() => {
+        setPdfError(null);
+      }, 5000);
+    } finally {
+      setIsGeneratingPdf(false);
     }
   };
 
@@ -280,13 +385,34 @@ export function SessionSummary({
 
       {/* Actions */}
       <footer className="screen-footer">
+        {pdfError && (
+          <div className="pdf-error-toast">
+            <svg viewBox="0 0 24 24" fill="currentColor" width="20" height="20">
+              <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z" />
+            </svg>
+            <span>Failed to export PDF: {pdfError}</span>
+          </div>
+        )}
         <motion.button
           className="btn btn-primary btn-large"
           onClick={exportPDF}
-          whileHover={{ scale: 1.02 }}
-          whileTap={{ scale: 0.98 }}
+          disabled={isGeneratingPdf}
+          whileHover={isGeneratingPdf ? {} : { scale: 1.02 }}
+          whileTap={isGeneratingPdf ? {} : { scale: 0.98 }}
         >
-          Export PDF Report
+          {isGeneratingPdf ? (
+            <>
+              <svg className="spinner" viewBox="0 0 24 24" width="20" height="20">
+                <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2" fill="none" strokeDasharray="31.416" strokeDashoffset="31.416">
+                  <animate attributeName="stroke-dasharray" dur="2s" values="0 31.416;15.708 15.708;0 31.416;0 31.416" repeatCount="indefinite" />
+                  <animate attributeName="stroke-dashoffset" dur="2s" values="0;-15.708;-31.416;-31.416" repeatCount="indefinite" />
+                </circle>
+              </svg>
+              Generating PDF...
+            </>
+          ) : (
+            'Export PDF Report'
+          )}
         </motion.button>
 
         <div className="secondary-actions">

@@ -4,6 +4,7 @@ import { motion } from 'framer-motion';
 import { CoherenceGraph } from './CoherenceGraph';
 import { ElectrodeStatus } from './ElectrodeStatus';
 import type { ElectrodeStatus as ElectrodeStatusType, BrainwaveBands, BrainwaveBandsDb } from '../types';
+import type { CoherenceState } from '../lib/audio-engine';
 
 interface ActiveSessionProps {
   // Session data
@@ -11,6 +12,7 @@ interface ActiveSessionProps {
   coherenceHistory: number[];
   currentCoherence: number;
   coherenceZone: 'flow' | 'stabilizing' | 'noise';
+  coherenceState: CoherenceState;
   flowStateActive: boolean;
   currentStreak: number;
 
@@ -25,7 +27,6 @@ interface ActiveSessionProps {
   // Audio
   entrainmentEnabled: boolean;
   onEntrainmentToggle: () => void;
-  isRewardPlaying: boolean;
 
   // Controls
   onEndSession: () => void;
@@ -36,6 +37,7 @@ export function ActiveSession({
   coherenceHistory,
   currentCoherence,
   coherenceZone,
+  coherenceState,
   flowStateActive,
   currentStreak,
   museConnected,
@@ -46,7 +48,6 @@ export function ActiveSession({
   batteryLevel,
   entrainmentEnabled,
   onEntrainmentToggle,
-  isRewardPlaying,
   onEndSession,
 }: ActiveSessionProps) {
   void _bands; // Silence unused warning
@@ -149,18 +150,18 @@ export function ActiveSession({
           </motion.div>
         )}
 
-        {/* Reward Playing Indicator */}
-        {isRewardPlaying && (
+        {/* Coherence State Indicator */}
+        {coherenceState !== 'baseline' && (
           <motion.div
-            className="reward-indicator"
-            animate={{
-              opacity: [0.5, 1, 0.5],
-            }}
-            transition={{ repeat: Infinity, duration: 2 }}
+            className={`coherence-state-indicator ${coherenceState === 'coherent' ? 'coherent' : 'stabilizing'}`}
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 10 }}
           >
-            <svg viewBox="0 0 24 24" fill="currentColor" width="24" height="24">
-              <path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z" />
-            </svg>
+            <div className={`coherence-glow ${coherenceState === 'coherent' ? 'coherent' : 'stabilizing'}`} />
+            <span className="coherence-text">
+              {coherenceState === 'coherent' ? 'Coherent' : 'Stabilizing...'}
+            </span>
           </motion.div>
         )}
 

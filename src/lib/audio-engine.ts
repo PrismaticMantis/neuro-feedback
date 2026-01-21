@@ -1,125 +1,134 @@
-// Audio Engine for Entrainment and Rewards
-// Handles binaural beats, isochronic tones, and vibroacoustic rewards
+// Audio Engine for Entrainment and Coherence Crossfade
+// Handles WAV-based baseline/coherence crossfade, shimmer layer, and binaural beats
 
 import type {
   EntrainmentType,
   BinauralPreset,
   BinauralPresetName,
-  IsochronicTone,
-  IsochronicPreset,
-  IsochronicPresetName,
 } from '../types';
 
-// Binaural beat presets for different brain states
+// Crossfade constants (centralized for easy tweaking)
+const CROSSFADE_CONSTANTS = {
+  ENTER_THRESHOLD: 0.75,
+  EXIT_THRESHOLD: 0.65,
+  SUSTAIN_SECONDS: 3.0,
+  ATTACK_SECONDS: 3.5,
+  RELEASE_SECONDS: 6.0,
+  START_FADE_SECONDS: 4.0,
+  SHIMMER_BASE_GAIN: 0.10,
+  SHIMMER_MAX_GAIN: 0.25,
+  SHIMMER_RANGE: 0.15, // max - base
+};
+
+// Binaural beat presets (carrier frequencies transposed down a tritone)
+// Original 200Hz -> ~141Hz (200 * 2^(-6/12))
+const BINAURAL_BASE_FREQ = 200 * Math.pow(2, -6 / 12); // ~141.42 Hz (tritone down)
+
 export const BINAURAL_PRESETS: Record<Exclude<BinauralPresetName, 'custom'>, BinauralPreset> = {
   delta: {
     name: 'delta',
     label: 'Delta',
     beatFrequency: 2,
-    carrierFrequency: 200,
+    carrierFrequency: BINAURAL_BASE_FREQ,
     description: 'Deep Sleep (0.5-4 Hz)',
   },
   theta: {
     name: 'theta',
     label: 'Theta',
     beatFrequency: 6,
-    carrierFrequency: 200,
+    carrierFrequency: BINAURAL_BASE_FREQ,
     description: 'Deep Meditation (4-8 Hz)',
   },
   alpha: {
     name: 'alpha',
     label: 'Alpha',
     beatFrequency: 10,
-    carrierFrequency: 200,
+    carrierFrequency: BINAURAL_BASE_FREQ,
     description: 'Relaxed Focus (8-13 Hz)',
   },
   beta: {
     name: 'beta',
     label: 'Beta',
     beatFrequency: 20,
-    carrierFrequency: 200,
+    carrierFrequency: BINAURAL_BASE_FREQ,
     description: 'Alert Focus (13-30 Hz)',
-  },
-};
-
-export const ISOCHRONIC_PRESETS: Record<IsochronicPresetName, IsochronicPreset> = {
-  single_focus: {
-    name: 'single_focus',
-    label: 'Single Focus Pulse',
-    description: 'One mid-beta focus pulse',
-    tones: [
-      { carrierFreq: 220, pulseFreq: 14, volume: 0.6, enabled: true },
-    ],
-  },
-  dual_layer_focus: {
-    name: 'dual_layer_focus',
-    label: 'Dual Layer Focus',
-    description: 'Low and mid pulses for deep focus',
-    tones: [
-      { carrierFreq: 200, pulseFreq: 8, volume: 0.4, enabled: true },
-      { carrierFreq: 260, pulseFreq: 16, volume: 0.4, enabled: true },
-    ],
-  },
-  deep_relax: {
-    name: 'deep_relax',
-    label: 'Deep Relax',
-    description: 'Slow theta pulses for relaxation',
-    tones: [
-      { carrierFreq: 180, pulseFreq: 5, volume: 0.5, enabled: true },
-    ],
   },
 };
 
 export interface AudioEngineConfig {
   entrainmentType: EntrainmentType;
   entrainmentVolume: number;
-  rewardVolume: number;
-  binauralCarrierFreq: number; // Base frequency for binaural (default 200Hz)
-  binauralBeatFreq: number; // Beat frequency (default 10Hz for alpha)
-  // Isochronic configuration now supports multiple tones
-  isochronicTones: IsochronicTone[];
+  binauralCarrierFreq: number;
+  binauralBeatFreq: number;
+}
+
+// Export types for use in hooks/components
+export type CoherenceState = 'baseline' | 'stabilizing' | 'coherent';
+
+export interface CoherenceMetrics {
+  totalCoherentSeconds: number;
+  longestCoherentStreakSeconds: number;
 }
 
 const DEFAULT_CONFIG: AudioEngineConfig = {
   entrainmentType: 'none',
   entrainmentVolume: 0.3,
-  rewardVolume: 0.5,
-  binauralCarrierFreq: 200,
+  binauralCarrierFreq: BINAURAL_BASE_FREQ, // Already transposed down a tritone
   binauralBeatFreq: 10,
-  isochronicTones: [],
 };
 
 export class AudioEngine {
   private ctx: AudioContext | null = null;
   private masterGain: GainNode | null = null;
 
-  // Entrainment nodes
+  // WAV buffers
+  private baselineBuffer: AudioBuffer | null = null;
+  private coherenceBuffer: AudioBuffer | null = null;
+  private shimmerBuffer: AudioBuffer | null = null;
+
+  // Buffer sources (always playing, synced)
+  private baselineSource: AudioBufferSourceNode | null = null;
+  private coherenceSource: AudioBufferSourceNode | null = null;
+  private shimmerSource: AudioBufferSourceNode | null = null;
+
+  // Gain nodes for crossfade
+  private baselineGain: GainNode | null = null;
+  private coherenceGain: GainNode | null = null;
+  private shimmerGain: GainNode | null = null;
+
+  // Shimmer limiter
+  private shimmerLimiter: DynamicsCompressorNode | null = null;
+
+  // Entrainment nodes (binaural only)
   private entrainmentGain: GainNode | null = null;
   private binauralLeft: OscillatorNode | null = null;
   private binauralRight: OscillatorNode | null = null;
   private binauralMerger: ChannelMergerNode | null = null;
 
-  // Isochronic voices (multiple tones)
-  private isochronicVoices: {
-    osc: OscillatorNode;
-    lfo: OscillatorNode;
-    lfoGain: GainNode;
-    toneGain: GainNode;
-  }[] = [];
+  // Coherence state machine
+  private coherenceState: CoherenceState = 'baseline';
+  private coherenceEnteredAt: number | null = null;
+  private lastCoherenceValue: number = 0;
+  private currentCoherentStreakStart: number | null = null;
 
-  // Reward nodes
-  private rewardGain: GainNode | null = null;
-  private rewardSubOsc: OscillatorNode | null = null;
-  private rewardSynthOsc: OscillatorNode | null = null;
-  private rewardSynthOsc2: OscillatorNode | null = null;
-  private rewardSubGain: GainNode | null = null;
-  private rewardSynthGain: GainNode | null = null;
-  private rewardFilter: BiquadFilterNode | null = null;
-  private rewardStopTimeout: ReturnType<typeof setTimeout> | null = null;
+  // Metrics
+  private metrics: CoherenceMetrics = {
+    totalCoherentSeconds: 0,
+    longestCoherentStreakSeconds: 0,
+  };
+
+  // Smooth coherence strength for adaptive shimmer
+  private coherenceStrength: number = 0;
+  private smoothedCoherenceStrength: number = 0;
 
   private config: AudioEngineConfig;
   private isEntrainmentPlaying = false;
-  private isRewardPlaying = false;
+  private isRewardPlaying = false; // Kept for backward compatibility (always false)
+  private isAudioLoaded = false;
+  private isSessionActive = false;
+
+  // Store start time for source sync
+  private sessionStartTime: number = 0;
 
   constructor(config: Partial<AudioEngineConfig> = {}) {
     this.config = { ...DEFAULT_CONFIG, ...config };
@@ -147,16 +156,335 @@ export class AudioEngine {
     this.entrainmentGain.gain.value = 0;
     this.entrainmentGain.connect(this.masterGain);
 
-    // Create reward gain
-    this.rewardGain = this.ctx.createGain();
-    this.rewardGain.gain.value = 0;
-    this.rewardGain.connect(this.masterGain);
+    // Load audio files
+    await this.loadAudioFiles();
 
-    console.log('[AudioEngine] Initialized');
+    // Create gain nodes for crossfade
+    this.baselineGain = this.ctx.createGain();
+    this.coherenceGain = this.ctx.createGain();
+    this.shimmerGain = this.ctx.createGain();
+
+    // Initialize gains
+    this.baselineGain.gain.value = 0;
+    this.coherenceGain.gain.value = 0;
+    this.shimmerGain.gain.value = 0;
+
+    // Connect to master
+    this.baselineGain.connect(this.masterGain);
+    this.coherenceGain.connect(this.masterGain);
+
+    // Create shimmer limiter
+    this.shimmerLimiter = this.ctx.createDynamicsCompressor();
+    this.shimmerLimiter.threshold.value = -6;
+    this.shimmerLimiter.knee.value = 0;
+    this.shimmerLimiter.ratio.value = 20;
+    this.shimmerLimiter.attack.value = 0.001;
+    this.shimmerLimiter.release.value = 0.1;
+
+    // Shimmer chain: gain -> limiter -> master
+    this.shimmerGain.connect(this.shimmerLimiter);
+    this.shimmerLimiter.connect(this.masterGain);
+
+    this.isAudioLoaded = true;
+    console.log('[AudioEngine] Initialized with WAV crossfade system');
   }
 
   /**
-   * Start entrainment audio
+   * Load WAV audio files from /public/audio
+   */
+  private async loadAudioFiles(): Promise<void> {
+    if (!this.ctx) throw new Error('AudioContext not initialized');
+
+    try {
+      // Load baseline.wav
+      const baselineResponse = await fetch('/audio/baseline.wav');
+      const baselineArrayBuffer = await baselineResponse.arrayBuffer();
+      this.baselineBuffer = await this.ctx.decodeAudioData(baselineArrayBuffer);
+
+      // Load coherence.wav
+      const coherenceResponse = await fetch('/audio/coherence.wav');
+      const coherenceArrayBuffer = await coherenceResponse.arrayBuffer();
+      this.coherenceBuffer = await this.ctx.decodeAudioData(coherenceArrayBuffer);
+
+      // Load shimmer.wav
+      const shimmerResponse = await fetch('/audio/shimmer.wav');
+      const shimmerArrayBuffer = await shimmerResponse.arrayBuffer();
+      this.shimmerBuffer = await this.ctx.decodeAudioData(shimmerArrayBuffer);
+
+      console.log('[AudioEngine] Loaded audio files');
+    } catch (error) {
+      console.error('[AudioEngine] Failed to load audio files:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Start session audio (baseline fade-in)
+   */
+  async startSession(): Promise<void> {
+    if (!this.ctx || !this.isAudioLoaded) {
+      await this.init();
+    }
+
+    if (this.isSessionActive) return;
+
+    // Ensure audio context is running
+    if (this.ctx!.state === 'suspended') {
+      await this.ctx!.resume();
+    }
+
+    // Reset metrics
+    this.metrics = {
+      totalCoherentSeconds: 0,
+      longestCoherentStreakSeconds: 0,
+    };
+    this.coherenceState = 'baseline';
+    this.coherenceEnteredAt = null;
+    this.currentCoherentStreakStart = null;
+
+    const now = this.ctx!.currentTime;
+    this.sessionStartTime = now;
+
+    // Create and start baseline source (looped)
+    if (this.baselineBuffer && this.baselineGain) {
+      this.baselineSource = this.ctx!.createBufferSource();
+      this.baselineSource.buffer = this.baselineBuffer;
+      this.baselineSource.loop = true;
+      this.baselineSource.connect(this.baselineGain);
+      this.baselineSource.start(now);
+    }
+
+    // Create and start coherence source (looped, muted)
+    if (this.coherenceBuffer && this.coherenceGain) {
+      this.coherenceSource = this.ctx!.createBufferSource();
+      this.coherenceSource.buffer = this.coherenceBuffer;
+      this.coherenceSource.loop = true;
+      this.coherenceSource.connect(this.coherenceGain);
+      this.coherenceSource.start(now); // Start at same time for sync
+    }
+
+    // Create and start shimmer source (looped, muted)
+    if (this.shimmerBuffer && this.shimmerGain) {
+      this.shimmerSource = this.ctx!.createBufferSource();
+      this.shimmerSource.buffer = this.shimmerBuffer;
+      this.shimmerSource.loop = true;
+      this.shimmerSource.connect(this.shimmerGain);
+      this.shimmerSource.start(now); // Start at same time for sync
+    }
+
+    // Fade in baseline (session start)
+    if (this.baselineGain) {
+      this.baselineGain.gain.setValueAtTime(0, now);
+      this.baselineGain.gain.linearRampToValueAtTime(
+        1.0,
+        now + CROSSFADE_CONSTANTS.START_FADE_SECONDS
+      );
+    }
+
+    this.isSessionActive = true;
+    console.log('[AudioEngine] Session started with baseline fade-in');
+  }
+
+  /**
+   * End session audio
+   */
+  stopSession(): void {
+    if (!this.ctx || !this.isSessionActive) return;
+
+    const now = this.ctx.currentTime;
+
+    // Fade out all sources
+    const fadeTime = 2.0;
+
+    if (this.baselineGain) {
+      const currentGain = this.baselineGain.gain.value;
+      this.baselineGain.gain.cancelScheduledValues(now);
+      this.baselineGain.gain.setValueAtTime(currentGain, now);
+      this.baselineGain.gain.linearRampToValueAtTime(0, now + fadeTime);
+    }
+
+    if (this.coherenceGain) {
+      const currentGain = this.coherenceGain.gain.value;
+      this.coherenceGain.gain.cancelScheduledValues(now);
+      this.coherenceGain.gain.setValueAtTime(currentGain, now);
+      this.coherenceGain.gain.linearRampToValueAtTime(0, now + fadeTime);
+    }
+
+    if (this.shimmerGain) {
+      const currentGain = this.shimmerGain.gain.value;
+      this.shimmerGain.gain.cancelScheduledValues(now);
+      this.shimmerGain.gain.setValueAtTime(currentGain, now);
+      this.shimmerGain.gain.linearRampToValueAtTime(0, now + fadeTime);
+    }
+
+    // Stop sources after fade
+    setTimeout(() => {
+      try {
+        this.baselineSource?.stop();
+        this.coherenceSource?.stop();
+        this.shimmerSource?.stop();
+      } catch {
+        // Ignore if already stopped
+      }
+      this.baselineSource = null;
+      this.coherenceSource = null;
+      this.shimmerSource = null;
+    }, (fadeTime + 0.1) * 1000);
+
+    this.isSessionActive = false;
+    this.coherenceState = 'baseline';
+    this.coherenceEnteredAt = null;
+    this.currentCoherentStreakStart = null;
+
+    console.log('[AudioEngine] Session stopped');
+  }
+
+  /**
+   * Update coherence value (called from coherence detection)
+   */
+  updateCoherence(coherence: number): void {
+    if (!this.ctx || !this.isSessionActive) return;
+
+    const now = this.ctx.currentTime;
+    this.lastCoherenceValue = coherence;
+
+    // Calculate coherence strength for adaptive shimmer (0-1)
+    const strength = Math.max(0, Math.min(1, (coherence - CROSSFADE_CONSTANTS.ENTER_THRESHOLD) / (1 - CROSSFADE_CONSTANTS.ENTER_THRESHOLD)));
+    this.coherenceStrength = strength;
+    // Smooth the strength value
+    this.smoothedCoherenceStrength = this.smoothedCoherenceStrength * 0.9 + strength * 0.1;
+
+    // State machine logic
+    const currentTime = Date.now();
+
+    switch (this.coherenceState) {
+      case 'baseline':
+        if (coherence >= CROSSFADE_CONSTANTS.ENTER_THRESHOLD) {
+          // Enter stabilizing phase
+          this.coherenceState = 'stabilizing';
+          this.coherenceEnteredAt = currentTime;
+        }
+        break;
+
+      case 'stabilizing':
+        if (coherence < CROSSFADE_CONSTANTS.ENTER_THRESHOLD) {
+          // Drop below threshold - return to baseline
+          this.coherenceState = 'baseline';
+          this.coherenceEnteredAt = null;
+        } else {
+          // Check if sustain time has passed
+          const sustainTime = (currentTime - this.coherenceEnteredAt!) / 1000;
+          if (sustainTime >= CROSSFADE_CONSTANTS.SUSTAIN_SECONDS) {
+            // Enter coherent state - start crossfade
+            this.coherenceState = 'coherent';
+            this.currentCoherentStreakStart = currentTime;
+            this.startCrossfadeToCoherence(now);
+          }
+        }
+        break;
+
+      case 'coherent':
+        if (coherence <= CROSSFADE_CONSTANTS.EXIT_THRESHOLD) {
+          // Drop below exit threshold - crossfade back to baseline
+          this.coherenceState = 'baseline';
+          const streakEnd = currentTime;
+          if (this.currentCoherentStreakStart) {
+            const streakDuration = (streakEnd - this.currentCoherentStreakStart) / 1000;
+            this.metrics.totalCoherentSeconds += streakDuration;
+            if (streakDuration > this.metrics.longestCoherentStreakSeconds) {
+              this.metrics.longestCoherentStreakSeconds = streakDuration;
+            }
+          }
+          this.currentCoherentStreakStart = null;
+          this.startCrossfadeToBaseline(now);
+        } else {
+          // Update shimmer gain based on coherence strength
+          this.updateShimmerGain(now);
+        }
+        break;
+    }
+  }
+
+  /**
+   * Start crossfade from baseline to coherence
+   */
+  private startCrossfadeToCoherence(now: number): void {
+    if (!this.baselineGain || !this.coherenceGain || !this.shimmerGain) return;
+
+    // Cancel any existing scheduled changes
+    this.baselineGain.gain.cancelScheduledValues(now);
+    this.coherenceGain.gain.cancelScheduledValues(now);
+    this.shimmerGain.gain.cancelScheduledValues(now);
+
+    const currentBaseline = this.baselineGain.gain.value;
+    const currentCoherence = this.coherenceGain.gain.value;
+
+    // Crossfade baseline -> coherence
+    this.baselineGain.gain.setValueAtTime(currentBaseline, now);
+    this.baselineGain.gain.linearRampToValueAtTime(0, now + CROSSFADE_CONSTANTS.ATTACK_SECONDS);
+
+    this.coherenceGain.gain.setValueAtTime(currentCoherence, now);
+    this.coherenceGain.gain.linearRampToValueAtTime(1.0, now + CROSSFADE_CONSTANTS.ATTACK_SECONDS);
+
+    // Start shimmer fade-in (after sustain)
+    const shimmerTarget = CROSSFADE_CONSTANTS.SHIMMER_BASE_GAIN + 
+      (this.smoothedCoherenceStrength * CROSSFADE_CONSTANTS.SHIMMER_RANGE);
+    this.shimmerGain.gain.setValueAtTime(0, now);
+    this.shimmerGain.gain.linearRampToValueAtTime(
+      shimmerTarget,
+      now + CROSSFADE_CONSTANTS.ATTACK_SECONDS
+    );
+
+    console.log('[AudioEngine] Crossfading to coherence');
+  }
+
+  /**
+   * Start crossfade from coherence to baseline
+   */
+  private startCrossfadeToBaseline(now: number): void {
+    if (!this.baselineGain || !this.coherenceGain || !this.shimmerGain) return;
+
+    // Cancel any existing scheduled changes
+    this.baselineGain.gain.cancelScheduledValues(now);
+    this.coherenceGain.gain.cancelScheduledValues(now);
+    this.shimmerGain.gain.cancelScheduledValues(now);
+
+    const currentBaseline = this.baselineGain.gain.value;
+    const currentCoherence = this.coherenceGain.gain.value;
+    const currentShimmer = this.shimmerGain.gain.value;
+
+    // Crossfade coherence -> baseline
+    this.baselineGain.gain.setValueAtTime(currentBaseline, now);
+    this.baselineGain.gain.linearRampToValueAtTime(1.0, now + CROSSFADE_CONSTANTS.RELEASE_SECONDS);
+
+    this.coherenceGain.gain.setValueAtTime(currentCoherence, now);
+    this.coherenceGain.gain.linearRampToValueAtTime(0, now + CROSSFADE_CONSTANTS.RELEASE_SECONDS);
+
+    // Fade out shimmer
+    this.shimmerGain.gain.setValueAtTime(currentShimmer, now);
+    this.shimmerGain.gain.linearRampToValueAtTime(0, now + CROSSFADE_CONSTANTS.RELEASE_SECONDS);
+
+    console.log('[AudioEngine] Crossfading to baseline');
+  }
+
+  /**
+   * Update shimmer gain based on coherence strength (adaptive)
+   */
+  private updateShimmerGain(now: number): void {
+    if (!this.shimmerGain) return;
+
+    const targetGain = CROSSFADE_CONSTANTS.SHIMMER_BASE_GAIN + 
+      (this.smoothedCoherenceStrength * CROSSFADE_CONSTANTS.SHIMMER_RANGE);
+
+    // Smoothly transition to target
+    this.shimmerGain.gain.cancelScheduledValues(now);
+    const currentGain = this.shimmerGain.gain.value;
+    this.shimmerGain.gain.setValueAtTime(currentGain, now);
+    this.shimmerGain.gain.linearRampToValueAtTime(targetGain, now + 0.5);
+  }
+
+  /**
+   * Start entrainment audio (binaural beats only)
    */
   async startEntrainment(type?: EntrainmentType): Promise<void> {
     if (!this.ctx || !this.entrainmentGain) {
@@ -176,7 +504,7 @@ export class AudioEngine {
       this.config.entrainmentType = type;
     }
 
-    if (this.config.entrainmentType === 'none') {
+    if (this.config.entrainmentType === 'none' || this.config.entrainmentType === 'isochronic') {
       this.stopEntrainment();
       return;
     }
@@ -192,15 +520,12 @@ export class AudioEngine {
 
     if (this.config.entrainmentType === 'binaural') {
       this.startBinaural(now);
-    } else if (this.config.entrainmentType === 'isochronic') {
-      this.startIsochronic(now);
     }
 
     // Smooth fade in with exponential curve
-    // Must start from non-zero value for exponential ramp to work
     this.entrainmentGain!.gain.setValueAtTime(0.001, now);
     this.entrainmentGain!.gain.exponentialRampToValueAtTime(
-      this.config.entrainmentVolume + 0.001, // Small offset for exponential
+      this.config.entrainmentVolume + 0.001,
       now + 1.5
     );
 
@@ -209,7 +534,7 @@ export class AudioEngine {
   }
 
   /**
-   * Start binaural beats
+   * Start binaural beats (with tritone-down frequency)
    */
   private startBinaural(now: number): void {
     if (!this.ctx || !this.entrainmentGain) return;
@@ -220,7 +545,7 @@ export class AudioEngine {
     this.binauralMerger = this.ctx.createChannelMerger(2);
     this.binauralMerger.connect(this.entrainmentGain);
 
-    // Left ear - carrier frequency
+    // Left ear - carrier frequency (already transposed down a tritone in preset)
     this.binauralLeft = this.ctx.createOscillator();
     this.binauralLeft.type = 'sine';
     this.binauralLeft.frequency.value = binauralCarrierFreq;
@@ -247,54 +572,6 @@ export class AudioEngine {
   }
 
   /**
-   * Start isochronic tones (multiple voices)
-   */
-  private startIsochronic(now: number): void {
-    if (!this.ctx || !this.entrainmentGain) return;
-
-    // Clean up any existing voices
-    this.stopIsochronicVoices();
-
-    // Normalize total volume across tones to avoid clipping
-    const activeTones = this.config.isochronicTones.filter((t) => t.enabled && t.volume > 0);
-    if (activeTones.length === 0) return;
-
-    const maxVoices = 4;
-    const tones = activeTones.slice(0, maxVoices);
-    const totalVolume = tones.reduce((sum, t) => sum + t.volume, 0) || 1;
-    const volumeScale = 1 / totalVolume;
-
-    this.isochronicVoices = tones.map((tone) => {
-      const osc = this.ctx!.createOscillator();
-      osc.type = 'sine';
-      osc.frequency.value = tone.carrierFreq;
-
-      const toneGain = this.ctx!.createGain();
-      toneGain.gain.value = tone.volume * volumeScale;
-
-      const lfo = this.ctx!.createOscillator();
-      lfo.type = 'square';
-      lfo.frequency.value = tone.pulseFreq;
-
-      const lfoGain = this.ctx!.createGain();
-      lfoGain.gain.value = 0.5;
-
-      // LFO modulates tone gain
-      lfo.connect(lfoGain);
-      lfoGain.connect(toneGain.gain);
-
-      // Connect tone to entrainment output
-      osc.connect(toneGain);
-      toneGain.connect(this.entrainmentGain!);
-
-      osc.start(now);
-      lfo.start(now);
-
-      return { osc, lfo, lfoGain, toneGain };
-    });
-  }
-
-  /**
    * Stop entrainment audio
    */
   stopEntrainment(): void {
@@ -310,18 +587,15 @@ export class AudioEngine {
     }
 
     // Capture current oscillator references before setTimeout
-    // This prevents the race condition where new oscillators get stopped
     const binauralLeftToStop = this.binauralLeft;
     const binauralRightToStop = this.binauralRight;
-    const isochronicVoicesToStop = [...this.isochronicVoices];
 
-    // Clear references immediately so new ones can be created
+    // Clear references immediately
     this.binauralLeft = null;
     this.binauralRight = null;
     this.binauralMerger = null;
-    this.isochronicVoices = [];
 
-    // Stop after fade using captured references
+    // Stop after fade
     setTimeout(() => {
       try {
         binauralLeftToStop?.stop();
@@ -329,16 +603,6 @@ export class AudioEngine {
       } catch {
         // Ignore if already stopped
       }
-      
-      // Stop captured isochronic voices
-      isochronicVoicesToStop.forEach(({ osc, lfo }) => {
-        try {
-          osc.stop();
-          lfo.stop();
-        } catch {
-          // Ignore if already stopped
-        }
-      });
     }, 900);
 
     this.isEntrainmentPlaying = false;
@@ -346,163 +610,17 @@ export class AudioEngine {
   }
 
   /**
-   * Start reward signal (vibroacoustic + subtle synth)
-   * Called when Quiet Power state is achieved
+   * Reward methods kept for backward compatibility (no-ops)
    */
   async startReward(): Promise<void> {
-    if (!this.ctx || !this.rewardGain) {
-      await this.init();
-    }
-
-    // If already playing, don't restart
-    if (this.isRewardPlaying) return;
-
-    // Cancel any pending stop operations
-    if (this.rewardStopTimeout) {
-      clearTimeout(this.rewardStopTimeout);
-      this.rewardStopTimeout = null;
-    }
-
-    // Clean up any existing oscillators first
-    this.cleanupRewardOscillators();
-
-    const now = this.ctx!.currentTime;
-
-    // === Sub-bass layer (vibroacoustic) ===
-    this.rewardSubOsc = this.ctx!.createOscillator();
-    this.rewardSubOsc.type = 'sine';
-    this.rewardSubOsc.frequency.value = 40; // 40Hz sub-bass
-
-    this.rewardSubGain = this.ctx!.createGain();
-    this.rewardSubGain.gain.value = 0;
-
-    // Low-pass filter for cleaner sub
-    this.rewardFilter = this.ctx!.createBiquadFilter();
-    this.rewardFilter.type = 'lowpass';
-    this.rewardFilter.frequency.value = 80;
-    this.rewardFilter.Q.value = 0.7;
-
-    this.rewardSubOsc.connect(this.rewardFilter);
-    this.rewardFilter.connect(this.rewardSubGain);
-    this.rewardSubGain.connect(this.rewardGain!);
-
-    // === Subtle synth layer (mystical "aha" tone) ===
-    this.rewardSynthOsc = this.ctx!.createOscillator();
-    this.rewardSynthOsc.type = 'triangle';
-    this.rewardSynthOsc.frequency.value = 528; // 528Hz - "love frequency"
-
-    this.rewardSynthGain = this.ctx!.createGain();
-    this.rewardSynthGain.gain.value = 0;
-
-    // Add subtle detuned second osc for shimmer
-    this.rewardSynthOsc2 = this.ctx!.createOscillator();
-    this.rewardSynthOsc2.type = 'sine';
-    this.rewardSynthOsc2.frequency.value = 528 * 1.5; // Perfect fifth above
-    this.rewardSynthOsc2.connect(this.rewardSynthGain);
-
-    this.rewardSynthOsc.connect(this.rewardSynthGain);
-    this.rewardSynthGain.connect(this.rewardGain!);
-
-    // Start oscillators
-    this.rewardSubOsc.start(now);
-    this.rewardSynthOsc.start(now);
-    this.rewardSynthOsc2.start(now);
-
-    // Smooth fade in with exponential curve (more natural)
-    const fadeInTime = 2.5; // Slightly longer for smoother entry
-    // Must start from non-zero value for exponential ramp to work
-    this.rewardSubGain.gain.setValueAtTime(0.001, now);
-    this.rewardSubGain.gain.exponentialRampToValueAtTime(
-      this.config.rewardVolume * 0.7 + 0.001, // Add small offset for exponential
-      now + fadeInTime
-    );
-
-    this.rewardSynthGain.gain.setValueAtTime(0.001, now);
-    this.rewardSynthGain.gain.exponentialRampToValueAtTime(
-      this.config.rewardVolume * 0.15 + 0.001,
-      now + fadeInTime
-    );
-
-    // Overall reward gain with smooth exponential fade
-    this.rewardGain!.gain.setValueAtTime(0.001, now);
-    this.rewardGain!.gain.exponentialRampToValueAtTime(1.001, now + fadeInTime);
-
-    this.isRewardPlaying = true;
-    console.log('[AudioEngine] Started reward signal');
-  }
-
-  /**
-   * Clean up reward oscillators (internal helper)
-   */
-  private cleanupRewardOscillators(): void {
-    try {
-      this.rewardSubOsc?.stop();
-    } catch {
-      // Ignore if already stopped
-    }
-    try {
-      this.rewardSynthOsc?.stop();
-    } catch {
-      // Ignore if already stopped
-    }
-    try {
-      this.rewardSynthOsc2?.stop();
-    } catch {
-      // Ignore if already stopped
-    }
-
-    this.rewardSubOsc = null;
-    this.rewardSynthOsc = null;
-    this.rewardSynthOsc2 = null;
-    this.rewardSubGain = null;
-    this.rewardSynthGain = null;
-    this.rewardFilter = null;
-  }
-
-  /**
-   * Stop reward signal
-   * Called when Quiet Power state is lost
-   */
-  stopReward(): void {
-    if (!this.ctx || !this.isRewardPlaying) return;
-
-    const now = this.ctx.currentTime;
-
-    // Cancel any pending stop operations
-    if (this.rewardStopTimeout) {
-      clearTimeout(this.rewardStopTimeout);
-      this.rewardStopTimeout = null;
-    }
-
-    // Smooth exponential fade out (more natural than linear)
-    const fadeOutTime = 2.0; // Longer fade for smoother exit
-    
-    if (this.rewardGain) {
-      const currentGain = Math.max(0.001, this.rewardGain.gain.value); // Ensure non-zero for exponential
-      this.rewardGain.gain.setValueAtTime(currentGain, now);
-      this.rewardGain.gain.exponentialRampToValueAtTime(0.001, now + fadeOutTime);
-    }
-
-    if (this.rewardSubGain) {
-      const currentGain = Math.max(0.001, this.rewardSubGain.gain.value);
-      this.rewardSubGain.gain.setValueAtTime(currentGain, now);
-      this.rewardSubGain.gain.exponentialRampToValueAtTime(0.001, now + fadeOutTime);
-    }
-
-    if (this.rewardSynthGain) {
-      const currentGain = Math.max(0.001, this.rewardSynthGain.gain.value);
-      this.rewardSynthGain.gain.setValueAtTime(currentGain, now);
-      this.rewardSynthGain.gain.exponentialRampToValueAtTime(0.001, now + fadeOutTime);
-    }
-
-    // Stop oscillators after fade completes
-    this.rewardStopTimeout = setTimeout(() => {
-      this.cleanupRewardOscillators();
-      this.rewardStopTimeout = null;
-    }, (fadeOutTime + 0.1) * 1000);
-
+    // Disabled - oscillator-based rewards removed
+    // Use coherence crossfade instead
     this.isRewardPlaying = false;
-    console.log('[AudioEngine] Stopped reward signal');
+  }
+
+  stopReward(): void {
+    // Disabled - oscillator-based rewards removed
+    this.isRewardPlaying = false;
   }
 
   /**
@@ -520,13 +638,6 @@ export class AudioEngine {
   }
 
   /**
-   * Set reward volume (0-1)
-   */
-  setRewardVolume(volume: number): void {
-    this.config.rewardVolume = Math.max(0, Math.min(1, volume));
-  }
-
-  /**
    * Set binaural beat frequency (Hz)
    */
   setBinauralBeatFreq(freq: number): void {
@@ -541,7 +652,7 @@ export class AudioEngine {
   }
 
   /**
-   * Set binaural carrier frequency (Hz)
+   * Set binaural carrier frequency (Hz) - already transposed down a tritone
    */
   setBinauralCarrierFreq(freq: number): void {
     this.config.binauralCarrierFreq = freq;
@@ -567,91 +678,13 @@ export class AudioEngine {
     if (preset) {
       this.config.binauralBeatFreq = preset.beatFrequency;
       this.config.binauralCarrierFreq = preset.carrierFrequency;
-      
+
       // If binaural is currently playing, update the frequencies
       if (this.isEntrainmentPlaying && this.config.entrainmentType === 'binaural') {
         this.setBinauralCarrierFreq(preset.carrierFrequency);
         this.setBinauralBeatFreq(preset.beatFrequency);
       }
     }
-  }
-
-  /**
-   * Set isochronic pulse frequency (Hz)
-   */
-  setIsochronicFreq(freq: number): void {
-    // Backwards-compat shim: apply same pulseFreq to all tones
-    this.config.isochronicTones = this.config.isochronicTones.map((tone) => ({
-      ...tone,
-      pulseFreq: freq,
-    }));
-
-    if (this.isochronicVoices.length && this.ctx) {
-      this.isochronicVoices.forEach((voice) => {
-        voice.lfo.frequency.setTargetAtTime(freq, this.ctx!.currentTime, 0.5);
-      });
-    }
-  }
-
-  /**
-   * Replace current isochronic tones
-   */
-  setIsochronicTones(tones: IsochronicTone[]): void {
-    this.config.isochronicTones = tones;
-
-    // If isochronic is currently playing, rebuild voices
-    if (this.isEntrainmentPlaying && this.config.entrainmentType === 'isochronic') {
-      const now = this.ctx ? this.ctx.currentTime : 0;
-      this.startIsochronic(now);
-    }
-  }
-
-  /**
-   * Apply an isochronic preset
-   */
-  applyIsochronicPreset(name: IsochronicPresetName): void {
-    const preset = ISOCHRONIC_PRESETS[name];
-    if (!preset) return;
-
-    // Generate ids for tones
-    const tones: IsochronicTone[] = preset.tones.map((t, index) => ({
-      ...t,
-      id: `${name}-${index}`,
-    }));
-
-    this.setIsochronicTones(tones);
-  }
-
-  /**
-   * Update a single isochronic tone
-   */
-  updateIsochronicTone(id: string, partial: Partial<IsochronicTone>): void {
-    this.setIsochronicTones(
-      this.config.isochronicTones.map((tone) =>
-        tone.id === id ? { ...tone, ...partial } : tone
-      )
-    );
-  }
-
-  /**
-   * Stop and clean up all isochronic voices (with fade out)
-   */
-  private stopIsochronicVoices(): void {
-    if (!this.ctx || this.isochronicVoices.length === 0) return;
-
-    const now = this.ctx.currentTime;
-    const voicesToStop = [...this.isochronicVoices];
-    this.isochronicVoices = [];
-    
-    voicesToStop.forEach(({ osc, lfo, toneGain }) => {
-      toneGain.gain.setTargetAtTime(0, now, 0.2);
-      try {
-        osc.stop(now + 0.25);
-        lfo.stop(now + 0.25);
-      } catch {
-        // ignore double-stop
-      }
-    });
   }
 
   /**
@@ -662,6 +695,29 @@ export class AudioEngine {
   }
 
   /**
+   * Get coherence state
+   */
+  getCoherenceState(): CoherenceState {
+    return this.coherenceState;
+  }
+
+  /**
+   * Get coherence metrics
+   */
+  getCoherenceMetrics(): CoherenceMetrics {
+    // Update current streak if in coherent state
+    if (this.coherenceState === 'coherent' && this.currentCoherentStreakStart) {
+      const currentStreak = (Date.now() - this.currentCoherentStreakStart) / 1000;
+      // Don't update metrics yet, but return it in the current streak
+      return {
+        ...this.metrics,
+        // Note: longestCoherentStreakSeconds is only updated when coherent state ends
+      };
+    }
+    return { ...this.metrics };
+  }
+
+  /**
    * Check if entrainment is playing
    */
   get entrainmentPlaying(): boolean {
@@ -669,32 +725,26 @@ export class AudioEngine {
   }
 
   /**
-   * Check if reward is playing
+   * Check if reward is playing (always false - kept for backward compatibility)
    */
   get rewardPlaying(): boolean {
-    return this.isRewardPlaying;
+    return false; // Oscillator-based rewards disabled
   }
 
   /**
    * Clean up
    */
   dispose(): void {
+    this.stopSession();
     this.stopEntrainment();
-    this.stopReward();
-
-    // Cancel any pending timeouts
-    if (this.rewardStopTimeout) {
-      clearTimeout(this.rewardStopTimeout);
-      this.rewardStopTimeout = null;
-    }
-
-    // Immediate cleanup
-    this.cleanupRewardOscillators();
 
     if (this.ctx) {
       this.ctx.close();
       this.ctx = null;
     }
+
+    this.isAudioLoaded = false;
+    this.isSessionActive = false;
   }
 }
 

@@ -1,37 +1,28 @@
 // React hook for audio engine control
 
 import { useState, useCallback, useEffect } from 'react';
-import { audioEngine, BINAURAL_PRESETS, ISOCHRONIC_PRESETS } from '../lib/audio-engine';
+import { audioEngine, BINAURAL_PRESETS } from '../lib/audio-engine';
 import type {
   EntrainmentType,
   BinauralPresetName,
-  IsochronicPresetName,
-  IsochronicTone,
 } from '../types';
+import type { CoherenceState, CoherenceMetrics } from '../lib/audio-engine';
 
 export interface UseAudioReturn {
-  entrainmentType: EntrainmentType;
+  entrainmentType: EntrainmentType; // Kept for internal state but not exposed in UI
   entrainmentEnabled: boolean;
   entrainmentVolume: number;
   binauralPreset: BinauralPresetName;
-  binauralBeatFreq: number;
-  binauralCarrierFreq: number;
-  isochronicPreset: IsochronicPresetName;
-  isochronicTones: IsochronicTone[];
-  isRewardPlaying: boolean;
-  setEntrainmentType: (type: EntrainmentType) => void;
+  binauralBeatFreq: number; // Kept for internal state
+  binauralCarrierFreq: number; // Kept for internal state
+  isRewardPlaying: boolean; // Kept for backward compatibility (always false)
+  coherenceState: CoherenceState;
+  coherenceMetrics: CoherenceMetrics;
   setEntrainmentEnabled: (enabled: boolean) => void;
   setEntrainmentVolume: (volume: number) => void;
   setBinauralPreset: (preset: BinauralPresetName) => void;
-  setBinauralBeatFreq: (freq: number) => void;
-  setBinauralCarrierFreq: (freq: number) => void;
-  setIsochronicPreset: (preset: IsochronicPresetName) => void;
-  setIsochronicTones: (tones: IsochronicTone[]) => void;
-  addIsochronicTone: (tone: Omit<IsochronicTone, 'id'>) => void;
-  updateIsochronicTone: (id: string, partial: Partial<IsochronicTone>) => void;
-  removeIsochronicTone: (id: string) => void;
-  startReward: () => Promise<void>;
-  stopReward: () => void;
+  startReward: () => Promise<void>; // Kept for backward compatibility (no-op)
+  stopReward: () => void; // Kept for backward compatibility (no-op)
   init: () => Promise<void>;
   dispose: () => void;
 }
@@ -45,15 +36,13 @@ export function useAudio(): UseAudioReturn {
   const [entrainmentVolume, setEntrainmentVolumeState] = useState(0.3);
   const [binauralPreset, setBinauralPresetState] = useState<BinauralPresetName>('alpha');
   const [binauralBeatFreq, setBinauralBeatFreqState] = useState(10);
-  const [binauralCarrierFreq, setBinauralCarrierFreqState] = useState(200);
-  const [isochronicPreset, setIsochronicPresetState] = useState<IsochronicPresetName>('single_focus');
-  const [isochronicTones, setIsochronicTonesState] = useState<IsochronicTone[]>(
-    ISOCHRONIC_PRESETS.single_focus.tones.map((t, index) => ({
-      ...t,
-      id: `single_focus-${index}`,
-    }))
-  );
-  const [isRewardPlaying, setIsRewardPlaying] = useState(false);
+  // Initialize with tritone-down frequency (~141.42 Hz from 200 Hz)
+  const [binauralCarrierFreq, setBinauralCarrierFreqState] = useState(BINAURAL_PRESETS.alpha.carrierFrequency);
+  const [coherenceState, setCoherenceState] = useState<CoherenceState>('baseline');
+  const [coherenceMetrics, setCoherenceMetrics] = useState<CoherenceMetrics>({
+    totalCoherentSeconds: 0,
+    longestCoherentStreakSeconds: 0,
+  });
   const [isInitialized, setIsInitialized] = useState(false);
 
   const init = useCallback(async () => {
@@ -63,11 +52,21 @@ export function useAudio(): UseAudioReturn {
     }
   }, [isInitialized]);
 
+  // Update coherence state periodically
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setCoherenceState(audioEngine.getCoherenceState());
+      setCoherenceMetrics(audioEngine.getCoherenceMetrics());
+    }, 100); // Update 10 times per second
+
+    return () => clearInterval(interval);
+  }, []);
+
   const setEntrainmentType = useCallback(
     async (type: EntrainmentType) => {
       setEntrainmentTypeState(type);
       if (isInitialized && entrainmentEnabled) {
-        if (type === 'none') {
+        if (type === 'none' || type === 'isochronic') {
           audioEngine.stopEntrainment();
         } else {
           await audioEngine.startEntrainment(type);
@@ -85,17 +84,19 @@ export function useAudio(): UseAudioReturn {
       }
 
       if (enabled) {
-        // If entrainment is enabled but type is 'none', default to binaural
-        const typeToUse = entrainmentType === 'none' ? 'binaural' : entrainmentType;
-        if (entrainmentType === 'none') {
-          setEntrainmentTypeState('binaural');
+        // Always use binaural when enabled
+        setEntrainmentTypeState('binaural');
+        // Ensure alpha preset is selected by default if no valid preset
+        if (!binauralPreset || binauralPreset === 'custom' || !['delta', 'theta', 'alpha', 'beta'].includes(binauralPreset)) {
+          setBinauralPresetState('alpha');
+          audioEngine.applyBinauralPreset('alpha');
         }
-        await audioEngine.startEntrainment(typeToUse);
+        await audioEngine.startEntrainment('binaural');
       } else {
         audioEngine.stopEntrainment();
       }
     },
-    [isInitialized, entrainmentType, init]
+    [isInitialized, entrainmentType, binauralPreset, init]
   );
 
   const setEntrainmentVolume = useCallback((volume: number) => {
@@ -104,19 +105,29 @@ export function useAudio(): UseAudioReturn {
   }, []);
 
   const setBinauralPreset = useCallback((preset: BinauralPresetName) => {
+    // Only allow preset selection (no custom)
+    if (preset === 'custom' || !['delta', 'theta', 'alpha', 'beta'].includes(preset)) return;
+    
     setBinauralPresetState(preset);
-    if (preset !== 'custom') {
-      const presetConfig = BINAURAL_PRESETS[preset];
-      setBinauralBeatFreqState(presetConfig.beatFrequency);
-      setBinauralCarrierFreqState(presetConfig.carrierFrequency);
-      audioEngine.applyBinauralPreset(preset);
+    const presetConfig = BINAURAL_PRESETS[preset];
+    setBinauralBeatFreqState(presetConfig.beatFrequency);
+    setBinauralCarrierFreqState(presetConfig.carrierFrequency);
+    audioEngine.applyBinauralPreset(preset);
+    
+    // Ensure binaural is active if entrainment is enabled
+    if (entrainmentEnabled) {
+      if (entrainmentType !== 'binaural') {
+        setEntrainmentTypeState('binaural');
+      }
+      audioEngine.startEntrainment('binaural');
     }
-  }, []);
+  }, [entrainmentEnabled, entrainmentType]);
 
+  // Custom frequency setter removed - only presets are used
+  // This method kept for backward compatibility but does nothing
   const setBinauralBeatFreq = useCallback((freq: number) => {
+    // Disabled - only presets are available
     setBinauralBeatFreqState(freq);
-    setBinauralPresetState('custom');
-    audioEngine.setBinauralBeatFreq(freq);
   }, []);
 
   const setBinauralCarrierFreq = useCallback((freq: number) => {
@@ -124,62 +135,15 @@ export function useAudio(): UseAudioReturn {
     audioEngine.setBinauralCarrierFreq(freq);
   }, []);
 
-  const setIsochronicPreset = useCallback((preset: IsochronicPresetName) => {
-    setIsochronicPresetState(preset);
-    const presetConfig = ISOCHRONIC_PRESETS[preset];
-    if (!presetConfig) return;
-
-    const tones: IsochronicTone[] = presetConfig.tones.map((t, index) => ({
-      ...t,
-      id: `${preset}-${index}`,
-    }));
-
-    setIsochronicTonesState(tones);
-    audioEngine.applyIsochronicPreset(preset);
-  }, []);
-
-  const setIsochronicTones = useCallback((tones: IsochronicTone[]) => {
-    setIsochronicTonesState(tones);
-    audioEngine.setIsochronicTones(tones);
-  }, []);
-
-  const addIsochronicTone = useCallback((tone: Omit<IsochronicTone, 'id'>) => {
-    setIsochronicPresetState('single_focus');
-    setIsochronicTonesState((prev) => {
-      const id = `custom-${Date.now()}-${prev.length}`;
-      const updated = [...prev, { ...tone, id }];
-      audioEngine.setIsochronicTones(updated);
-      return updated;
-    });
-  }, []);
-
-  const updateIsochronicTone = useCallback((id: string, partial: Partial<IsochronicTone>) => {
-    setIsochronicTonesState((prev) => {
-      const updated = prev.map((tone) => (tone.id === id ? { ...tone, ...partial } : tone));
-      audioEngine.setIsochronicTones(updated);
-      return updated;
-    });
-  }, []);
-
-  const removeIsochronicTone = useCallback((id: string) => {
-    setIsochronicTonesState((prev) => {
-      const updated = prev.filter((tone) => tone.id !== id);
-      audioEngine.setIsochronicTones(updated);
-      return updated;
-    });
-  }, []);
-
+  // Reward methods kept for backward compatibility (no-ops)
   const startReward = useCallback(async () => {
-    if (!isInitialized) {
-      await init();
-    }
+    // Disabled - use coherence crossfade instead
     await audioEngine.startReward();
-    setIsRewardPlaying(true);
-  }, [isInitialized, init]);
+  }, []);
 
   const stopReward = useCallback(() => {
+    // Disabled - use coherence crossfade instead
     audioEngine.stopReward();
-    setIsRewardPlaying(false);
   }, []);
 
   const dispose = useCallback(() => {
@@ -195,26 +159,18 @@ export function useAudio(): UseAudioReturn {
   }, []);
 
   return {
-    entrainmentType,
+    entrainmentType, // Internal state only
     entrainmentEnabled,
     entrainmentVolume,
     binauralPreset,
-    binauralBeatFreq,
-    binauralCarrierFreq,
-    isochronicPreset,
-    isochronicTones,
-    isRewardPlaying,
-    setEntrainmentType,
+    binauralBeatFreq, // Internal state only
+    binauralCarrierFreq, // Internal state only
+    isRewardPlaying: false, // Always false - oscillator rewards disabled
+    coherenceState,
+    coherenceMetrics,
     setEntrainmentEnabled,
     setEntrainmentVolume,
     setBinauralPreset,
-    setBinauralBeatFreq,
-    setBinauralCarrierFreq,
-    setIsochronicPreset,
-    setIsochronicTones,
-    addIsochronicTone,
-    updateIsochronicTone,
-    removeIsochronicTone,
     startReward,
     stopReward,
     init,
