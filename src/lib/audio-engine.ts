@@ -136,8 +136,14 @@ export class AudioEngine {
 
     this.ctx = new AudioContext();
 
+    // Monitor audio context state changes (important for iOS)
+    this.ctx.addEventListener('statechange', () => {
+      console.log('[AudioEngine] AudioContext state changed to:', this.ctx!.state);
+    });
+
     if (this.ctx.state === 'suspended') {
       await this.ctx.resume();
+      console.log('[AudioEngine] AudioContext resumed in init, state:', this.ctx.state);
     }
 
     // Create master gain
@@ -200,12 +206,22 @@ export class AudioEngine {
       const coherenceArrayBuffer = await coherenceResponse.arrayBuffer();
       this.coherenceBuffer = await this.ctx.decodeAudioData(coherenceArrayBuffer);
 
-      // Load shimmer.mp3
-      const shimmerResponse = await fetch('/audio/shimmer.mp3');
+      // Load shimmer (try .mp3 first, fallback to .wav)
+      let shimmerResponse: Response;
+      try {
+        shimmerResponse = await fetch('/audio/shimmer.mp3');
+        if (!shimmerResponse.ok) throw new Error('shimmer.mp3 not found');
+      } catch {
+        shimmerResponse = await fetch('/audio/shimmer.wav');
+      }
       const shimmerArrayBuffer = await shimmerResponse.arrayBuffer();
       this.shimmerBuffer = await this.ctx.decodeAudioData(shimmerArrayBuffer);
 
-      console.log('[AudioEngine] Loaded audio files');
+      console.log('[AudioEngine] Loaded audio files', {
+        baseline: !!this.baselineBuffer,
+        coherence: !!this.coherenceBuffer,
+        shimmer: !!this.shimmerBuffer,
+      });
     } catch (error) {
       console.error('[AudioEngine] Failed to load audio files:', error);
       throw error;
@@ -220,11 +236,54 @@ export class AudioEngine {
       await this.init();
     }
 
-    if (this.isSessionActive) return;
+    if (this.isSessionActive) {
+      console.warn('[AudioEngine] Session already active');
+      return;
+    }
 
-    // Ensure audio context is running
-    if (this.ctx!.state === 'suspended') {
-      await this.ctx!.resume();
+    // Ensure audio context is running (critical for iOS)
+    const ctx = this.ctx!;
+    if (ctx.state === 'suspended') {
+      console.log('[AudioEngine] Audio context is suspended, attempting to resume...');
+      try {
+        await ctx.resume();
+        console.log('[AudioEngine] Audio context resumed successfully, state:', ctx.state);
+      } catch (error) {
+        console.error('[AudioEngine] Failed to resume audio context:', error);
+        throw new Error('Failed to resume audio context. User interaction may be required.');
+      }
+    }
+
+    // Double-check state after resume attempt
+    const currentState = ctx.state;
+    if (currentState !== 'running') {
+      console.warn('[AudioEngine] Audio context is not running. Current state:', currentState);
+      // Try one more time
+      try {
+        await ctx.resume();
+        const newState = ctx.state;
+        if (newState !== 'running') {
+          throw new Error(`Audio context state is ${newState} instead of 'running'`);
+        }
+      } catch (error) {
+        console.error('[AudioEngine] Audio context failed to start:', error);
+        throw error;
+      }
+    }
+
+    console.log('[AudioEngine] Audio context confirmed running, state:', ctx.state);
+
+    // Validate buffers are loaded
+    if (!this.baselineBuffer) {
+      console.error('[AudioEngine] Baseline buffer not loaded');
+      throw new Error('Baseline audio buffer not loaded');
+    }
+    if (!this.coherenceBuffer) {
+      console.error('[AudioEngine] Coherence buffer not loaded');
+      throw new Error('Coherence audio buffer not loaded');
+    }
+    if (!this.shimmerBuffer) {
+      console.warn('[AudioEngine] Shimmer buffer not loaded (will skip shimmer)');
     }
 
     // Reset metrics
@@ -245,6 +304,9 @@ export class AudioEngine {
       this.baselineSource.loop = true;
       this.baselineSource.connect(this.baselineGain);
       this.baselineSource.start(now);
+      console.log('[AudioEngine] Started baseline source');
+    } else {
+      console.error('[AudioEngine] Missing baseline buffer or gain node');
     }
 
     // Create and start coherence source (looped, muted)
@@ -254,6 +316,9 @@ export class AudioEngine {
       this.coherenceSource.loop = true;
       this.coherenceSource.connect(this.coherenceGain);
       this.coherenceSource.start(now); // Start at same time for sync
+      console.log('[AudioEngine] Started coherence source');
+    } else {
+      console.error('[AudioEngine] Missing coherence buffer or gain node');
     }
 
     // Create and start shimmer source (looped, muted)
@@ -263,19 +328,50 @@ export class AudioEngine {
       this.shimmerSource.loop = true;
       this.shimmerSource.connect(this.shimmerGain);
       this.shimmerSource.start(now); // Start at same time for sync
+      console.log('[AudioEngine] Started shimmer source');
+    } else {
+      console.warn('[AudioEngine] Skipping shimmer source (buffer not loaded)');
     }
 
     // Fade in baseline (session start)
     if (this.baselineGain) {
+      // Set initial gain to 0 immediately
+      this.baselineGain.gain.cancelScheduledValues(now);
       this.baselineGain.gain.setValueAtTime(0, now);
+      // Ramp to full volume over fade duration
       this.baselineGain.gain.linearRampToValueAtTime(
         1.0,
         now + CROSSFADE_CONSTANTS.START_FADE_SECONDS
       );
+      console.log(`[AudioEngine] Baseline gain fading in over ${CROSSFADE_CONSTANTS.START_FADE_SECONDS}s`, {
+        initialGain: 0,
+        targetGain: 1.0,
+        fadeDuration: CROSSFADE_CONSTANTS.START_FADE_SECONDS,
+      });
     }
 
     this.isSessionActive = true;
-    console.log('[AudioEngine] Session started with baseline fade-in');
+    
+    // Verify everything is set up correctly
+    const verification = {
+      contextState: this.ctx!.state,
+      baselineSource: !!this.baselineSource,
+      coherenceSource: !!this.coherenceSource,
+      shimmerSource: !!this.shimmerSource,
+      baselineGain: this.baselineGain?.gain.value,
+      coherenceGain: this.coherenceGain?.gain.value,
+      shimmerGain: this.shimmerGain?.gain.value,
+      masterGain: this.masterGain?.gain.value,
+    };
+    
+    console.log('[AudioEngine] Session started with baseline fade-in', verification);
+    
+    // Check if we can actually hear audio by checking gain chain
+    if (verification.baselineGain === 0 && verification.masterGain === 1 && verification.contextState === 'running') {
+      console.log('[AudioEngine] ✓ Audio chain is correctly configured - baseline should be audible after fade-in');
+    } else {
+      console.warn('[AudioEngine] ⚠ Potential audio configuration issue detected:', verification);
+    }
   }
 
   /**
@@ -484,6 +580,10 @@ export class AudioEngine {
     // Ensure audio context is running
     if (this.ctx!.state === 'suspended') {
       await this.ctx!.resume();
+      console.log('[AudioEngine] Resumed suspended audio context for entrainment');
+    }
+    if (this.ctx!.state === 'suspended') {
+      await this.ctx!.resume();
     }
 
     // Capture the current type before updating (for comparison)
@@ -527,7 +627,17 @@ export class AudioEngine {
    * Start binaural beats (with tritone-down frequency)
    */
   private startBinaural(now: number): void {
-    if (!this.ctx || !this.entrainmentGain) return;
+    if (!this.ctx || !this.entrainmentGain) {
+      console.error('[AudioEngine] Cannot start binaural: missing context or gain');
+      return;
+    }
+
+    // Stop existing binaural if running
+    if (this.binauralLeft || this.binauralRight) {
+      this.stopBinaural();
+      // Small delay to ensure cleanup
+      now = this.ctx.currentTime + 0.01;
+    }
 
     const { binauralCarrierFreq, binauralBeatFreq } = this.config;
 
@@ -559,6 +669,38 @@ export class AudioEngine {
 
     this.binauralLeft.start(now);
     this.binauralRight.start(now);
+    console.log('[AudioEngine] Started binaural beats', {
+      carrier: binauralCarrierFreq,
+      beat: binauralBeatFreq,
+      left: binauralCarrierFreq,
+      right: binauralCarrierFreq + binauralBeatFreq,
+    });
+  }
+
+  /**
+   * Stop binaural beats (internal helper)
+   */
+  private stopBinaural(): void {
+    if (this.binauralLeft) {
+      try {
+        this.binauralLeft.stop();
+      } catch (e) {
+        // Already stopped
+      }
+      this.binauralLeft = null;
+    }
+    if (this.binauralRight) {
+      try {
+        this.binauralRight.stop();
+      } catch (e) {
+        // Already stopped
+      }
+      this.binauralRight = null;
+    }
+    if (this.binauralMerger) {
+      this.binauralMerger.disconnect();
+      this.binauralMerger = null;
+    }
   }
 
   /**
@@ -576,23 +718,9 @@ export class AudioEngine {
       this.entrainmentGain.gain.exponentialRampToValueAtTime(0.001, now + 0.8);
     }
 
-    // Capture current oscillator references before setTimeout
-    const binauralLeftToStop = this.binauralLeft;
-    const binauralRightToStop = this.binauralRight;
-
-    // Clear references immediately
-    this.binauralLeft = null;
-    this.binauralRight = null;
-    this.binauralMerger = null;
-
-    // Stop after fade
+    // Stop binaural after fade completes
     setTimeout(() => {
-      try {
-        binauralLeftToStop?.stop();
-        binauralRightToStop?.stop();
-      } catch {
-        // Ignore if already stopped
-      }
+      this.stopBinaural();
     }, 900);
 
     this.isEntrainmentPlaying = false;

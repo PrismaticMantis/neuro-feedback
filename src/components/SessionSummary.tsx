@@ -203,34 +203,16 @@ export function SessionSummary({
   };
 
   /**
-   * Open PDF in browser for iOS (new tab or same tab)
+   * Open PDF in browser for iOS (use same tab)
    */
-  const openPdfForIos = (blob: Blob, newWindow: Window | null): void => {
+  const openPdfForIos = (blob: Blob): void => {
     const url = URL.createObjectURL(blob);
-    
-    if (newWindow && !newWindow.closed) {
-      // New tab opened successfully - navigate it to the blob URL
-      try {
-        newWindow.location.href = url;
-        // Revoke URL after a delay to allow navigation
-        setTimeout(() => {
-          URL.revokeObjectURL(url);
-        }, 2000);
-      } catch (e) {
-        // If that fails, navigate same tab
-        window.location.href = url;
-        setTimeout(() => {
-          URL.revokeObjectURL(url);
-        }, 2000);
-      }
-    } else {
-      // Popup blocked or failed - navigate same tab
-      window.location.href = url;
-      // Revoke URL after navigation
-      setTimeout(() => {
-        URL.revokeObjectURL(url);
-      }, 2000);
-    }
+    // Navigate directly to blob URL in same tab (iOS-friendly)
+    window.location.href = url;
+    // Revoke URL after navigation
+    setTimeout(() => {
+      URL.revokeObjectURL(url);
+    }, 5000);
   };
 
   /**
@@ -264,23 +246,16 @@ export function SessionSummary({
     setPdfError(null);
 
     try {
-      // Try to open new window synchronously from user gesture (for iOS)
-      // This must happen before async operations
-      const isIOSDevice = isIOS();
-      let newWindow: Window | null = null;
-      
-      if (isIOSDevice) {
-        // Create window placeholder synchronously from user gesture
-        newWindow = window.open('', '_blank');
-      }
-
       // Generate PDF (async)
       const blob = await generatePdfBlob();
 
       // Handle based on platform
+      const isIOSDevice = isIOS();
       if (isIOSDevice) {
-        openPdfForIos(blob, newWindow);
+        // iOS: Open in same tab
+        openPdfForIos(blob);
       } else {
+        // Desktop: Download file
         downloadPdfForDesktop(blob);
       }
     } catch (error) {
