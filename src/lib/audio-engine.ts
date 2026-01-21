@@ -1,5 +1,5 @@
 // Audio Engine for Entrainment and Coherence Crossfade
-// Handles WAV-based baseline/coherence crossfade, shimmer layer, and binaural beats
+// Handles MP3-based baseline/coherence crossfade, shimmer layer, and binaural beats
 
 import type {
   EntrainmentType,
@@ -81,7 +81,7 @@ export class AudioEngine {
   private ctx: AudioContext | null = null;
   private masterGain: GainNode | null = null;
 
-  // WAV buffers
+  // MP3 buffers
   private baselineBuffer: AudioBuffer | null = null;
   private coherenceBuffer: AudioBuffer | null = null;
   private shimmerBuffer: AudioBuffer | null = null;
@@ -180,28 +180,28 @@ export class AudioEngine {
     this.shimmerLimiter.connect(this.masterGain);
 
     this.isAudioLoaded = true;
-    console.log('[AudioEngine] Initialized with WAV crossfade system');
+    console.log('[AudioEngine] Initialized with MP3 crossfade system');
   }
 
   /**
-   * Load WAV audio files from /public/audio
+   * Load MP3 audio files from /public/audio
    */
   private async loadAudioFiles(): Promise<void> {
     if (!this.ctx) throw new Error('AudioContext not initialized');
 
     try {
-      // Load baseline.wav
-      const baselineResponse = await fetch('/audio/baseline.wav');
+      // Load baseline.mp3
+      const baselineResponse = await fetch('/audio/baseline.mp3');
       const baselineArrayBuffer = await baselineResponse.arrayBuffer();
       this.baselineBuffer = await this.ctx.decodeAudioData(baselineArrayBuffer);
 
-      // Load coherence.wav
-      const coherenceResponse = await fetch('/audio/coherence.wav');
+      // Load coherence.mp3
+      const coherenceResponse = await fetch('/audio/coherence.mp3');
       const coherenceArrayBuffer = await coherenceResponse.arrayBuffer();
       this.coherenceBuffer = await this.ctx.decodeAudioData(coherenceArrayBuffer);
 
-      // Load shimmer.wav
-      const shimmerResponse = await fetch('/audio/shimmer.wav');
+      // Load shimmer.mp3
+      const shimmerResponse = await fetch('/audio/shimmer.mp3');
       const shimmerArrayBuffer = await shimmerResponse.arrayBuffer();
       this.shimmerBuffer = await this.ctx.decodeAudioData(shimmerArrayBuffer);
 
