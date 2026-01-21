@@ -9,9 +9,9 @@ import type {
 
 // Crossfade constants (centralized for easy tweaking)
 const CROSSFADE_CONSTANTS = {
-  ENTER_THRESHOLD: 0.75,
-  EXIT_THRESHOLD: 0.65,
-  SUSTAIN_SECONDS: 3.0,
+  ENTER_THRESHOLD: 0.65, // Lowered from 0.75 to make it easier to trigger
+  EXIT_THRESHOLD: 0.55,  // Lowered from 0.65 to match new enter threshold
+  SUSTAIN_SECONDS: 2.0,  // Reduced from 3.0 to 2.0 seconds for faster response
   ATTACK_SECONDS: 3.5,
   RELEASE_SECONDS: 6.0,
   START_FADE_SECONDS: 4.0,
@@ -304,19 +304,19 @@ export class AudioEngine {
       this.baselineSource.loop = true;
       this.baselineSource.connect(this.baselineGain);
       this.baselineSource.start(now);
-      console.log('[AudioEngine] Started baseline source');
+      console.log('[AudioEngine] Started baseline source at', now, 'seconds, loop:', true);
     } else {
       console.error('[AudioEngine] Missing baseline buffer or gain node');
     }
 
-    // Create and start coherence source (looped, muted)
+    // Create and start coherence source (looped, muted - starts at gain 0)
     if (this.coherenceBuffer && this.coherenceGain) {
       this.coherenceSource = this.ctx!.createBufferSource();
       this.coherenceSource.buffer = this.coherenceBuffer;
       this.coherenceSource.loop = true;
       this.coherenceSource.connect(this.coherenceGain);
       this.coherenceSource.start(now); // Start at same time for sync
-      console.log('[AudioEngine] Started coherence source');
+      console.log('[AudioEngine] Started coherence source at', now, 'seconds, loop:', true, '(muted initially, gain:', this.coherenceGain.gain.value, ')');
     } else {
       console.error('[AudioEngine] Missing coherence buffer or gain node');
     }
@@ -432,7 +432,12 @@ export class AudioEngine {
    * Update coherence value (called from coherence detection)
    */
   updateCoherence(coherence: number): void {
-    if (!this.ctx || !this.isSessionActive) return;
+    if (!this.ctx || !this.isSessionActive) {
+      // Log why we're not updating (for debugging)
+      if (!this.ctx) console.warn('[AudioEngine] updateCoherence called but ctx is null');
+      if (!this.isSessionActive) console.warn('[AudioEngine] updateCoherence called but session is not active');
+      return;
+    }
 
     const now = this.ctx.currentTime;
 
@@ -449,6 +454,7 @@ export class AudioEngine {
           // Enter stabilizing phase
           this.coherenceState = 'stabilizing';
           this.coherenceEnteredAt = currentTime;
+          console.log(`[AudioEngine] ✓ Coherence ${coherence.toFixed(3)} >= ${CROSSFADE_CONSTANTS.ENTER_THRESHOLD} - Entering stabilizing phase`);
         }
         break;
 
@@ -457,6 +463,7 @@ export class AudioEngine {
           // Drop below threshold - return to baseline
           this.coherenceState = 'baseline';
           this.coherenceEnteredAt = null;
+          console.log(`[AudioEngine] ✗ Coherence ${coherence.toFixed(3)} < ${CROSSFADE_CONSTANTS.ENTER_THRESHOLD} - Dropped back to baseline`);
         } else {
           // Check if sustain time has passed
           const sustainTime = (currentTime - this.coherenceEnteredAt!) / 1000;
@@ -464,7 +471,14 @@ export class AudioEngine {
             // Enter coherent state - start crossfade
             this.coherenceState = 'coherent';
             this.currentCoherentStreakStart = currentTime;
+            console.log(`[AudioEngine] ✓✓ Sustained coherence for ${sustainTime.toFixed(1)}s - Entering coherent state and starting crossfade NOW`);
             this.startCrossfadeToCoherence(now);
+          } else {
+            // Log progress while stabilizing (every 0.5 seconds)
+            const progressSeconds = Math.floor(sustainTime * 2) / 2; // Round to 0.5s
+            if (progressSeconds !== Math.floor((sustainTime - 0.1) * 2) / 2) {
+              console.log(`[AudioEngine] Stabilizing: coherence ${coherence.toFixed(3)}, ${sustainTime.toFixed(1)}s / ${CROSSFADE_CONSTANTS.SUSTAIN_SECONDS}s`);
+            }
           }
         }
         break;
@@ -480,6 +494,7 @@ export class AudioEngine {
             if (streakDuration > this.metrics.longestCoherentStreakSeconds) {
               this.metrics.longestCoherentStreakSeconds = streakDuration;
             }
+            console.log(`[AudioEngine] ✗ Coherence ${coherence.toFixed(3)} <= ${CROSSFADE_CONSTANTS.EXIT_THRESHOLD} - Exiting coherent state after ${streakDuration.toFixed(1)}s, crossfading to baseline`);
           }
           this.currentCoherentStreakStart = null;
           this.startCrossfadeToBaseline(now);
@@ -521,7 +536,13 @@ export class AudioEngine {
       now + CROSSFADE_CONSTANTS.ATTACK_SECONDS
     );
 
-    console.log('[AudioEngine] Crossfading to coherence');
+    console.log('[AudioEngine] 🎵 CROSSFADING TO COHERENCE 🎵', {
+      baselineGain: `${currentBaseline.toFixed(3)} -> 0.000`,
+      coherenceGain: `${currentCoherence.toFixed(3)} -> 1.000`,
+      attackSeconds: CROSSFADE_CONSTANTS.ATTACK_SECONDS,
+      bothTracksPlaying: true,
+      note: 'Both baseline and coherence tracks are playing simultaneously during crossfade',
+    });
   }
 
   /**
