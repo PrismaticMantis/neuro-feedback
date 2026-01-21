@@ -62,20 +62,6 @@ export function useAudio(): UseAudioReturn {
     return () => clearInterval(interval);
   }, []);
 
-  const setEntrainmentType = useCallback(
-    async (type: EntrainmentType) => {
-      setEntrainmentTypeState(type);
-      if (isInitialized && entrainmentEnabled) {
-        if (type === 'none' || type === 'isochronic') {
-          audioEngine.stopEntrainment();
-        } else {
-          await audioEngine.startEntrainment(type);
-        }
-      }
-    },
-    [isInitialized, entrainmentEnabled]
-  );
-
   const setEntrainmentEnabled = useCallback(
     async (enabled: boolean) => {
       setEntrainmentEnabledState(enabled);
@@ -112,6 +98,7 @@ export function useAudio(): UseAudioReturn {
     const presetConfig = BINAURAL_PRESETS[preset];
     setBinauralBeatFreqState(presetConfig.beatFrequency);
     setBinauralCarrierFreqState(presetConfig.carrierFrequency);
+    // applyBinauralPreset will call setBinauralCarrierFreq and setBinauralBeatFreq internally
     audioEngine.applyBinauralPreset(preset);
     
     // Ensure binaural is active if entrainment is enabled
@@ -123,17 +110,6 @@ export function useAudio(): UseAudioReturn {
     }
   }, [entrainmentEnabled, entrainmentType]);
 
-  // Custom frequency setter removed - only presets are used
-  // This method kept for backward compatibility but does nothing
-  const setBinauralBeatFreq = useCallback((freq: number) => {
-    // Disabled - only presets are available
-    setBinauralBeatFreqState(freq);
-  }, []);
-
-  const setBinauralCarrierFreq = useCallback((freq: number) => {
-    setBinauralCarrierFreqState(freq);
-    audioEngine.setBinauralCarrierFreq(freq);
-  }, []);
 
   // Reward methods kept for backward compatibility (no-ops)
   const startReward = useCallback(async () => {

@@ -108,7 +108,6 @@ export class AudioEngine {
   // Coherence state machine
   private coherenceState: CoherenceState = 'baseline';
   private coherenceEnteredAt: number | null = null;
-  private lastCoherenceValue: number = 0;
   private currentCoherentStreakStart: number | null = null;
 
   // Metrics
@@ -118,17 +117,12 @@ export class AudioEngine {
   };
 
   // Smooth coherence strength for adaptive shimmer
-  private coherenceStrength: number = 0;
   private smoothedCoherenceStrength: number = 0;
 
   private config: AudioEngineConfig;
   private isEntrainmentPlaying = false;
-  private isRewardPlaying = false; // Kept for backward compatibility (always false)
   private isAudioLoaded = false;
   private isSessionActive = false;
-
-  // Store start time for source sync
-  private sessionStartTime: number = 0;
 
   constructor(config: Partial<AudioEngineConfig> = {}) {
     this.config = { ...DEFAULT_CONFIG, ...config };
@@ -243,7 +237,6 @@ export class AudioEngine {
     this.currentCoherentStreakStart = null;
 
     const now = this.ctx!.currentTime;
-    this.sessionStartTime = now;
 
     // Create and start baseline source (looped)
     if (this.baselineBuffer && this.baselineGain) {
@@ -346,12 +339,9 @@ export class AudioEngine {
     if (!this.ctx || !this.isSessionActive) return;
 
     const now = this.ctx.currentTime;
-    this.lastCoherenceValue = coherence;
 
-    // Calculate coherence strength for adaptive shimmer (0-1)
+    // Calculate coherence strength for adaptive shimmer (0-1) and smooth it
     const strength = Math.max(0, Math.min(1, (coherence - CROSSFADE_CONSTANTS.ENTER_THRESHOLD) / (1 - CROSSFADE_CONSTANTS.ENTER_THRESHOLD)));
-    this.coherenceStrength = strength;
-    // Smooth the strength value
     this.smoothedCoherenceStrength = this.smoothedCoherenceStrength * 0.9 + strength * 0.1;
 
     // State machine logic
@@ -615,12 +605,10 @@ export class AudioEngine {
   async startReward(): Promise<void> {
     // Disabled - oscillator-based rewards removed
     // Use coherence crossfade instead
-    this.isRewardPlaying = false;
   }
 
   stopReward(): void {
     // Disabled - oscillator-based rewards removed
-    this.isRewardPlaying = false;
   }
 
   /**
@@ -705,15 +693,8 @@ export class AudioEngine {
    * Get coherence metrics
    */
   getCoherenceMetrics(): CoherenceMetrics {
-    // Update current streak if in coherent state
-    if (this.coherenceState === 'coherent' && this.currentCoherentStreakStart) {
-      const currentStreak = (Date.now() - this.currentCoherentStreakStart) / 1000;
-      // Don't update metrics yet, but return it in the current streak
-      return {
-        ...this.metrics,
-        // Note: longestCoherentStreakSeconds is only updated when coherent state ends
-      };
-    }
+    // Metrics are updated when coherent state ends
+    // Note: longestCoherentStreakSeconds is only updated when coherent state ends
     return { ...this.metrics };
   }
 
