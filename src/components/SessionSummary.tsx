@@ -1,10 +1,12 @@
 // Session Summary Screen Component with PDF Export
 
 import { useState } from 'react';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { jsPDF } from 'jspdf';
 import type { Session, SessionStats, User } from '../types';
 import { formatTime } from '../lib/storage';
+import { ShareProgress } from './ShareProgress';
+import { sendSessionReportEmail } from '../lib/email-service';
 
 interface SessionSummaryProps {
   session: Session;
@@ -32,6 +34,8 @@ export function SessionSummary({
 }: SessionSummaryProps) {
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
   const [pdfError, setPdfError] = useState<string | null>(null);
+  const [showShareProgress, setShowShareProgress] = useState(false);
+  const [pdfBlob, setPdfBlob] = useState<Blob | null>(null);
 
   // Draw mini graph
   const drawMiniGraph = (canvas: HTMLCanvasElement, history: number[]) => {
@@ -203,24 +207,108 @@ export function SessionSummary({
   };
 
   /**
-   * Open PDF in browser for iOS (use same tab)
+   * Share PDF using Web Share API (iOS preferred method)
    */
-  const openPdfForIos = (blob: Blob): void => {
+  const sharePdfForIos = async (blob: Blob): Promise<boolean> => {
+    console.log('[SessionSummary] Attempting Web Share API for PDF');
+    
+    // Check if Web Share API is available
+    if (!navigator.share) {
+      console.log('[SessionSummary] Web Share API not available');
+      return false;
+    }
+
+    // Check if Web Share API supports files (iOS 13+)
+    // Note: We can't directly check for files support, but we can try and catch
+    const supportsFiles = 'canShare' in navigator 
+      ? navigator.canShare({ files: [] as File[] })
+      : true; // Assume support if canShare doesn't exist (older API)
+    
+    console.log('[SessionSummary] Web Share API file support check:', supportsFiles);
+
+    try {
+      const filename = `session-report-${new Date().toISOString().split('T')[0]}.pdf`;
+      const file = new File([blob], filename, { type: 'application/pdf' });
+      
+      console.log('[SessionSummary] Creating File object for share', {
+        filename,
+        size: blob.size,
+        type: blob.type,
+        sizeKB: Math.round(blob.size / 1024),
+      });
+
+      // Prepare share data
+      const shareData: ShareData = {
+        files: [file],
+        title: 'Session Report',
+        text: `Neuro-Somatic Feedback Session Report - ${user.name}`,
+      };
+
+      // Check if we can share this data (if canShare is available)
+      if ('canShare' in navigator && !navigator.canShare(shareData)) {
+        console.log('[SessionSummary] canShare returned false - files not supported');
+        return false;
+      }
+
+      // Web Share API with file support (iOS 13+)
+      console.log('[SessionSummary] Calling navigator.share...');
+      await navigator.share(shareData);
+
+      console.log('[SessionSummary] Web Share API succeeded');
+      return true;
+    } catch (error) {
+      // User cancelled or share failed
+      if (error instanceof Error) {
+        if (error.name === 'AbortError') {
+          console.log('[SessionSummary] User cancelled share');
+        } else if (error.name === 'NotAllowedError') {
+          console.error('[SessionSummary] Share not allowed - user gesture chain broken?');
+        } else {
+          console.error('[SessionSummary] Web Share API failed:', error.name, error.message);
+        }
+      } else {
+        console.error('[SessionSummary] Web Share API failed with unknown error:', error);
+      }
+      return false;
+    }
+  };
+
+  /**
+   * Open PDF in new tab (iOS fallback)
+   */
+  const openPdfInNewTab = (blob: Blob): void => {
+    console.log('[SessionSummary] Opening PDF in new tab');
+    
     const url = URL.createObjectURL(blob);
-    // Navigate directly to blob URL in same tab (iOS-friendly)
-    window.location.href = url;
-    // Revoke URL after navigation
+    console.log('[SessionSummary] Created blob URL:', url.substring(0, 50) + '...');
+    
+    // Open in new tab - must be called directly from user gesture
+    const newWindow = window.open(url, '_blank');
+    
+    if (!newWindow) {
+      console.error('[SessionSummary] window.open was blocked - popup blocker?');
+      throw new Error('Popup blocked. Please allow popups for this site.');
+    }
+    
+    console.log('[SessionSummary] Opened new window successfully');
+    
+    // Revoke URL after a delay (give browser time to load)
     setTimeout(() => {
       URL.revokeObjectURL(url);
-    }, 5000);
+      console.log('[SessionSummary] Revoked blob URL');
+    }, 10000);
   };
 
   /**
    * Download PDF for desktop browsers
    */
   const downloadPdfForDesktop = (blob: Blob): void => {
+    console.log('[SessionSummary] Downloading PDF for desktop');
+    
     const url = URL.createObjectURL(blob);
     const filename = `session-report-${new Date().toISOString().split('T')[0]}.pdf`;
+    
+    console.log('[SessionSummary] Created download link', { filename, url: url.substring(0, 50) + '...' });
     
     // Create temporary anchor element
     const link = document.createElement('a');
@@ -229,12 +317,14 @@ export function SessionSummary({
     link.style.display = 'none';
     
     document.body.appendChild(link);
+    console.log('[SessionSummary] Triggering download click');
     link.click();
     
     // Clean up
     setTimeout(() => {
       document.body.removeChild(link);
       URL.revokeObjectURL(url);
+      console.log('[SessionSummary] Cleaned up download link');
     }, 100);
   };
 
@@ -242,24 +332,37 @@ export function SessionSummary({
    * Export PDF report handler
    */
   const exportPDF = async () => {
+    console.log('[SessionSummary] ===== PDF EXPORT STARTED =====');
+    console.log('[SessionSummary] User agent:', navigator.userAgent);
+    console.log('[SessionSummary] Platform:', navigator.platform);
+    console.log('[SessionSummary] Is iOS:', isIOS());
+    
     setIsGeneratingPdf(true);
     setPdfError(null);
 
     try {
-      // Generate PDF (async)
+      // Step 1: Generate PDF blob
+      console.log('[SessionSummary] Step 1: Generating PDF blob...');
       const blob = await generatePdfBlob();
+      console.log('[SessionSummary] Step 1: PDF blob created', {
+        size: blob.size,
+        type: blob.type,
+        sizeKB: Math.round(blob.size / 1024),
+      });
 
-      // Handle based on platform
-      const isIOSDevice = isIOS();
-      if (isIOSDevice) {
-        // iOS: Open in same tab
-        openPdfForIos(blob);
-      } else {
-        // Desktop: Download file
-        downloadPdfForDesktop(blob);
-      }
+      // Store blob for email sharing
+      setPdfBlob(blob);
+
+      // Step 2: Show share progress modal (user can choose email or download)
+      console.log('[SessionSummary] Step 2: Showing share progress modal');
+      setShowShareProgress(true);
     } catch (error) {
-      console.error('[SessionSummary] PDF export failed:', error);
+      console.error('[SessionSummary] ===== PDF EXPORT FAILED =====');
+      console.error('[SessionSummary] Error details:', error);
+      if (error instanceof Error) {
+        console.error('[SessionSummary] Error stack:', error.stack);
+      }
+      
       const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
       setPdfError(errorMessage);
       
@@ -269,7 +372,36 @@ export function SessionSummary({
       }, 5000);
     } finally {
       setIsGeneratingPdf(false);
+      console.log('[SessionSummary] ===== PDF EXPORT COMPLETE =====');
     }
+  };
+
+  // Handle sending email
+  const handleSendEmail = async (email: string) => {
+    console.log('[SessionSummary] Sending email to:', email);
+    await sendSessionReportEmail(email, session, stats, pdfBlob || undefined);
+  };
+
+  // Handle download PDF (from ShareProgress)
+  const handleDownloadPdf = async () => {
+    if (!pdfBlob) {
+      // Generate PDF if not already generated
+      await exportPDF();
+      return;
+    }
+
+    // Use existing download logic
+    const isIOSDevice = isIOS();
+    if (isIOSDevice) {
+      // Try Web Share API first
+      const shareSucceeded = await sharePdfForIos(pdfBlob);
+      if (!shareSucceeded) {
+        openPdfInNewTab(pdfBlob);
+      }
+    } else {
+      downloadPdfForDesktop(pdfBlob);
+    }
+    setShowShareProgress(false);
   };
 
   // Draw mini graph on mount
@@ -399,6 +531,19 @@ export function SessionSummary({
           </button>
         </div>
       </footer>
+
+      {/* Share Progress Modal */}
+      <AnimatePresence>
+        {showShareProgress && (
+          <ShareProgress
+            session={session}
+            stats={stats}
+            onSendEmail={handleSendEmail}
+            onDownloadPdf={handleDownloadPdf}
+            onCancel={() => setShowShareProgress(false)}
+          />
+        )}
+      </AnimatePresence>
     </motion.div>
   );
 }

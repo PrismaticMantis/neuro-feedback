@@ -18,6 +18,17 @@ const CROSSFADE_CONSTANTS = {
   SHIMMER_BASE_GAIN: 0.10,
   SHIMMER_MAX_GAIN: 0.25,
   SHIMMER_RANGE: 0.15, // max - base
+  SHIMMER_FADE_IN_SECONDS: 4.0,  // Smooth fade-in time for shimmer
+  SHIMMER_FADE_OUT_SECONDS: 5.0,  // Smooth fade-out time for shimmer
+  SHIMMER_FADE_OUT_DELAY_SECONDS: 1.0, // Delay before starting fade-out (hysteresis)
+  SHIMMER_UPDATE_SMOOTH_SECONDS: 0.8, // Smooth update time for shimmer gain changes
+  // Fog effect constants (active mind sustain gating)
+  ACTIVE_SUSTAIN_SECONDS: 3.0, // Must be non-coherent for this long before fog appears
+  FOG_LEVEL: 0.35, // Fog gain level (0-1)
+  FOG_ATTACK_SECONDS: 3.0, // Fog fade-in time
+  FOG_RELEASE_SECONDS: 4.0, // Fog fade-out time
+  FOG_LOWPASS_OPEN: 18000, // Lowpass frequency when fog is off (Hz)
+  FOG_LOWPASS_CLOSED: 5000, // Lowpass frequency when fog is on (Hz)
 };
 
 // Binaural beat presets (carrier frequencies transposed down a tritone)
@@ -99,6 +110,10 @@ export class AudioEngine {
   // Shimmer limiter
   private shimmerLimiter: DynamicsCompressorNode | null = null;
 
+  // Fog effect nodes (active mind effect)
+  private fogGain: GainNode | null = null;
+  private fogLowpass: BiquadFilterNode | null = null;
+
   // Entrainment nodes (binaural only)
   private entrainmentGain: GainNode | null = null;
   private binauralLeft: OscillatorNode | null = null;
@@ -118,11 +133,20 @@ export class AudioEngine {
 
   // Smooth coherence strength for adaptive shimmer
   private smoothedCoherenceStrength: number = 0;
+  
+  // Shimmer fade-out tracking (to prevent abrupt cutouts)
+  private shimmerFadeOutStartTime: number | null = null;
+  private shimmerTargetGain: number = 0;
+
+  // Fog effect tracking (active mind sustain gating)
+  private activeMindEnteredAt: number | null = null; // When non-coherent state started
+  private fogEnabled: boolean = false; // Whether fog is currently active
 
   private config: AudioEngineConfig;
   private isEntrainmentPlaying = false;
   private isAudioLoaded = false;
   private isSessionActive = false;
+  private sourcesStarted = false; // Guard to prevent multiple starts
 
   constructor(config: Partial<AudioEngineConfig> = {}) {
     this.config = { ...DEFAULT_CONFIG, ...config };
@@ -185,6 +209,24 @@ export class AudioEngine {
     this.shimmerGain.connect(this.shimmerLimiter);
     this.shimmerLimiter.connect(this.masterGain);
 
+    // Create fog effect nodes (lowpass filter + gain)
+    this.fogLowpass = this.ctx.createBiquadFilter();
+    this.fogLowpass.type = 'lowpass';
+    this.fogLowpass.frequency.value = CROSSFADE_CONSTANTS.FOG_LOWPASS_OPEN; // Start open (no fog)
+    this.fogLowpass.Q.value = 1.0;
+
+    this.fogGain = this.ctx.createGain();
+    this.fogGain.gain.value = 1.0; // Start at 1.0 (full pass-through, no fog effect)
+
+    // Fog chain: master -> fogLowpass -> fogGain -> destination
+    // Route master output through fog filter chain
+    // fogGain controls fog intensity: 1.0 = no fog, FOG_LEVEL = full fog
+    // lowpass frequency creates the muffled effect
+    this.masterGain.disconnect(); // Disconnect from destination
+    this.masterGain.connect(this.fogLowpass);
+    this.fogLowpass.connect(this.fogGain);
+    this.fogGain.connect(this.ctx.destination);
+
     this.isAudioLoaded = true;
     console.log('[AudioEngine] Initialized with MP3 crossfade system');
   }
@@ -201,8 +243,8 @@ export class AudioEngine {
       const baselineArrayBuffer = await baselineResponse.arrayBuffer();
       this.baselineBuffer = await this.ctx.decodeAudioData(baselineArrayBuffer);
 
-      // Load coherence.mp3
-      const coherenceResponse = await fetch('/audio/coherence.mp3');
+      // Load coherence-v2.mp3
+      const coherenceResponse = await fetch('/audio/coherence-v2.mp3');
       const coherenceArrayBuffer = await coherenceResponse.arrayBuffer();
       this.coherenceBuffer = await this.ctx.decodeAudioData(coherenceArrayBuffer);
 
@@ -273,6 +315,12 @@ export class AudioEngine {
 
     console.log('[AudioEngine] Audio context confirmed running, state:', ctx.state);
 
+    // Guard: prevent multiple starts
+    if (this.sourcesStarted) {
+      console.warn('[AudioEngine] Sources already started, skipping');
+      return;
+    }
+
     // Validate buffers are loaded
     if (!this.baselineBuffer) {
       console.error('[AudioEngine] Baseline buffer not loaded');
@@ -294,56 +342,99 @@ export class AudioEngine {
     this.coherenceState = 'baseline';
     this.coherenceEnteredAt = null;
     this.currentCoherentStreakStart = null;
+    this.shimmerFadeOutStartTime = null;
+    this.shimmerTargetGain = 0;
+    // Reset fog tracking
+    this.activeMindEnteredAt = null;
+    this.fogEnabled = false;
 
-    const now = this.ctx!.currentTime;
+    // CRITICAL: Capture start time AFTER all async operations and with iOS-safe offset
+    // Use small offset (0.1s) to avoid iOS start glitches and ensure context is fully ready
+    const currentTime = this.ctx!.currentTime;
+    const startOffset = 0.1; // 100ms offset for iOS compatibility
+    const t0 = currentTime + startOffset;
 
-    // Create and start baseline source (looped)
+    console.log('[AudioEngine] Sample-sync timing:', {
+      currentTime,
+      startOffset,
+      t0,
+      contextState: ctx.state,
+      note: 'Both baseline and coherence will start at t0 for perfect sync',
+    });
+
+    // Create and configure baseline source (looped, playbackRate = 1)
     if (this.baselineBuffer && this.baselineGain) {
       this.baselineSource = this.ctx!.createBufferSource();
       this.baselineSource.buffer = this.baselineBuffer;
       this.baselineSource.loop = true;
+      this.baselineSource.playbackRate.value = 1.0; // Explicitly set to 1 for sync
       this.baselineSource.connect(this.baselineGain);
-      this.baselineSource.start(now);
-      console.log('[AudioEngine] Started baseline source at', now, 'seconds, loop:', true);
+      console.log('[AudioEngine] Created baseline source', {
+        loop: true,
+        playbackRate: this.baselineSource.playbackRate.value,
+        bufferDuration: this.baselineBuffer.duration,
+      });
     } else {
       console.error('[AudioEngine] Missing baseline buffer or gain node');
+      throw new Error('Cannot create baseline source');
     }
 
-    // Create and start coherence source (looped, muted - starts at gain 0)
+    // Create and configure coherence source (looped, playbackRate = 1)
     if (this.coherenceBuffer && this.coherenceGain) {
       this.coherenceSource = this.ctx!.createBufferSource();
       this.coherenceSource.buffer = this.coherenceBuffer;
       this.coherenceSource.loop = true;
+      this.coherenceSource.playbackRate.value = 1.0; // Explicitly set to 1 for sync
       this.coherenceSource.connect(this.coherenceGain);
-      this.coherenceSource.start(now); // Start at same time for sync
-      console.log('[AudioEngine] Started coherence source at', now, 'seconds, loop:', true, '(muted initially, gain:', this.coherenceGain.gain.value, ')');
+      console.log('[AudioEngine] Created coherence source', {
+        loop: true,
+        playbackRate: this.coherenceSource.playbackRate.value,
+        bufferDuration: this.coherenceBuffer.duration,
+      });
     } else {
       console.error('[AudioEngine] Missing coherence buffer or gain node');
+      throw new Error('Cannot create coherence source');
     }
 
-    // Create and start shimmer source (looped, muted)
+    // CRITICAL: Start both sources atomically with the SAME t0 reference
+    // This ensures perfect sample-level sync - both tracks start at exact same AudioContext time
+    this.baselineSource.start(t0);
+    this.coherenceSource.start(t0);
+    this.sourcesStarted = true;
+
+    console.log('[AudioEngine] ✓✓✓ BOTH SOURCES STARTED AT SAME TIME t0 =', t0, '✓✓✓', {
+      baselineStarted: true,
+      coherenceStarted: true,
+      syncTime: t0,
+      timeDifference: 0,
+      note: 'Perfect sample-sync achieved - both tracks running simultaneously',
+    });
+
+    // Create and start shimmer source (looped, muted) - also at t0 for sync
     if (this.shimmerBuffer && this.shimmerGain) {
       this.shimmerSource = this.ctx!.createBufferSource();
       this.shimmerSource.buffer = this.shimmerBuffer;
       this.shimmerSource.loop = true;
+      this.shimmerSource.playbackRate.value = 1.0;
       this.shimmerSource.connect(this.shimmerGain);
-      this.shimmerSource.start(now); // Start at same time for sync
-      console.log('[AudioEngine] Started shimmer source');
+      this.shimmerSource.start(t0); // Start at same time for sync
+      console.log('[AudioEngine] Started shimmer source at t0 =', t0);
     } else {
       console.warn('[AudioEngine] Skipping shimmer source (buffer not loaded)');
     }
 
-    // Fade in baseline (session start)
+    // Fade in baseline (session start) - use t0 for scheduling
     if (this.baselineGain) {
       // Set initial gain to 0 immediately
-      this.baselineGain.gain.cancelScheduledValues(now);
-      this.baselineGain.gain.setValueAtTime(0, now);
+      this.baselineGain.gain.cancelScheduledValues(t0);
+      this.baselineGain.gain.setValueAtTime(0, t0);
       // Ramp to full volume over fade duration
       this.baselineGain.gain.linearRampToValueAtTime(
         1.0,
-        now + CROSSFADE_CONSTANTS.START_FADE_SECONDS
+        t0 + CROSSFADE_CONSTANTS.START_FADE_SECONDS
       );
       console.log(`[AudioEngine] Baseline gain fading in over ${CROSSFADE_CONSTANTS.START_FADE_SECONDS}s`, {
+        startTime: t0,
         initialGain: 0,
         targetGain: 1.0,
         fadeDuration: CROSSFADE_CONSTANTS.START_FADE_SECONDS,
@@ -400,10 +491,11 @@ export class AudioEngine {
     }
 
     if (this.shimmerGain) {
-      const currentGain = this.shimmerGain.gain.value;
+      const currentGain = Math.max(0.001, this.shimmerGain.gain.value);
       this.shimmerGain.gain.cancelScheduledValues(now);
       this.shimmerGain.gain.setValueAtTime(currentGain, now);
-      this.shimmerGain.gain.linearRampToValueAtTime(0, now + fadeTime);
+      // Use consistent fade-out time for shimmer
+      this.shimmerGain.gain.linearRampToValueAtTime(0.001, now + CROSSFADE_CONSTANTS.SHIMMER_FADE_OUT_SECONDS);
     }
 
     // Stop sources after fade
@@ -418,12 +510,22 @@ export class AudioEngine {
       this.baselineSource = null;
       this.coherenceSource = null;
       this.shimmerSource = null;
+      this.sourcesStarted = false; // Reset guard for next session
     }, (fadeTime + 0.1) * 1000);
+
+    // Fade out fog if active
+    if (this.fogGain && this.fogLowpass && this.fogEnabled) {
+      this.fadeOutFog(now);
+    }
 
     this.isSessionActive = false;
     this.coherenceState = 'baseline';
     this.coherenceEnteredAt = null;
     this.currentCoherentStreakStart = null;
+    this.sourcesStarted = false; // Reset guard
+    // Reset fog tracking
+    this.activeMindEnteredAt = null;
+    this.fogEnabled = false;
 
     console.log('[AudioEngine] Session stopped');
   }
@@ -454,7 +556,20 @@ export class AudioEngine {
           // Enter stabilizing phase
           this.coherenceState = 'stabilizing';
           this.coherenceEnteredAt = currentTime;
+          // Reset active mind timer - coherence is returning
+          if (this.activeMindEnteredAt !== null) {
+            this.activeMindEnteredAt = null;
+            console.log('[AudioEngine] Coherence returning - resetting active mind timer');
+          }
+          // Fade out fog if it was enabled
+          if (this.fogEnabled) {
+            this.fadeOutFog(now);
+            this.fogEnabled = false;
+          }
           console.log(`[AudioEngine] ✓ Coherence ${coherence.toFixed(3)} >= ${CROSSFADE_CONSTANTS.ENTER_THRESHOLD} - Entering stabilizing phase`);
+        } else {
+          // Still in baseline (non-coherent) - track active mind sustain
+          this.updateActiveMindSustain(currentTime, now);
         }
         break;
 
@@ -463,8 +578,19 @@ export class AudioEngine {
           // Drop below threshold - return to baseline
           this.coherenceState = 'baseline';
           this.coherenceEnteredAt = null;
+          // Start tracking active mind sustain
+          this.updateActiveMindSustain(currentTime, now);
           console.log(`[AudioEngine] ✗ Coherence ${coherence.toFixed(3)} < ${CROSSFADE_CONSTANTS.ENTER_THRESHOLD} - Dropped back to baseline`);
         } else {
+          // Still stabilizing - coherence is present, so reset active mind timer
+          if (this.activeMindEnteredAt !== null) {
+            this.activeMindEnteredAt = null;
+          }
+          // Fade out fog if it was enabled
+          if (this.fogEnabled) {
+            this.fadeOutFog(now);
+            this.fogEnabled = false;
+          }
           // Check if sustain time has passed
           const sustainTime = (currentTime - this.coherenceEnteredAt!) / 1000;
           if (sustainTime >= CROSSFADE_CONSTANTS.SUSTAIN_SECONDS) {
@@ -485,25 +611,167 @@ export class AudioEngine {
 
       case 'coherent':
         if (coherence <= CROSSFADE_CONSTANTS.EXIT_THRESHOLD) {
-          // Drop below exit threshold - crossfade back to baseline
-          this.coherenceState = 'baseline';
-          const streakEnd = currentTime;
-          if (this.currentCoherentStreakStart) {
-            const streakDuration = (streakEnd - this.currentCoherentStreakStart) / 1000;
-            this.metrics.totalCoherentSeconds += streakDuration;
-            if (streakDuration > this.metrics.longestCoherentStreakSeconds) {
-              this.metrics.longestCoherentStreakSeconds = streakDuration;
+          // Drop below exit threshold - start fade-out delay timer
+          if (this.shimmerFadeOutStartTime === null) {
+            // Start the fade-out delay timer
+            this.shimmerFadeOutStartTime = currentTime;
+            console.log(`[AudioEngine] ⚠ Coherence ${coherence.toFixed(3)} <= ${CROSSFADE_CONSTANTS.EXIT_THRESHOLD} - Starting fade-out delay timer`);
+          } else {
+            // Check if delay has passed
+            const fadeOutDelay = (currentTime - this.shimmerFadeOutStartTime) / 1000;
+            if (fadeOutDelay >= CROSSFADE_CONSTANTS.SHIMMER_FADE_OUT_DELAY_SECONDS) {
+              // Delay has passed - crossfade back to baseline
+              this.coherenceState = 'baseline';
+              const streakEnd = currentTime;
+              if (this.currentCoherentStreakStart) {
+                const streakDuration = (streakEnd - this.currentCoherentStreakStart) / 1000;
+                this.metrics.totalCoherentSeconds += streakDuration;
+                if (streakDuration > this.metrics.longestCoherentStreakSeconds) {
+                  this.metrics.longestCoherentStreakSeconds = streakDuration;
+                }
+                console.log(`[AudioEngine] ✗ Coherence ${coherence.toFixed(3)} <= ${CROSSFADE_CONSTANTS.EXIT_THRESHOLD} for ${fadeOutDelay.toFixed(1)}s - Exiting coherent state after ${streakDuration.toFixed(1)}s, crossfading to baseline`);
+              }
+              this.currentCoherentStreakStart = null;
+              this.shimmerFadeOutStartTime = null;
+              this.startCrossfadeToBaseline(now);
+            } else {
+              // Still in delay period - keep shimmer playing but prepare for fade-out
+              // Gradually reduce shimmer gain during delay period
+              const delayProgress = fadeOutDelay / CROSSFADE_CONSTANTS.SHIMMER_FADE_OUT_DELAY_SECONDS;
+              const currentShimmerGain = this.shimmerGain?.gain.value || 0;
+              const targetGain = currentShimmerGain * (1 - delayProgress * 0.3); // Reduce by 30% during delay
+              this.shimmerTargetGain = targetGain;
+              this.updateShimmerGainSmooth(now, targetGain, 0.5);
             }
-            console.log(`[AudioEngine] ✗ Coherence ${coherence.toFixed(3)} <= ${CROSSFADE_CONSTANTS.EXIT_THRESHOLD} - Exiting coherent state after ${streakDuration.toFixed(1)}s, crossfading to baseline`);
           }
-          this.currentCoherentStreakStart = null;
-          this.startCrossfadeToBaseline(now);
         } else {
+          // Coherence recovered above exit threshold - cancel fade-out
+          if (this.shimmerFadeOutStartTime !== null) {
+            console.log(`[AudioEngine] ✓ Coherence ${coherence.toFixed(3)} recovered above ${CROSSFADE_CONSTANTS.EXIT_THRESHOLD} - Cancelling fade-out`);
+            this.shimmerFadeOutStartTime = null;
+          }
+          // Reset active mind timer - coherence is present
+          if (this.activeMindEnteredAt !== null) {
+            this.activeMindEnteredAt = null;
+          }
+          // Fade out fog if it was enabled
+          if (this.fogEnabled) {
+            this.fadeOutFog(now);
+            this.fogEnabled = false;
+          }
           // Update shimmer gain based on coherence strength
           this.updateShimmerGain(now);
         }
         break;
     }
+  }
+
+  /**
+   * Update active mind sustain timer and trigger fog if needed
+   */
+  private updateActiveMindSustain(currentTime: number, now: number): void {
+    // Start timer if not already started
+    if (this.activeMindEnteredAt === null) {
+      this.activeMindEnteredAt = currentTime;
+      console.log('[AudioEngine] Active mind state entered - starting sustain timer');
+      return;
+    }
+
+    // Check if sustain time has passed
+    const sustainTime = (currentTime - this.activeMindEnteredAt) / 1000;
+    
+    if (sustainTime >= CROSSFADE_CONSTANTS.ACTIVE_SUSTAIN_SECONDS) {
+      // Sustain completed - enable fog if not already enabled
+      if (!this.fogEnabled) {
+        this.fogEnabled = true;
+        console.log(`[AudioEngine] 🌫️ Active mind sustained for ${sustainTime.toFixed(1)}s - Enabling fog effect`);
+        this.fadeInFog(now);
+      }
+    } else {
+      // Still in sustain period - log progress occasionally
+      const progressSeconds = Math.floor(sustainTime * 2) / 2; // Round to 0.5s
+      if (progressSeconds !== Math.floor((sustainTime - 0.1) * 2) / 2) {
+        console.log(`[AudioEngine] Active mind: ${sustainTime.toFixed(1)}s / ${CROSSFADE_CONSTANTS.ACTIVE_SUSTAIN_SECONDS}s (fog will enable at ${CROSSFADE_CONSTANTS.ACTIVE_SUSTAIN_SECONDS}s)`);
+      }
+    }
+  }
+
+  /**
+   * Fade in fog effect (active mind)
+   */
+  private fadeInFog(now: number): void {
+    if (!this.fogGain || !this.fogLowpass) return;
+
+    console.log('[AudioEngine] 🌫️ Fading in fog effect');
+
+    // Cancel any existing scheduled changes
+    this.fogGain.gain.cancelScheduledValues(now);
+    this.fogLowpass.frequency.cancelScheduledValues(now);
+
+    // Get current values
+    const currentGain = this.fogGain.gain.value;
+    const currentFreq = this.fogLowpass.frequency.value;
+
+    // Fade in fog gain (from current down to FOG_LEVEL)
+    // FOG_LEVEL controls fog intensity: lower gain = more muffled/foggy effect
+    // When fog is on, gain is reduced to FOG_LEVEL to create the foggy/muffled effect
+    // Note: fogGain starts at 1.0 (no fog), ramps down to FOG_LEVEL when fog activates
+    const targetGain = CROSSFADE_CONSTANTS.FOG_LEVEL;
+    this.fogGain.gain.setValueAtTime(currentGain, now);
+    this.fogGain.gain.linearRampToValueAtTime(
+      targetGain,
+      now + CROSSFADE_CONSTANTS.FOG_ATTACK_SECONDS
+    );
+
+    // Ramp down lowpass frequency (create foggy/muffled effect)
+    this.fogLowpass.frequency.setValueAtTime(currentFreq, now);
+    this.fogLowpass.frequency.linearRampToValueAtTime(
+      CROSSFADE_CONSTANTS.FOG_LOWPASS_CLOSED,
+      now + CROSSFADE_CONSTANTS.FOG_ATTACK_SECONDS
+    );
+
+    console.log('[AudioEngine] Fog fade-in scheduled', {
+      gain: `${currentGain.toFixed(3)} -> ${targetGain.toFixed(3)}`,
+      lowpass: `${currentFreq.toFixed(0)}Hz -> ${CROSSFADE_CONSTANTS.FOG_LOWPASS_CLOSED}Hz`,
+      duration: CROSSFADE_CONSTANTS.FOG_ATTACK_SECONDS,
+    });
+  }
+
+  /**
+   * Fade out fog effect (coherence returning)
+   */
+  private fadeOutFog(now: number): void {
+    if (!this.fogGain || !this.fogLowpass) return;
+
+    console.log('[AudioEngine] 🌫️ Fading out fog effect');
+
+    // Cancel any existing scheduled changes
+    this.fogGain.gain.cancelScheduledValues(now);
+    this.fogLowpass.frequency.cancelScheduledValues(now);
+
+    // Get current values
+    const currentGain = this.fogGain.gain.value;
+    const currentFreq = this.fogLowpass.frequency.value;
+
+    // Fade out fog gain (back to 1.0 for full pass-through)
+    this.fogGain.gain.setValueAtTime(currentGain, now);
+    this.fogGain.gain.linearRampToValueAtTime(
+      1.0, // Full pass-through when fog is off
+      now + CROSSFADE_CONSTANTS.FOG_RELEASE_SECONDS
+    );
+
+    // Ramp up lowpass frequency (restore clarity)
+    this.fogLowpass.frequency.setValueAtTime(currentFreq, now);
+    this.fogLowpass.frequency.linearRampToValueAtTime(
+      CROSSFADE_CONSTANTS.FOG_LOWPASS_OPEN,
+      now + CROSSFADE_CONSTANTS.FOG_RELEASE_SECONDS
+    );
+
+    console.log('[AudioEngine] Fog fade-out scheduled', {
+      gain: `${currentGain.toFixed(3)} -> 1.000`,
+      lowpass: `${currentFreq.toFixed(0)}Hz -> ${CROSSFADE_CONSTANTS.FOG_LOWPASS_OPEN}Hz`,
+      duration: CROSSFADE_CONSTANTS.FOG_RELEASE_SECONDS,
+    });
   }
 
   /**
@@ -527,14 +795,29 @@ export class AudioEngine {
     this.coherenceGain.gain.setValueAtTime(currentCoherence, now);
     this.coherenceGain.gain.linearRampToValueAtTime(1.0, now + CROSSFADE_CONSTANTS.ATTACK_SECONDS);
 
-    // Start shimmer fade-in (after sustain)
+    // Start shimmer fade-in (smooth, after sustain)
     const shimmerTarget = CROSSFADE_CONSTANTS.SHIMMER_BASE_GAIN + 
       (this.smoothedCoherenceStrength * CROSSFADE_CONSTANTS.SHIMMER_RANGE);
-    this.shimmerGain.gain.setValueAtTime(0, now);
+    this.shimmerTargetGain = shimmerTarget;
+    
+    // Cancel any existing fade-out
+    this.shimmerFadeOutStartTime = null;
+    
+    // Smooth fade-in for shimmer
+    this.shimmerGain.gain.cancelScheduledValues(now);
+    const currentShimmerGain = Math.max(0.001, this.shimmerGain.gain.value);
+    this.shimmerGain.gain.setValueAtTime(currentShimmerGain, now);
     this.shimmerGain.gain.linearRampToValueAtTime(
       shimmerTarget,
-      now + CROSSFADE_CONSTANTS.ATTACK_SECONDS
+      now + CROSSFADE_CONSTANTS.SHIMMER_FADE_IN_SECONDS
     );
+    
+    console.log('[AudioEngine] Shimmer fading in smoothly', {
+      from: currentShimmerGain.toFixed(3),
+      to: shimmerTarget.toFixed(3),
+      targetGain: this.shimmerTargetGain.toFixed(3),
+      duration: CROSSFADE_CONSTANTS.SHIMMER_FADE_IN_SECONDS,
+    });
 
     console.log('[AudioEngine] 🎵 CROSSFADING TO COHERENCE 🎵', {
       baselineGain: `${currentBaseline.toFixed(3)} -> 0.000`,
@@ -567,9 +850,21 @@ export class AudioEngine {
     this.coherenceGain.gain.setValueAtTime(currentCoherence, now);
     this.coherenceGain.gain.linearRampToValueAtTime(0, now + CROSSFADE_CONSTANTS.RELEASE_SECONDS);
 
-    // Fade out shimmer
-    this.shimmerGain.gain.setValueAtTime(currentShimmer, now);
-    this.shimmerGain.gain.linearRampToValueAtTime(0, now + CROSSFADE_CONSTANTS.RELEASE_SECONDS);
+    // Smooth fade out shimmer (not abrupt)
+    this.shimmerGain.gain.cancelScheduledValues(now);
+    const currentShimmerGain = Math.max(0.001, currentShimmer);
+    this.shimmerGain.gain.setValueAtTime(currentShimmerGain, now);
+    this.shimmerGain.gain.linearRampToValueAtTime(
+      0.001, // Use 0.001 instead of 0 to prevent clicks
+      now + CROSSFADE_CONSTANTS.SHIMMER_FADE_OUT_SECONDS
+    );
+    this.shimmerTargetGain = 0;
+    
+    console.log('[AudioEngine] Shimmer fading out smoothly', {
+      from: currentShimmerGain.toFixed(3),
+      to: 0,
+      duration: CROSSFADE_CONSTANTS.SHIMMER_FADE_OUT_SECONDS,
+    });
 
     console.log('[AudioEngine] Crossfading to baseline');
   }
@@ -582,12 +877,29 @@ export class AudioEngine {
 
     const targetGain = CROSSFADE_CONSTANTS.SHIMMER_BASE_GAIN + 
       (this.smoothedCoherenceStrength * CROSSFADE_CONSTANTS.SHIMMER_RANGE);
+    
+    this.shimmerTargetGain = targetGain;
+    this.updateShimmerGainSmooth(now, targetGain, CROSSFADE_CONSTANTS.SHIMMER_UPDATE_SMOOTH_SECONDS);
+  }
 
-    // Smoothly transition to target
+  /**
+   * Smoothly update shimmer gain (helper method)
+   */
+  private updateShimmerGainSmooth(now: number, targetGain: number, duration: number): void {
+    if (!this.shimmerGain) return;
+
+    // Cancel any existing scheduled changes
     this.shimmerGain.gain.cancelScheduledValues(now);
-    const currentGain = this.shimmerGain.gain.value;
-    this.shimmerGain.gain.setValueAtTime(currentGain, now);
-    this.shimmerGain.gain.linearRampToValueAtTime(targetGain, now + 0.5);
+    
+    // Get current gain (use 0.001 minimum to prevent clicks)
+    const currentGain = Math.max(0.001, this.shimmerGain.gain.value);
+    const finalTargetGain = Math.max(0.001, targetGain);
+    
+    // Only update if there's a meaningful change (> 1% difference)
+    if (Math.abs(currentGain - finalTargetGain) > 0.01) {
+      this.shimmerGain.gain.setValueAtTime(currentGain, now);
+      this.shimmerGain.gain.linearRampToValueAtTime(finalTargetGain, now + duration);
+    }
   }
 
   /**

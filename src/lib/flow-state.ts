@@ -21,12 +21,23 @@ const DEFAULT_CONFIG: FlowStateConfig = {
   minVariance: 0.001, // Require some variance (not flat line)
 };
 
+// Alpha floor safeguard constants
+const BASELINE_WINDOW_MS = 15000; // 15 seconds to establish baseline alpha
+const ALPHA_FLOOR_RATIO = 0.50; // Alpha must be at least 50% of baseline
+const ALPHA_SMOOTHING = 0.1; // EMA smoothing factor for alpha power
+
 export class FlowStateDetector {
   private config: FlowStateConfig;
   private conditionMetSince: number | null = null;
   private recentAlphaValues: number[] = [];
   private recentBetaValues: number[] = [];
   private historyLength = 30; // ~1 second of data at 30fps
+
+  // Alpha floor safeguard tracking
+  private sessionStartTime: number | null = null;
+  private baselineAlphaSamples: number[] = [];
+  private baselineAlphaPower: number | null = null;
+  private smoothedAlphaPower: number | null = null;
 
   // Callbacks
   onEnterFlowState?: () => void;
@@ -44,6 +55,33 @@ export class FlowStateDetector {
    */
   update(bands: BrainwaveBands, motionLevel: number = 0, electrodeContactQuality: number = 0): FlowState {
     const now = Date.now();
+
+    // Initialize session start time on first update
+    if (this.sessionStartTime === null) {
+      this.sessionStartTime = now;
+    }
+
+    // Track baseline alpha during baseline window
+    const sessionAge = now - this.sessionStartTime;
+    if (sessionAge < BASELINE_WINDOW_MS) {
+      // Still in baseline window - accumulate alpha samples
+      this.baselineAlphaSamples.push(bands.alpha);
+    } else if (this.baselineAlphaPower === null && this.baselineAlphaSamples.length > 0) {
+      // Baseline window just ended - calculate baseline alpha
+      const sum = this.baselineAlphaSamples.reduce((a, b) => a + b, 0);
+      this.baselineAlphaPower = sum / this.baselineAlphaSamples.length;
+      // Initialize smoothed alpha with baseline
+      this.smoothedAlphaPower = this.baselineAlphaPower;
+    }
+
+    // Smooth alpha power (EMA) if baseline is established
+    if (this.baselineAlphaPower !== null) {
+      if (this.smoothedAlphaPower === null) {
+        this.smoothedAlphaPower = bands.alpha;
+      } else {
+        this.smoothedAlphaPower = this.smoothedAlphaPower * (1 - ALPHA_SMOOTHING) + bands.alpha * ALPHA_SMOOTHING;
+      }
+    }
 
     // Store recent values for variance calculation
     this.recentAlphaValues.push(bands.alpha);
@@ -81,8 +119,16 @@ export class FlowStateDetector {
     // Signal is valid only if all validity checks pass
     const signalValid = hasMinPower && hasMinVariance && hasGoodContact && hasAlpha;
 
-    // Check flow state conditions (only if signal is valid)
+    // Alpha floor safeguard (only apply after baseline is established)
+    let hasAlphaFloor = true; // Default to true if baseline not ready yet
+    if (this.baselineAlphaPower !== null && this.smoothedAlphaPower !== null) {
+      const alphaFloor = this.baselineAlphaPower * ALPHA_FLOOR_RATIO;
+      hasAlphaFloor = this.smoothedAlphaPower >= alphaFloor;
+    }
+
+    // Check flow state conditions (only if signal is valid and alpha floor is met)
     const conditionsMet = signalValid &&
+      hasAlphaFloor &&
       betaAlphaRatio < this.config.betaAlphaRatioThreshold &&
       signalVariance < this.config.varianceThreshold &&
       noiseLevel < this.config.noiseThreshold;
@@ -136,6 +182,11 @@ export class FlowStateDetector {
     this._isActive = false;
     this.recentAlphaValues = [];
     this.recentBetaValues = [];
+    // Reset alpha floor tracking
+    this.sessionStartTime = null;
+    this.baselineAlphaSamples = [];
+    this.baselineAlphaPower = null;
+    this.smoothedAlphaPower = null;
   }
 
   /**

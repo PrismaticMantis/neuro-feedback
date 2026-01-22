@@ -65,6 +65,9 @@ export function useSession(): UseSessionReturn {
   const flowStateStartRef = useRef<number | null>(null);
   const lastCoherenceTimeRef = useRef<number>(0);
   const durationIntervalRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
+  // Refs to track current values for accurate endSession calculation
+  const flowStateTimeRef = useRef<number>(0);
+  const longestStreakRef = useRef<number>(0);
 
   // Update duration every second
   useEffect(() => {
@@ -114,6 +117,8 @@ export function useSession(): UseSessionReturn {
     setCoherenceHistory([]);
     setIsSessionActive(true);
     flowStateStartRef.current = null;
+    flowStateTimeRef.current = 0;
+    longestStreakRef.current = 0;
     lastCoherenceTimeRef.current = now;
     setScreen('session');
   }, []);
@@ -127,6 +132,22 @@ export function useSession(): UseSessionReturn {
     const endTime = Date.now();
     const duration = endTime - sessionStartTime;
 
+    // CRITICAL FIX: Add final flow period if session ends while still in flow state
+    let finalFlowStateTime = flowStateTimeRef.current;
+    let finalLongestStreak = longestStreakRef.current;
+    
+    if (flowStateStartRef.current !== null) {
+      // User is still in flow state - add the final period
+      const finalTimeSpent = endTime - flowStateStartRef.current;
+      finalFlowStateTime = flowStateTimeRef.current + finalTimeSpent;
+      
+      // Update longest streak if this final period is longer
+      const finalStreak = endTime - flowStateStartRef.current;
+      if (finalStreak > longestStreakRef.current) {
+        finalLongestStreak = finalStreak;
+      }
+    }
+
     // Calculate average coherence
     const avgCoherence =
       coherenceHistory.length > 0
@@ -138,8 +159,8 @@ export function useSession(): UseSessionReturn {
       startTime: new Date(sessionStartTime).toISOString(),
       endTime: new Date(endTime).toISOString(),
       duration,
-      flowStateTime,
-      longestStreak,
+      flowStateTime: finalFlowStateTime,
+      longestStreak: finalLongestStreak,
       avgCoherence,
       coherenceHistory,
     });
@@ -154,8 +175,6 @@ export function useSession(): UseSessionReturn {
     isSessionActive,
     sessionStartTime,
     currentUser,
-    flowStateTime,
-    longestStreak,
     coherenceHistory,
   ]);
 
@@ -180,21 +199,28 @@ export function useSession(): UseSessionReturn {
         const streak = now - flowStateStartRef.current;
         setCurrentStreak(streak);
 
-        if (streak > longestStreak) {
-          setLongestStreak(streak);
-        }
+        // FIX: Use functional update to avoid stale closure bug
+        setLongestStreak((prev) => {
+          const newLongest = Math.max(prev, streak);
+          longestStreakRef.current = newLongest;
+          return newLongest;
+        });
       } else {
         // Not in flow state
         if (flowStateStartRef.current !== null) {
           // Add time spent in flow state
           const timeSpent = now - flowStateStartRef.current;
-          setFlowStateTime((prev) => prev + timeSpent);
+          setFlowStateTime((prev) => {
+            const newTotal = prev + timeSpent;
+            flowStateTimeRef.current = newTotal;
+            return newTotal;
+          });
           flowStateStartRef.current = null;
         }
         setCurrentStreak(0);
       }
     },
-    [isSessionActive, longestStreak]
+    [isSessionActive]
   );
 
   // Data management

@@ -5,3 +5,4 @@ export { ElectrodeStatus } from './ElectrodeStatus';
 export { SessionSetup } from './SessionSetup';
 export { ActiveSession } from './ActiveSession';
 export { SessionSummary } from './SessionSummary';
+export { ShareProgress } from './ShareProgress';
