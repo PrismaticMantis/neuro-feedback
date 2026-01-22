@@ -9,6 +9,7 @@ import { SessionSetup } from './components/SessionSetup';
 import { ActiveSession } from './components/ActiveSession';
 import { SessionSummary } from './components/SessionSummary';
 import { audioEngine } from './lib/audio-engine';
+import { museHandler } from './lib/muse-handler';
 import type { ThresholdSettings } from './types';
 import './App.css';
 
@@ -43,17 +44,39 @@ function App() {
 
   // Handle coherence updates for crossfade system
   useEffect(() => {
-    if (session.isSessionActive && hasGoodContact && muse.state.touching) {
+    if (session.isSessionActive && muse.state.connected) {
+      // Calculate electrode contact quality (0-1)
+      const { tp9, af7, af8, tp10 } = muse.electrodeStatus;
+      const contactScores: number[] = [tp9, af7, af8, tp10].map(q => {
+        if (q === 'good') return 1.0;
+        if (q === 'medium') return 0.5;
+        return 0;
+      });
+      const contactQuality = contactScores.reduce((a, b) => a + b, 0) / 4;
+      
+      // Get time since last update from muse handler
+      const connectionState = museHandler.getConnectionStateDetail();
+      const timeSinceLastUpdate = connectionState.timeSinceLastUpdate;
+      
+      // Build signal quality object
+      const signalQuality = {
+        isConnected: muse.state.connected,
+        contactQuality,
+        timeSinceLastUpdate,
+      };
+      
       // Update session flow state
       session.updateFlowState(muse.flowState.isActive, muse.coherence);
       
-      // Update audio engine coherence (drives crossfade)
-      audioEngine.updateCoherence(muse.coherence);
+      // Update audio engine coherence with signal quality gating
+      audioEngine.updateCoherence(muse.coherence, signalQuality);
     }
   }, [
     muse.flowState.isActive,
     muse.coherence,
+    muse.state.connected,
     muse.state.touching,
+    muse.electrodeStatus,
     hasGoodContact,
     session.isSessionActive,
   ]);

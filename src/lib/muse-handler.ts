@@ -72,6 +72,11 @@ export class MuseHandler {
   private _connectionMode: ConnectionMode = null;
   private _deviceName: string | null = null;
   
+  // Disconnect debouncing (prevent false positives)
+  private _signalPausedSince: number | null = null; // Timestamp when signal pause started
+  private _disconnectDebounceMs = 4000; // Require 4 seconds of no data before marking disconnected
+  private _lastDisconnectReason: string | null = null; // Debug: why disconnect was triggered
+  
   // Electrode quality (horseshoe indicator): [TP9, AF7, AF8, TP10]
   // Values: 1 = good, 2 = medium, 3 = poor, 4 = off
   private _electrodeQuality: number[] = [4, 4, 4, 4];
@@ -221,7 +226,18 @@ export class MuseHandler {
     samples: number[];
     timestamp: number;
   }): void {
-    this._lastUpdate = Date.now();
+    const now = Date.now();
+    this._lastUpdate = now;
+    
+    // Reset signal pause tracking if we're receiving data
+    if (this._signalPausedSince !== null) {
+      const pauseDuration = now - this._signalPausedSince;
+      if (pauseDuration > 1000) {
+        // Only log if pause was significant (>1s)
+        console.log(`[Muse] Signal resumed after ${pauseDuration}ms pause`);
+      }
+      this._signalPausedSince = null;
+    }
 
     const channel = reading.electrode;
     if (channel < 0 || channel > 3) return;
@@ -377,10 +393,21 @@ export class MuseHandler {
   }
 
   /**
-   * Handle Bluetooth disconnection
+   * Handle Bluetooth disconnection (transport-level, from connectionStatus subscription)
    */
   private handleBluetoothDisconnect(): void {
-    console.log('[Muse] Bluetooth disconnected');
+    const now = Date.now();
+    const timeSinceLastUpdate = now - this._lastUpdate;
+    
+    console.warn('[Muse] 🔴 Bluetooth transport disconnected', {
+      timeSinceLastUpdate,
+      batteryLevel: this._batteryLevel,
+      electrodeQuality: this._electrodeQuality,
+      connectionQuality: this._connectionQuality,
+      lastDisconnectReason: this._lastDisconnectReason || 'Transport-level disconnect',
+    });
+    
+    this._lastDisconnectReason = 'Bluetooth transport disconnected';
 
     this.eegSubscription?.unsubscribe();
     this.telemetrySubscription?.unsubscribe();
@@ -402,6 +429,7 @@ export class MuseHandler {
     this.eegAmplitudes = [0, 0, 0, 0];
     this.eegVariances = [0, 0, 0, 0];
     this._batteryLevel = -1;
+    this._signalPausedSince = null;
 
     this.callbacks.onDisconnect?.();
   }
@@ -479,7 +507,17 @@ export class MuseHandler {
       const { address, args } = message;
       if (!address) return;
 
-      this._lastUpdate = Date.now();
+      const now = Date.now();
+      this._lastUpdate = now;
+      
+      // Reset signal pause tracking if we're receiving data
+      if (this._signalPausedSince !== null) {
+        const pauseDuration = now - this._signalPausedSince;
+        if (pauseDuration > 1000) {
+          console.log(`[Muse] OSC signal resumed after ${pauseDuration}ms pause`);
+        }
+        this._signalPausedSince = null;
+      }
 
       switch (address) {
         case '/muse/elements/delta_relative':
@@ -642,6 +680,8 @@ export class MuseHandler {
     this.eegAmplitudes = [0, 0, 0, 0];
     this.eegVariances = [0, 0, 0, 0];
     this._batteryLevel = -1;
+    this._signalPausedSince = null;
+    this._lastDisconnectReason = null;
   }
 
   /**
@@ -665,13 +705,51 @@ export class MuseHandler {
   }
 
   /**
-   * Check if still receiving data
-   * Uses a more lenient timeout to avoid false disconnections
+   * Check if still receiving data (with debouncing)
+   * Uses debouncing to prevent false disconnections from brief gaps
    */
   isReceivingData(): boolean {
-    // Increased timeout to 5 seconds to avoid false disconnections
-    // This handles brief data gaps that can occur with Bluetooth
-    return Date.now() - this._lastUpdate < 5000;
+    const now = Date.now();
+    const timeSinceLastUpdate = now - this._lastUpdate;
+    
+    // If we're receiving data, reset pause tracking
+    if (timeSinceLastUpdate < 2000) {
+      if (this._signalPausedSince !== null) {
+        // Signal resumed - log if pause was significant
+        const pauseDuration = now - this._signalPausedSince;
+        if (pauseDuration > 1000) {
+          console.log(`[Muse] Signal resumed after ${pauseDuration}ms pause`);
+        }
+        this._signalPausedSince = null;
+      }
+      return true;
+    }
+    
+    // Signal appears paused - start or continue tracking
+    if (this._signalPausedSince === null) {
+      this._signalPausedSince = now;
+      console.log(`[Muse] Signal pause detected (last update ${timeSinceLastUpdate}ms ago)`);
+    }
+    
+    // Only mark as "not receiving data" if pause exceeds debounce threshold
+    const pauseDuration = now - this._signalPausedSince;
+    if (pauseDuration >= this._disconnectDebounceMs) {
+      // Sustained pause - mark as not receiving data
+      if (!this._lastDisconnectReason) {
+        this._lastDisconnectReason = `No data for ${pauseDuration}ms (threshold: ${this._disconnectDebounceMs}ms)`;
+        console.warn(`[Muse] ⚠️ Sustained signal pause: ${this._lastDisconnectReason}`, {
+          timeSinceLastUpdate,
+          pauseDuration,
+          batteryLevel: this._batteryLevel,
+          electrodeQuality: this._electrodeQuality,
+          connectionQuality: this._connectionQuality,
+        });
+      }
+      return false;
+    }
+    
+    // Still within debounce window - consider it as receiving data (signal paused but not disconnected)
+    return true;
   }
 
   /**
@@ -713,18 +791,57 @@ export class MuseHandler {
 
   // Getters
   get connected(): boolean {
-    // Only check data reception if we're actually connected
-    // This prevents false disconnections when connection is stable
-    if (!this._connected) return false;
-    
-    // For Bluetooth, check if we're still receiving data
-    // For OSC, trust the connection status more
-    if (this._connectionMode === 'bluetooth') {
-      return this.isReceivingData();
+    // Base connection state (transport-level)
+    if (!this._connected) {
+      // Reset pause tracking when not connected
+      this._signalPausedSince = null;
+      this._lastDisconnectReason = null;
+      return false;
     }
     
-    // For OSC, connection status is more reliable
+    // For Bluetooth, check if we're still receiving data (with debouncing)
+    // This prevents false disconnections from brief signal gaps
+    if (this._connectionMode === 'bluetooth') {
+      const isReceiving = this.isReceivingData();
+      
+      // If we're not receiving data but still within debounce window, 
+      // return true (signal paused, not disconnected)
+      if (!isReceiving && this._signalPausedSince !== null) {
+        const pauseDuration = Date.now() - this._signalPausedSince;
+        if (pauseDuration < this._disconnectDebounceMs) {
+          // Still in debounce window - consider connected but signal paused
+          return true;
+        }
+      }
+      
+      return isReceiving;
+    }
+    
+    // For OSC, trust the connection status more (OSC handles its own reconnection)
     return this._connected;
+  }
+  
+  /**
+   * Get connection state detail (for debugging)
+   */
+  getConnectionStateDetail(): {
+    connected: boolean;
+    signalPaused: boolean;
+    timeSinceLastUpdate: number;
+    pauseDuration: number | null;
+    lastDisconnectReason: string | null;
+  } {
+    const now = Date.now();
+    const timeSinceLastUpdate = now - this._lastUpdate;
+    const pauseDuration = this._signalPausedSince ? now - this._signalPausedSince : null;
+    
+    return {
+      connected: this.connected,
+      signalPaused: this._signalPausedSince !== null && (pauseDuration === null || pauseDuration < this._disconnectDebounceMs),
+      timeSinceLastUpdate,
+      pauseDuration,
+      lastDisconnectReason: this._lastDisconnectReason,
+    };
   }
   get connectionMode(): ConnectionMode {
     return this._connectionMode;
