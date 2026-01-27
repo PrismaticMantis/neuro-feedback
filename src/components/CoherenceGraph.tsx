@@ -1,6 +1,6 @@
 // HeartMath-style Coherence Graph Component
 
-import { useRef, useEffect } from 'react';
+import { useRef, useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 
 interface CoherenceGraphProps {
@@ -53,6 +53,22 @@ const ZONE_THRESHOLDS = {
   stabilizing: 0.4,
 };
 
+// Centralized coordinate mapping function (used by both graph and ball)
+function mapValueToY(
+  value: number,
+  height: number,
+  paddingTop: number = 0,
+  paddingBottom: number = 0
+): number {
+  const usableHeight = height - paddingTop - paddingBottom;
+  return paddingTop + usableHeight * (1 - value);
+}
+
+// Smoothing function for display (visual only, doesn't affect raw data)
+function smoothValue(current: number, previous: number, alpha: number = 0.3): number {
+  return alpha * current + (1 - alpha) * previous;
+}
+
 export function CoherenceGraph({
   coherenceHistory,
   currentCoherence,
@@ -61,6 +77,48 @@ export function CoherenceGraph({
   isActive,
 }: CoherenceGraphProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [ballY, setBallY] = useState(0);
+  const [smoothedHistory, setSmoothedHistory] = useState<number[]>([]);
+  const previousSmoothedRef = useRef<number | null>(null);
+
+  // Smooth coherence history for display (visual only)
+  useEffect(() => {
+    if (coherenceHistory.length === 0) {
+      setSmoothedHistory([]);
+      previousSmoothedRef.current = null;
+      return;
+    }
+
+    const smoothed = coherenceHistory.map((value, index) => {
+      if (index === 0 || previousSmoothedRef.current === null) {
+        previousSmoothedRef.current = value;
+        return value;
+      }
+      const smoothedValue = smoothValue(value, previousSmoothedRef.current, 0.3);
+      previousSmoothedRef.current = smoothedValue;
+      return smoothedValue;
+    });
+
+    setSmoothedHistory(smoothed);
+  }, [coherenceHistory]);
+
+  // Update ball position using same coordinate system as graph
+  useEffect(() => {
+    const container = containerRef.current;
+    const canvas = canvasRef.current;
+    if (!container || !canvas) return;
+
+    const rect = canvas.getBoundingClientRect();
+    const height = rect.height;
+    
+    // Use the same mapping function as the graph
+    const y = mapValueToY(currentCoherence, height);
+    
+    // Convert to percentage for CSS positioning
+    const yPercent = (y / height) * 100;
+    setBallY(yPercent);
+  }, [currentCoherence]);
 
   // Draw the graph
   useEffect(() => {
@@ -117,19 +175,50 @@ export function CoherenceGraph({
 
     ctx.setLineDash([]);
 
-    // Draw coherence line
-    if (coherenceHistory.length > 1) {
+    // Draw coherence line (use smoothed history for visual smoothness)
+    const historyToDraw = smoothedHistory.length > 0 ? smoothedHistory : coherenceHistory;
+    
+    if (historyToDraw.length > 1) {
+      // Determine line width based on device (thicker on iPad)
+      const isTablet = window.innerWidth >= 768;
+      const lineWidth = isTablet ? 3.5 : 2.5;
+      
+      // Draw glow effect first (behind the line)
+      ctx.beginPath();
+      ctx.strokeStyle = 'rgba(79, 209, 197, 0.4)';
+      ctx.lineWidth = lineWidth + 4;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      ctx.shadowBlur = 8;
+      ctx.shadowColor = 'rgba(79, 209, 197, 0.6)';
+
+      const pointSpacing = width / Math.max(historyToDraw.length - 1, 1);
+
+      historyToDraw.forEach((value, index) => {
+        const x = index * pointSpacing;
+        const y = mapValueToY(value, height);
+
+        if (index === 0) {
+          ctx.moveTo(x, y);
+        } else {
+          ctx.lineTo(x, y);
+        }
+      });
+
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+      ctx.shadowColor = 'transparent';
+
+      // Draw main line on top
       ctx.beginPath();
       ctx.strokeStyle = '#ffffff';
-      ctx.lineWidth = 2;
+      ctx.lineWidth = lineWidth;
       ctx.lineCap = 'round';
       ctx.lineJoin = 'round';
 
-      const pointSpacing = width / Math.max(coherenceHistory.length - 1, 1);
-
-      coherenceHistory.forEach((value, index) => {
+      historyToDraw.forEach((value, index) => {
         const x = index * pointSpacing;
-        const y = height * (1 - value);
+        const y = mapValueToY(value, height);
 
         if (index === 0) {
           ctx.moveTo(x, y);
@@ -140,14 +229,19 @@ export function CoherenceGraph({
 
       ctx.stroke();
 
-      // Draw glow effect on the line
-      ctx.strokeStyle = 'rgba(79, 209, 197, 0.5)';
-      ctx.lineWidth = 6;
-      ctx.filter = 'blur(4px)';
-      ctx.stroke();
-      ctx.filter = 'none';
+      // Draw last point marker for debugging alignment (small dot)
+      if (historyToDraw.length > 0) {
+        const lastValue = historyToDraw[historyToDraw.length - 1];
+        const lastX = (historyToDraw.length - 1) * pointSpacing;
+        const lastY = mapValueToY(lastValue, height);
+        
+        ctx.fillStyle = 'rgba(79, 209, 197, 0.8)';
+        ctx.beginPath();
+        ctx.arc(lastX, lastY, 2, 0, Math.PI * 2);
+        ctx.fill();
+      }
     }
-  }, [coherenceHistory]);
+  }, [coherenceHistory, smoothedHistory]);
 
   // Format time display
   const formatTime = (ms: number) => {
@@ -217,27 +311,30 @@ export function CoherenceGraph({
       </div>
 
       {/* Graph canvas */}
-      <div className="graph-container">
+      <div ref={containerRef} className="graph-container">
         <canvas ref={canvasRef} className="graph-canvas" />
 
-        {/* Current position indicator */}
+        {/* Current position indicator - uses same coordinate mapping as graph */}
         {isActive && (
           <motion.div
             className="current-indicator"
             style={{
-              top: `${(1 - currentCoherence) * 100}%`,
+              top: `${ballY}%`,
               right: 0,
               backgroundColor: currentZoneConfig.color,
             }}
             animate={{
-              scale: [1, 1.3, 1],
+              scale: [1, 1.2, 1],
               boxShadow: [
-                `0 0 10px ${currentZoneConfig.color}80`,
-                `0 0 20px ${currentZoneConfig.color}cc`,
-                `0 0 10px ${currentZoneConfig.color}80`,
+                `0 0 12px ${currentZoneConfig.color}80`,
+                `0 0 24px ${currentZoneConfig.color}cc`,
+                `0 0 12px ${currentZoneConfig.color}80`,
               ],
             }}
-            transition={{ repeat: Infinity, duration: 1.5 }}
+            transition={{ 
+              repeat: Infinity, 
+              duration: 1.5,
+            }}
           />
         )}
       </div>

@@ -10,6 +10,7 @@ export interface CoherenceConfig {
   betaAlphaRatioThreshold: number; // Beta/Alpha must be below this (default 1.0)
   minSignalPower: number; // Minimum total band power to consider signal valid (default 0.05)
   minVariance: number; // Minimum variance - too low means no real signal (default 0.001)
+  useRelativeMode?: boolean; // PART 1: Use relative coherence (Easy mode only, default false)
 }
 
 const DEFAULT_CONFIG: CoherenceConfig = {
@@ -19,12 +20,22 @@ const DEFAULT_CONFIG: CoherenceConfig = {
   betaAlphaRatioThreshold: 1.0,
   minSignalPower: 0.05, // Require at least 5% total power
   minVariance: 0.001, // Require some variance (not flat line)
+  useRelativeMode: false, // PART 1: Default to absolute thresholds (Normal/Hard mode)
 };
 
 // Alpha floor safeguard constants
 const BASELINE_WINDOW_MS = 15000; // 15 seconds to establish baseline alpha
 const ALPHA_FLOOR_RATIO = 0.50; // Alpha must be at least 50% of baseline
 const ALPHA_SMOOTHING = 0.1; // EMA smoothing factor for alpha power
+
+// PART 1: Relative coherence baseline calibration constants (Easy mode only)
+const BASELINE_CAL_SECONDS = 30; // Baseline calibration window (30s)
+const BASELINE_CAL_MAX_SECONDS = 60; // Max calibration window if signal poor
+const RELATIVE_BETA_ALPHA_IMPROVEMENT = 0.88; // 12% improvement required
+const RELATIVE_VARIANCE_IMPROVEMENT = 0.85; // 15% improvement required
+const RELATIVE_ALPHA_FLOOR = 0.90; // Alpha must be at least 90% of baseline
+const RELATIVE_EXIT_BETA_ALPHA_BUFFER = 0.93; // Exit if ratio > baseline * 0.93
+const RELATIVE_EXIT_VARIANCE_BUFFER = 0.92; // Exit if variance > baseline * 0.92
 
 export class CoherenceDetector {
   private config: CoherenceConfig;
@@ -38,6 +49,20 @@ export class CoherenceDetector {
   private baselineAlphaSamples: number[] = [];
   private baselineAlphaPower: number | null = null;
   private smoothedAlphaPower: number | null = null;
+  
+  // PART 1: Relative coherence baseline calibration (Easy mode only)
+  private baselineCalStartTime: number | null = null;
+  private baselineCalSamples: Array<{
+    betaAlphaRatio: number;
+    variance: number;
+    noise: number;
+    alphaPower: number;
+  }> = [];
+  private baselineBetaAlphaRatioAvg: number | null = null;
+  private baselineSignalVarianceAvg: number | null = null;
+  private baselineNoiseAvg: number | null = null;
+  private baselineAlphaAvg: number | null = null;
+  private baselineCalComplete: boolean = false;
 
   // Callbacks
   onEnterCoherence?: () => void;
@@ -59,6 +84,11 @@ export class CoherenceDetector {
     // Initialize session start time on first update
     if (this.sessionStartTime === null) {
       this.sessionStartTime = now;
+      // PART 1: Initialize baseline calibration if in relative mode
+      if (this.config.useRelativeMode) {
+        this.baselineCalStartTime = now;
+        this.baselineCalComplete = false;
+      }
     }
 
     // Track baseline alpha during baseline window
@@ -102,21 +132,81 @@ export class CoherenceDetector {
       ...this.recentBetaValues,
     ]);
     const noiseLevel = motionLevel + bands.gamma * 0.5; // Gamma often indicates noise/artifacts
-
-    // SIGNAL VALIDITY CHECKS:
-    // 1. Must have minimum total signal power (not all zeros)
+    
+    // SIGNAL VALIDITY CHECKS (needed for baseline calibration):
     const hasMinPower = totalPower >= this.config.minSignalPower;
-    
-    // 2. Must have some variance (not a flat line / no real signal)
     const hasMinVariance = signalVariance >= this.config.minVariance;
-    
-    // 3. Must have reasonable electrode contact (at least 50% quality)
     const hasGoodContact = electrodeContactQuality >= 0.5;
-    
-    // 4. Alpha must be detectable (key indicator of calm state)
     const hasAlpha = bands.alpha >= 0.02;
+    
+    // PART 1: Baseline calibration for relative mode (Easy mode only)
+    if (this.config.useRelativeMode && !this.baselineCalComplete && this.baselineCalStartTime !== null) {
+      const calAge = (now - this.baselineCalStartTime) / 1000;
+      
+      // Collect samples during calibration window
+      if (calAge < BASELINE_CAL_MAX_SECONDS) {
+        // Only collect samples if signal quality is acceptable
+        if (hasGoodContact && hasMinPower && hasMinVariance) {
+          this.baselineCalSamples.push({
+            betaAlphaRatio,
+            variance: signalVariance,
+            noise: noiseLevel,
+            alphaPower: bands.alpha,
+          });
+        }
+        
+        // Complete calibration after minimum time if we have enough samples
+        if (calAge >= BASELINE_CAL_SECONDS && this.baselineCalSamples.length >= 10) {
+          // Calculate baseline averages
+          const sumBetaAlpha = this.baselineCalSamples.reduce((sum, s) => sum + s.betaAlphaRatio, 0);
+          const sumVariance = this.baselineCalSamples.reduce((sum, s) => sum + s.variance, 0);
+          const sumNoise = this.baselineCalSamples.reduce((sum, s) => sum + s.noise, 0);
+          const sumAlpha = this.baselineCalSamples.reduce((sum, s) => sum + s.alphaPower, 0);
+          const count = this.baselineCalSamples.length;
+          
+          this.baselineBetaAlphaRatioAvg = sumBetaAlpha / count;
+          this.baselineSignalVarianceAvg = sumVariance / count;
+          this.baselineNoiseAvg = sumNoise / count;
+          this.baselineAlphaAvg = sumAlpha / count;
+          this.baselineCalComplete = true;
+          
+          console.log('[CoherenceDetector] Baseline calibration complete (relative mode)', {
+            betaAlphaRatio: this.baselineBetaAlphaRatioAvg.toFixed(3),
+            variance: this.baselineSignalVarianceAvg.toFixed(3),
+            noise: this.baselineNoiseAvg.toFixed(3),
+            alpha: this.baselineAlphaAvg.toFixed(3),
+            samples: count,
+          });
+        }
+      } else {
+        // Max calibration time reached - use whatever samples we have
+        if (this.baselineCalSamples.length >= 5) {
+          const sumBetaAlpha = this.baselineCalSamples.reduce((sum, s) => sum + s.betaAlphaRatio, 0);
+          const sumVariance = this.baselineCalSamples.reduce((sum, s) => sum + s.variance, 0);
+          const sumNoise = this.baselineCalSamples.reduce((sum, s) => sum + s.noise, 0);
+          const sumAlpha = this.baselineCalSamples.reduce((sum, s) => sum + s.alphaPower, 0);
+          const count = this.baselineCalSamples.length;
+          
+          this.baselineBetaAlphaRatioAvg = sumBetaAlpha / count;
+          this.baselineSignalVarianceAvg = sumVariance / count;
+          this.baselineNoiseAvg = sumNoise / count;
+          this.baselineAlphaAvg = sumAlpha / count;
+          this.baselineCalComplete = true;
+          
+          console.log('[CoherenceDetector] Baseline calibration complete (max time reached)', {
+            betaAlphaRatio: this.baselineBetaAlphaRatioAvg.toFixed(3),
+            variance: this.baselineSignalVarianceAvg.toFixed(3),
+            samples: count,
+          });
+        } else {
+          // Not enough samples - disable relative mode
+          console.warn('[CoherenceDetector] Baseline calibration failed - insufficient samples, disabling relative mode');
+          this.config.useRelativeMode = false;
+        }
+      }
+    }
 
-    // Signal is valid only if all validity checks pass
+    // Signal is valid only if all validity checks pass (already computed above)
     const signalValid = hasMinPower && hasMinVariance && hasGoodContact && hasAlpha;
 
     // Alpha floor safeguard (only apply after baseline is established)
@@ -126,12 +216,27 @@ export class CoherenceDetector {
       hasAlphaFloor = this.smoothedAlphaPower >= alphaFloor;
     }
 
-    // Check coherence conditions (only if signal is valid and alpha floor is met)
-    const conditionsMet = signalValid &&
-      hasAlphaFloor &&
-      betaAlphaRatio < this.config.betaAlphaRatioThreshold &&
-      signalVariance < this.config.varianceThreshold &&
-      noiseLevel < this.config.noiseThreshold;
+    // PART 1: Check coherence conditions (absolute or relative based on mode)
+    let conditionsMet = false;
+    
+    if (this.config.useRelativeMode && this.baselineCalComplete) {
+      // Relative mode (Easy mode): Check improvement vs baseline
+      if (signalValid && hasGoodContact && noiseLevel < this.config.noiseThreshold) {
+        // Require improvement vs baseline (use constants)
+        const betaAlphaImproved = betaAlphaRatio <= (this.baselineBetaAlphaRatioAvg! * RELATIVE_BETA_ALPHA_IMPROVEMENT);
+        const varianceImproved = signalVariance <= (this.baselineSignalVarianceAvg! * RELATIVE_VARIANCE_IMPROVEMENT);
+        const alphaOk = bands.alpha >= (this.baselineAlphaAvg! * RELATIVE_ALPHA_FLOOR);
+        
+        conditionsMet = betaAlphaImproved && varianceImproved && alphaOk;
+      }
+    } else {
+      // Absolute mode (Normal/Hard): Use absolute thresholds
+      conditionsMet = signalValid &&
+        hasAlphaFloor &&
+        betaAlphaRatio < this.config.betaAlphaRatioThreshold &&
+        signalVariance < this.config.varianceThreshold &&
+        noiseLevel < this.config.noiseThreshold;
+    }
 
     if (conditionsMet) {
       if (this.conditionMetSince === null) {
@@ -139,11 +244,31 @@ export class CoherenceDetector {
       }
     } else {
       // Conditions broken or signal invalid - reset timer
+      // PART 1: In relative mode, also check exit buffers (hysteresis)
       if (this._isActive) {
-        this._isActive = false;
-        this.onExitCoherence?.();
+        let shouldExit = true;
+        
+        if (this.config.useRelativeMode && this.baselineCalComplete && signalValid && hasGoodContact) {
+          // Check exit buffers (hysteresis for relative mode - use constants)
+          const betaAlphaAboveBuffer = betaAlphaRatio > (this.baselineBetaAlphaRatioAvg! * RELATIVE_EXIT_BETA_ALPHA_BUFFER);
+          const varianceAboveBuffer = signalVariance > (this.baselineSignalVarianceAvg! * RELATIVE_EXIT_VARIANCE_BUFFER);
+          
+          // Only exit if both buffers are exceeded
+          if (!betaAlphaAboveBuffer && !varianceAboveBuffer) {
+            shouldExit = false; // Still within buffer - don't exit yet
+          }
+        }
+        
+        if (shouldExit) {
+          this._isActive = false;
+          this.onExitCoherence?.();
+        }
       }
-      this.conditionMetSince = null;
+      
+      // Reset timer if conditions are truly broken (not just buffer check)
+      if (!conditionsMet) {
+        this.conditionMetSince = null;
+      }
     }
 
     // Check if sustained long enough

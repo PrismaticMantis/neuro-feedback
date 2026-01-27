@@ -42,6 +42,7 @@ export function useAudio(): UseAudioReturn {
   const [coherenceMetrics, setCoherenceMetrics] = useState<CoherenceMetrics>({
     totalCoherentSeconds: 0,
     longestCoherentStreakSeconds: 0,
+    totalCoherenceAudioTimeMs: 0, // PART 2: Audio-based time tracking
   });
   const [isInitialized, setIsInitialized] = useState(false);
 

@@ -724,12 +724,16 @@ body {
 
 .current-indicator {
   position: absolute;
-  width: 12px;
-  height: 12px;
+  width: 14px;
+  height: 14px;
   background: var(--accent-teal);
   border-radius: 50%;
   transform: translate(50%, -50%);
-  box-shadow: 0 0 10px var(--accent-glow);
+  box-shadow: 0 0 12px var(--accent-glow);
+  /* Inner highlight for premium look */
+  background: radial-gradient(circle at 30% 30%, rgba(255, 255, 255, 0.4), var(--accent-teal));
+  /* Smooth motion */
+  transition: top 0.15s ease-out;
 }
 
 .time-axis {

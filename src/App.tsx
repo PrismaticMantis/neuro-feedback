@@ -51,10 +51,14 @@ function App() {
     const coherenceThreshold = sensitivityToCoherenceThreshold(thresholdSettings.coherenceSensitivity);
     const timeThreshold = sensitivityToTimeThreshold(thresholdSettings.coherenceSensitivity);
     
+    // PART 1: Determine if Easy mode for relative coherence
+    const isEasyMode = thresholdSettings.coherenceSensitivity < 0.33;
+    
     // Pass converted thresholds to muse detector
     muse.setThresholdSettings({
       coherenceThreshold,
       timeThreshold,
+      useRelativeMode: isEasyMode, // PART 1: Enable relative mode for Easy mode
     });
   }, [thresholdSettings.coherenceSensitivity, muse.setThresholdSettings]);
 
@@ -120,10 +124,16 @@ function App() {
 
   // Handle end session
   const handleEndSession = useCallback(() => {
+    // PART 2: Get audio-based coherence time before stopping session
+    const audioMetrics = audioEngine.getCoherenceMetrics();
+    const audioCoherenceTimeMs = audioMetrics.totalCoherenceAudioTimeMs;
+    
     // Stop baseline/coherence audio session
     audioEngine.stopSession();
     audio.setEntrainmentEnabled(false);
-    session.endSession();
+    
+    // Pass audio-based time to session end
+    session.endSession(audioCoherenceTimeMs);
   }, [audio, session]);
 
   // Handle new session

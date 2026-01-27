@@ -23,7 +23,7 @@ export interface UseSessionReturn {
 
   // Session controls
   startSession: () => void;
-  endSession: () => Session | null;
+  endSession: (audioCoherenceTimeMs?: number) => Session | null; // PART 2: Accept audio-based time
   updateCoherenceStatus: (isActive: boolean, coherence: number) => void;
 
   // Completed session
@@ -123,7 +123,7 @@ export function useSession(): UseSessionReturn {
     setScreen('session');
   }, []);
 
-  const endSession = useCallback(() => {
+  const endSession = useCallback((audioCoherenceTimeMs?: number) => {
     if (!isSessionActive || !sessionStartTime || !currentUser) {
       setIsSessionActive(false);
       return null;
@@ -132,15 +132,24 @@ export function useSession(): UseSessionReturn {
     const endTime = Date.now();
     const duration = endTime - sessionStartTime;
 
-    // CRITICAL FIX: Add final coherence period if session ends while still in coherence
-    let finalCoherenceTime = coherenceTimeRef.current;
+    // PART 2: Use audio-based coherence time if provided, otherwise fall back to meter-based
+    let finalCoherenceTime: number;
+    if (audioCoherenceTimeMs !== undefined) {
+      // Use audio engine's tracking (based on coherence gain activation)
+      finalCoherenceTime = audioCoherenceTimeMs;
+      console.log('[useSession] Using audio-based coherence time:', finalCoherenceTime, 'ms');
+    } else {
+      // Fallback to meter-based tracking (legacy)
+      finalCoherenceTime = coherenceTimeRef.current;
+      if (coherenceStartRef.current !== null) {
+        const finalTimeSpent = endTime - coherenceStartRef.current;
+        finalCoherenceTime = coherenceTimeRef.current + finalTimeSpent;
+      }
+    }
+    
     let finalLongestStreak = longestStreakRef.current;
     
     if (coherenceStartRef.current !== null) {
-      // User is still in coherence - add the final period
-      const finalTimeSpent = endTime - coherenceStartRef.current;
-      finalCoherenceTime = coherenceTimeRef.current + finalTimeSpent;
-      
       // Update longest streak if this final period is longer
       const finalStreak = endTime - coherenceStartRef.current;
       if (finalStreak > longestStreakRef.current) {

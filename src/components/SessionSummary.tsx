@@ -378,8 +378,22 @@ export function SessionSummary({
 
   // Handle sending email
   const handleSendEmail = async (email: string) => {
-    console.log('[SessionSummary] Sending email to:', email);
-    await sendSessionReportEmail(email, session, stats, pdfBlob || undefined);
+    console.log('[SessionSummary] ===== HANDLE SEND EMAIL =====');
+    console.log('[SessionSummary] Email:', email);
+    console.log('[SessionSummary] Session:', session.id);
+    console.log('[SessionSummary] PDF blob available:', !!pdfBlob);
+    if (pdfBlob) {
+      console.log('[SessionSummary] PDF blob size:', pdfBlob.size, 'bytes');
+    }
+    
+    try {
+      await sendSessionReportEmail(email, session, stats, pdfBlob || undefined);
+      console.log('[SessionSummary] ✅ Email sent successfully');
+    } catch (error) {
+      console.error('[SessionSummary] ❌ Email send failed:', error);
+      // Re-throw to let ShareProgress handle the error UI
+      throw error;
+    }
   };
 
   // Handle download PDF (from ShareProgress)

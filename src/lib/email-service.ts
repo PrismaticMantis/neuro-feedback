@@ -77,8 +77,19 @@ export async function sendEmailViaBackend(
   stats: SessionStats,
   pdfBlob?: Blob
 ): Promise<void> {
+  console.log('[EmailService] ===== EMAIL SEND START =====');
+  console.log('[EmailService] Button click handler fired');
+  console.log('[EmailService] Email validated:', email);
+  
   const apiUrl = getReportsApiUrl();
   const summary = formatSessionSummaryData(session, stats);
+
+  console.log('[EmailService] API URL:', apiUrl);
+  console.log('[EmailService] Session summary prepared:', {
+    sessionId: summary.sessionId,
+    coherencePercent: summary.coherencePercent,
+    duration: summary.duration,
+  });
 
   // Prepare payload
   const payload: {
@@ -94,53 +105,142 @@ export async function sendEmailViaBackend(
 
   // Optionally include PDF as base64
   if (pdfBlob) {
-    const arrayBuffer = await pdfBlob.arrayBuffer();
-    const bytes = new Uint8Array(arrayBuffer);
-    // Convert to base64 safely (handle large files)
-    let binary = '';
-    const len = bytes.byteLength;
-    for (let i = 0; i < len; i++) {
-      binary += String.fromCharCode(bytes[i]);
+    console.log('[EmailService] PDF blob provided, size:', pdfBlob.size, 'bytes');
+    
+    // Check file size limit (10MB for email attachments)
+    const MAX_PDF_SIZE = 10 * 1024 * 1024; // 10MB
+    if (pdfBlob.size > MAX_PDF_SIZE) {
+      const errorMsg = `PDF is too large (${Math.round(pdfBlob.size / 1024 / 1024)}MB). Maximum size is 10MB.`;
+      console.error('[EmailService] PDF size check failed:', errorMsg);
+      throw new Error(errorMsg);
     }
-    payload.pdf = btoa(binary);
+    
+    try {
+      console.log('[EmailService] Converting PDF to base64...');
+      const arrayBuffer = await pdfBlob.arrayBuffer();
+      const bytes = new Uint8Array(arrayBuffer);
+      
+      // Convert to base64 safely (handle large files)
+      let binary = '';
+      const len = bytes.byteLength;
+      const chunkSize = 8192; // Process in chunks to avoid blocking
+      
+      for (let i = 0; i < len; i += chunkSize) {
+        const chunk = bytes.slice(i, i + chunkSize);
+        binary += String.fromCharCode.apply(null, Array.from(chunk));
+      }
+      
+      payload.pdf = btoa(binary);
+      console.log('[EmailService] PDF converted to base64, length:', payload.pdf.length);
+    } catch (error) {
+      console.error('[EmailService] PDF conversion failed:', error);
+      throw new Error(`Failed to process PDF: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  } else {
+    console.log('[EmailService] No PDF blob provided - sending email without attachment');
   }
 
-  console.log('[EmailService] Sending email via backend API', { apiUrl, email });
+  console.log('[EmailService] Payload created, size:', JSON.stringify(payload).length, 'bytes');
+  console.log('[EmailService] Sending request to:', apiUrl);
 
-  const response = await fetch(apiUrl, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(payload),
-  });
+  try {
+    const response = await fetch(apiUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    });
 
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`Backend API error: ${response.status} ${errorText}`);
+    console.log('[EmailService] Response received:', {
+      status: response.status,
+      statusText: response.statusText,
+      ok: response.ok,
+      headers: Object.fromEntries(response.headers.entries()),
+    });
+
+    if (!response.ok) {
+      let errorText: string;
+      try {
+        errorText = await response.text();
+        console.error('[EmailService] Error response body:', errorText);
+      } catch {
+        errorText = `HTTP ${response.status} ${response.statusText}`;
+      }
+      
+      // Provide user-friendly error messages
+      let userMessage: string;
+      if (response.status === 404) {
+        userMessage = 'Email service not configured. Please contact support or use PDF download instead.';
+      } else if (response.status === 413) {
+        userMessage = 'PDF is too large. Please try downloading the PDF instead.';
+      } else if (response.status >= 500) {
+        userMessage = 'Email service temporarily unavailable. Please try again later or download the PDF.';
+      } else {
+        userMessage = `Failed to send email: ${errorText}`;
+      }
+      
+      throw new Error(userMessage);
+    }
+
+    // Try to parse response body for additional info
+    try {
+      const responseData = await response.json();
+      console.log('[EmailService] Response data:', responseData);
+    } catch {
+      // Response might not be JSON, that's okay
+      console.log('[EmailService] Response is not JSON (that\'s okay)');
+    }
+
+    console.log('[EmailService] ✅ Email sent successfully via backend');
+    console.log('[EmailService] ===== EMAIL SEND SUCCESS =====');
+  } catch (error) {
+    console.error('[EmailService] ===== EMAIL SEND FAILED =====');
+    console.error('[EmailService] Error type:', error instanceof Error ? error.constructor.name : typeof error);
+    console.error('[EmailService] Error message:', error instanceof Error ? error.message : String(error));
+    if (error instanceof Error && error.stack) {
+      console.error('[EmailService] Error stack:', error.stack);
+    }
+    
+    // Re-throw with user-friendly message
+    if (error instanceof Error) {
+      throw error;
+    }
+    throw new Error('Failed to send email. Please check your connection and try again.');
   }
-
-  console.log('[EmailService] Email sent successfully via backend');
 }
 
 /**
  * Send email via mailto: (frontend fallback)
+ * NOTE: This does NOT actually send emails - it only opens the user's email client
  */
 export function sendEmailViaMailto(
   email: string,
   session: Session,
   stats: SessionStats
 ): void {
+  console.log('[EmailService] ===== MAILTO FALLBACK =====');
+  console.log('[EmailService] Using mailto: fallback (email client will open)');
+  console.log('[EmailService] Email:', email);
+  
   const summary = formatSessionSummaryData(session, stats);
   const subject = encodeURIComponent('Your Neuro-Feedback Session Report');
   const body = encodeURIComponent(formatEmailBody(summary));
   
   const mailtoUrl = `mailto:${email}?subject=${subject}&body=${body}`;
   
-  console.log('[EmailService] Opening mailto: link', { email });
+  console.log('[EmailService] Mailto URL created (length:', mailtoUrl.length, ')');
+  console.log('[EmailService] Opening mailto: link...');
   
-  // Open mailto: link (works on iOS)
-  window.location.href = mailtoUrl;
+  try {
+    // Open mailto: link (works on iOS)
+    window.location.href = mailtoUrl;
+    console.log('[EmailService] Mailto link opened successfully');
+    console.log('[EmailService] NOTE: User must manually send email from their email client');
+  } catch (error) {
+    console.error('[EmailService] Failed to open mailto link:', error);
+    throw new Error('Failed to open email client. Please check your email settings.');
+  }
 }
 
 /**
@@ -152,11 +252,25 @@ export async function sendSessionReportEmail(
   stats: SessionStats,
   pdfBlob?: Blob
 ): Promise<void> {
-  if (isBackendEmailEnabled()) {
+  console.log('[EmailService] ===== SEND SESSION REPORT EMAIL =====');
+  console.log('[EmailService] Email:', email);
+  console.log('[EmailService] Session ID:', session.id);
+  console.log('[EmailService] PDF blob provided:', !!pdfBlob);
+  if (pdfBlob) {
+    console.log('[EmailService] PDF blob size:', pdfBlob.size, 'bytes');
+  }
+  
+  const backendEnabled = isBackendEmailEnabled();
+  console.log('[EmailService] Backend email enabled:', backendEnabled);
+  
+  if (backendEnabled) {
     // Use backend API
+    console.log('[EmailService] Using backend API path');
     await sendEmailViaBackend(email, session, stats, pdfBlob);
   } else {
     // Use mailto: fallback
+    console.log('[EmailService] Using mailto: fallback path');
+    console.log('[EmailService] WARNING: mailto: does not actually send emails - it only opens email client');
     sendEmailViaMailto(email, session, stats);
     // mailto: is synchronous, but we return a resolved promise for consistency
     return Promise.resolve();

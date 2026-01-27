@@ -39,29 +39,46 @@ export function ShareProgress({
   };
 
   const handleSend = async () => {
+    console.log('[ShareProgress] ===== HANDLE SEND CLICKED =====');
+    console.log('[ShareProgress] Email input:', email);
+    
     // Validate email
     if (!email.trim()) {
+      console.log('[ShareProgress] Email validation failed: empty');
       setEmailError('Please enter your email address');
       return;
     }
 
     if (!isValidEmail(email)) {
+      console.log('[ShareProgress] Email validation failed: invalid format');
       setEmailError('Please enter a valid email address');
       return;
     }
 
+    console.log('[ShareProgress] Email validated successfully');
     setIsSending(true);
     setError(null);
     setEmailError(null);
 
     try {
+      console.log('[ShareProgress] Calling onSendEmail handler...');
       await onSendEmail(email.trim());
+      console.log('[ShareProgress] ✅ Email send completed successfully');
       setIsSuccess(true);
     } catch (err) {
+      console.error('[ShareProgress] ===== EMAIL SEND ERROR =====');
+      console.error('[ShareProgress] Error:', err);
+      console.error('[ShareProgress] Error type:', err instanceof Error ? err.constructor.name : typeof err);
+      if (err instanceof Error) {
+        console.error('[ShareProgress] Error message:', err.message);
+        console.error('[ShareProgress] Error stack:', err.stack);
+      }
+      
       const errorMessage = err instanceof Error ? err.message : 'Failed to send email. Please try again.';
       setError(errorMessage);
     } finally {
       setIsSending(false);
+      console.log('[ShareProgress] ===== HANDLE SEND COMPLETE =====');
     }
   };
 
@@ -84,7 +101,7 @@ export function ShareProgress({
               <polyline points="22 4 12 14.01 9 11.01" />
             </svg>
             <h2>Sent!</h2>
-            <p>Check your inbox for your session report.</p>
+            <p>Email sent to <strong>{email}</strong>. Check your inbox for your session report.</p>
             {onCancel && (
               <button className="btn btn-text" onClick={onCancel} style={{ marginTop: '1rem' }}>
                 Close

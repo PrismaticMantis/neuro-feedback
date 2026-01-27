@@ -16,7 +16,7 @@ export interface UseMuseReturn {
   connectBluetooth: () => Promise<void>;
   connectOSC: (url?: string) => Promise<void>;
   disconnect: () => void;
-  setThresholdSettings: (settings: { coherenceThreshold: number; timeThreshold: number }) => void;
+  setThresholdSettings: (settings: { coherenceThreshold: number; timeThreshold: number; useRelativeMode?: boolean }) => void;
   error: string | null;
 }
 
@@ -164,12 +164,13 @@ export function useMuse(): UseMuseReturn {
     coherenceDetector.current.reset();
   }, []);
 
-  const setThresholdSettings = useCallback((settings: { coherenceThreshold: number; timeThreshold: number }) => {
+  const setThresholdSettings = useCallback((settings: { coherenceThreshold: number; timeThreshold: number; useRelativeMode?: boolean }) => {
     coherenceDetector.current.setConfig({
       sustainedMs: settings.timeThreshold,
       // Convert coherence threshold to beta/alpha ratio threshold
       // Higher coherence threshold = stricter condition = lower ratio threshold
       betaAlphaRatioThreshold: 1.0 - (settings.coherenceThreshold - 0.7) * 2,
+      useRelativeMode: settings.useRelativeMode ?? false, // PART 1: Use relative mode if specified (Easy mode)
     });
   }, []);
 
