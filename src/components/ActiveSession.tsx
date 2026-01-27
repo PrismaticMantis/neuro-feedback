@@ -13,7 +13,7 @@ interface ActiveSessionProps {
   currentCoherence: number;
   coherenceZone: 'flow' | 'stabilizing' | 'noise';
   coherenceState: CoherenceState;
-  flowStateActive: boolean;
+  coherenceActive: boolean;
   currentStreak: number;
 
   // Muse state
@@ -38,7 +38,7 @@ export function ActiveSession({
   currentCoherence,
   coherenceZone,
   coherenceState,
-  flowStateActive,
+  coherenceActive,
   currentStreak,
   museConnected,
   touching,
@@ -136,17 +136,17 @@ export function ActiveSession({
           isActive={true}
         />
 
-        {/* Flow State Indicator */}
-        {flowStateActive && (
+        {/* Coherence Indicator */}
+        {coherenceActive && (
           <motion.div
-            className="flow-state-indicator"
+            className="coherence-indicator"
             initial={{ opacity: 0, scale: 0.8 }}
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.8 }}
           >
-            <div className="flow-glow" />
-            <span className="flow-text">Flow State</span>
-            <span className="flow-streak">{formatTime(currentStreak)}</span>
+            <div className="coherence-glow" />
+            <span className="coherence-text">Coherence</span>
+            <span className="coherence-streak">{formatTime(currentStreak)}</span>
           </motion.div>
         )}
 

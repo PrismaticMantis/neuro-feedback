@@ -2,12 +2,12 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { museHandler, MuseHandler } from '../lib/muse-handler';
-import { FlowStateDetector, calculateCoherence, getCoherenceZone } from '../lib/flow-state';
-import type { MuseState, FlowState, ThresholdSettings, ElectrodeStatus, ElectrodeQuality } from '../types';
+import { CoherenceDetector, calculateCoherence, getCoherenceZone } from '../lib/flow-state';
+import type { MuseState, CoherenceStatus, ElectrodeStatus, ElectrodeQuality } from '../types';
 
 export interface UseMuseReturn {
   state: MuseState;
-  flowState: FlowState;
+  coherenceStatus: CoherenceStatus;
   coherence: number;
   coherenceZone: 'flow' | 'stabilizing' | 'noise';
   coherenceHistory: number[];
@@ -16,7 +16,7 @@ export interface UseMuseReturn {
   connectBluetooth: () => Promise<void>;
   connectOSC: (url?: string) => Promise<void>;
   disconnect: () => void;
-  setThresholdSettings: (settings: ThresholdSettings) => void;
+  setThresholdSettings: (settings: { coherenceThreshold: number; timeThreshold: number }) => void;
   error: string | null;
 }
 
@@ -36,7 +36,7 @@ const INITIAL_STATE: MuseState = {
   focusIndex: 0,
 };
 
-const INITIAL_FLOW_STATE: FlowState = {
+const INITIAL_COHERENCE_STATUS: CoherenceStatus = {
   isActive: false,
   sustainedMs: 0,
   betaAlphaRatio: 1,
@@ -61,13 +61,13 @@ function horseshoeToQuality(value: number): ElectrodeQuality {
 
 export function useMuse(): UseMuseReturn {
   const [state, setState] = useState<MuseState>(INITIAL_STATE);
-  const [flowState, setFlowState] = useState<FlowState>(INITIAL_FLOW_STATE);
+  const [coherenceStatus, setCoherenceStatus] = useState<CoherenceStatus>(INITIAL_COHERENCE_STATUS);
   const [coherence, setCoherence] = useState(0);
   const [coherenceHistory, setCoherenceHistory] = useState<number[]>([]);
   const [electrodeStatus, setElectrodeStatus] = useState<ElectrodeStatus>(INITIAL_ELECTRODE_STATUS);
   const [error, setError] = useState<string | null>(null);
 
-  const flowStateDetector = useRef(new FlowStateDetector({}));
+  const coherenceDetector = useRef(new CoherenceDetector({}));
   const animationFrameRef = useRef<number | undefined>(undefined);
   const lastHistoryUpdate = useRef<number>(0);
 
@@ -100,12 +100,12 @@ export function useMuse(): UseMuseReturn {
           return sum;                        // poor/off = 0
         }, 0) / 4;
 
-        // Update flow state detector with electrode quality
-        const fsState = flowStateDetector.current.update(museState.bandsSmooth, normalizedMotion, electrodeQuality);
-        setFlowState(fsState);
+        // Update coherence detector with electrode quality
+        const csState = coherenceDetector.current.update(museState.bandsSmooth, normalizedMotion, electrodeQuality);
+        setCoherenceStatus(csState);
 
         // Calculate coherence (also considering electrode quality)
-        const coh = calculateCoherence(museState.bandsSmooth, fsState.signalVariance, electrodeQuality);
+        const coh = calculateCoherence(museState.bandsSmooth, csState.signalVariance, electrodeQuality);
         setCoherence(coh);
 
         // Update history at ~1Hz (every 1000ms)
@@ -158,14 +158,14 @@ export function useMuse(): UseMuseReturn {
   const disconnect = useCallback(() => {
     museHandler.disconnect();
     setState(INITIAL_STATE);
-    setFlowState(INITIAL_FLOW_STATE);
+    setCoherenceStatus(INITIAL_COHERENCE_STATUS);
     setElectrodeStatus(INITIAL_ELECTRODE_STATUS);
     setCoherence(0);
-    flowStateDetector.current.reset();
+    coherenceDetector.current.reset();
   }, []);
 
-  const setThresholdSettings = useCallback((settings: ThresholdSettings) => {
-    flowStateDetector.current.setConfig({
+  const setThresholdSettings = useCallback((settings: { coherenceThreshold: number; timeThreshold: number }) => {
+    coherenceDetector.current.setConfig({
       sustainedMs: settings.timeThreshold,
       // Convert coherence threshold to beta/alpha ratio threshold
       // Higher coherence threshold = stricter condition = lower ratio threshold
@@ -175,7 +175,7 @@ export function useMuse(): UseMuseReturn {
 
   return {
     state,
-    flowState,
+    coherenceStatus,
     coherence,
     coherenceZone: getCoherenceZone(coherence),
     coherenceHistory,

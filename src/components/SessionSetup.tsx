@@ -196,44 +196,45 @@ export function SessionSetup({
           <div className="settings-group">
             <div className="setting-row">
               <label className="setting-label">
-                <span>Coherence Threshold</span>
-                <span className="setting-value">{Math.round(thresholdSettings.coherenceThreshold * 100)}%</span>
+                <span>Coherence Sensitivity</span>
+                <span className="setting-value">
+                  {thresholdSettings.coherenceSensitivity < 0.33 
+                    ? 'Easy' 
+                    : thresholdSettings.coherenceSensitivity < 0.67 
+                    ? 'Medium' 
+                    : 'Hard'}
+                </span>
               </label>
               <input
                 type="range"
-                min="0.2"
-                max="0.9"
+                min="0"
+                max="1"
                 step="0.05"
-                value={thresholdSettings.coherenceThreshold}
+                value={thresholdSettings.coherenceSensitivity}
                 onChange={(e) =>
                   onThresholdSettingsChange({
                     ...thresholdSettings,
-                    coherenceThreshold: parseFloat(e.target.value),
+                    coherenceSensitivity: parseFloat(e.target.value),
                   })
                 }
                 className="setting-slider"
               />
-              <p className="setting-hint">Higher threshold = stricter Flow State detection</p>
-            </div>
-
-            <div className="setting-row">
-              <label className="setting-label">
-                <span>Time Threshold</span>
-                <span className="setting-value">{thresholdSettings.timeThreshold / 1000}s</span>
-              </label>
-              <input
-                type="range"
-                min="1000"
-                max="10000"
-                step="1000"
-                value={thresholdSettings.timeThreshold}
-                onChange={(e) => onThresholdSettingsChange({
-                  ...thresholdSettings,
-                  timeThreshold: parseInt(e.target.value)
-                })}
-                className="setting-slider"
-              />
-              <p className="setting-hint">How long to sustain coherence before entering Flow State</p>
+              <div className="setting-hint-group">
+                <p className="setting-hint">
+                  Controls how easy it is to enter coherence state
+                </p>
+                <div className="setting-hint-details">
+                  <p className="setting-hint-detail">
+                    Current: Threshold {Math.round((0.2 + thresholdSettings.coherenceSensitivity * 0.7) * 100)}%, Time {Math.round((1 + thresholdSettings.coherenceSensitivity * 9) * 10) / 10}s
+                  </p>
+                  <p className="setting-hint-detail">
+                    <span className="hint-label">Easy (0.0):</span> Threshold 20%, Time 1.0s
+                  </p>
+                  <p className="setting-hint-detail">
+                    <span className="hint-label">Hard (1.0):</span> Threshold 90%, Time 10.0s
+                  </p>
+                </div>
+              </div>
             </div>
           </div>
         </section>

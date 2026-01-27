@@ -744,8 +744,8 @@ body {
   font-family: 'SF Mono', 'Fira Code', monospace;
 }
 
-/* Flow State Indicator */
-.flow-state-indicator {
+/* Coherence Indicator */
+.coherence-indicator {
   position: absolute;
   top: 20px;
   left: 50%;
@@ -760,7 +760,7 @@ body {
   backdrop-filter: blur(8px);
 }
 
-.flow-glow {
+.coherence-glow {
   position: absolute;
   inset: -4px;
   background: var(--accent-glow);
@@ -769,13 +769,13 @@ body {
   z-index: -1;
 }
 
-.flow-text {
+.coherence-text {
   font-size: 14px;
   font-weight: 600;
   color: var(--accent-teal);
 }
 
-.flow-streak {
+.coherence-streak {
   font-size: 12px;
   color: var(--text-secondary);
   font-family: 'SF Mono', 'Fira Code', monospace;
@@ -1197,6 +1197,28 @@ body {
   font-size: 11px;
   color: var(--text-dim);
   font-style: italic;
+}
+
+.setting-hint-group {
+  margin-top: 4px;
+}
+
+.setting-hint-details {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.setting-hint-detail {
+  font-size: 11px;
+  color: var(--text-dim);
+  line-height: 1.4;
+}
+
+.setting-hint-detail .hint-label {
+  font-weight: 500;
+  color: var(--text-secondary);
 }
 
 /* ============ Binaural Settings ============ */

@@ -1,9 +1,9 @@
-// Flow State Detection
+// Coherence Detection
 // Detects when: Beta < Alpha, low variance, sustained 5+ seconds
 
-import type { BrainwaveBands, FlowState } from '../types';
+import type { BrainwaveBands, CoherenceStatus } from '../types';
 
-export interface FlowStateConfig {
+export interface CoherenceConfig {
   sustainedMs: number; // How long conditions must be met (default 5000ms)
   varianceThreshold: number; // Maximum variance allowed (default 0.15)
   noiseThreshold: number; // Maximum noise level (default 0.3)
@@ -12,7 +12,7 @@ export interface FlowStateConfig {
   minVariance: number; // Minimum variance - too low means no real signal (default 0.001)
 }
 
-const DEFAULT_CONFIG: FlowStateConfig = {
+const DEFAULT_CONFIG: CoherenceConfig = {
   sustainedMs: 5000,
   varianceThreshold: 0.15,
   noiseThreshold: 0.3,
@@ -26,8 +26,8 @@ const BASELINE_WINDOW_MS = 15000; // 15 seconds to establish baseline alpha
 const ALPHA_FLOOR_RATIO = 0.50; // Alpha must be at least 50% of baseline
 const ALPHA_SMOOTHING = 0.1; // EMA smoothing factor for alpha power
 
-export class FlowStateDetector {
-  private config: FlowStateConfig;
+export class CoherenceDetector {
+  private config: CoherenceConfig;
   private conditionMetSince: number | null = null;
   private recentAlphaValues: number[] = [];
   private recentBetaValues: number[] = [];
@@ -40,12 +40,12 @@ export class FlowStateDetector {
   private smoothedAlphaPower: number | null = null;
 
   // Callbacks
-  onEnterFlowState?: () => void;
-  onExitFlowState?: () => void;
+  onEnterCoherence?: () => void;
+  onExitCoherence?: () => void;
 
   private _isActive = false;
 
-  constructor(config: Partial<FlowStateConfig> = {}) {
+  constructor(config: Partial<CoherenceConfig> = {}) {
     this.config = { ...DEFAULT_CONFIG, ...config };
   }
 
@@ -53,7 +53,7 @@ export class FlowStateDetector {
    * Update with new brainwave data
    * Call this every frame with smoothed band values
    */
-  update(bands: BrainwaveBands, motionLevel: number = 0, electrodeContactQuality: number = 0): FlowState {
+  update(bands: BrainwaveBands, motionLevel: number = 0, electrodeContactQuality: number = 0): CoherenceStatus {
     const now = Date.now();
 
     // Initialize session start time on first update
@@ -126,7 +126,7 @@ export class FlowStateDetector {
       hasAlphaFloor = this.smoothedAlphaPower >= alphaFloor;
     }
 
-    // Check flow state conditions (only if signal is valid and alpha floor is met)
+    // Check coherence conditions (only if signal is valid and alpha floor is met)
     const conditionsMet = signalValid &&
       hasAlphaFloor &&
       betaAlphaRatio < this.config.betaAlphaRatioThreshold &&
@@ -141,7 +141,7 @@ export class FlowStateDetector {
       // Conditions broken or signal invalid - reset timer
       if (this._isActive) {
         this._isActive = false;
-        this.onExitFlowState?.();
+        this.onExitCoherence?.();
       }
       this.conditionMetSince = null;
     }
@@ -151,7 +151,7 @@ export class FlowStateDetector {
 
     if (sustainedMs >= this.config.sustainedMs && !this._isActive) {
       this._isActive = true;
-      this.onEnterFlowState?.();
+      this.onEnterCoherence?.();
     }
 
     return {
@@ -199,21 +199,21 @@ export class FlowStateDetector {
   /**
    * Update configuration
    */
-  setConfig(config: Partial<FlowStateConfig>): void {
+  setConfig(config: Partial<CoherenceConfig>): void {
     this.config = { ...this.config, ...config };
   }
 
   /**
    * Get current configuration
    */
-  getConfig(): FlowStateConfig {
+  getConfig(): CoherenceConfig {
     return { ...this.config };
   }
 }
 
 /**
  * Calculate coherence score (0-1) based on brainwave data
- * Higher score = more coherent/stable state approaching Flow State
+ * Higher score = more coherent/stable state
  */
 export function calculateCoherence(bands: BrainwaveBands, variance: number, electrodeQuality: number = 1): number {
   const { alpha, beta, gamma, theta, delta } = bands;

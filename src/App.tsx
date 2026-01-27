@@ -15,9 +15,26 @@ import './App.css';
 
 // Default threshold settings
 const DEFAULT_THRESHOLD_SETTINGS: ThresholdSettings = {
-  coherenceThreshold: 0.7,
-  timeThreshold: 5000,
+  coherenceSensitivity: 0.5, // Medium difficulty
 };
+
+/**
+ * Convert sensitivity (0-1) to coherence threshold (0.2-0.9)
+ * Lower sensitivity = easier = lower threshold
+ * Higher sensitivity = harder = higher threshold
+ */
+function sensitivityToCoherenceThreshold(sensitivity: number): number {
+  return 0.2 + (sensitivity * 0.7); // 0.2 to 0.9
+}
+
+/**
+ * Convert sensitivity (0-1) to time threshold in ms (1000-10000)
+ * Lower sensitivity = easier = shorter time
+ * Higher sensitivity = harder = longer time
+ */
+function sensitivityToTimeThreshold(sensitivity: number): number {
+  return 1000 + (sensitivity * 9000); // 1000ms to 10000ms
+}
 
 function App() {
   // Hooks
@@ -30,8 +47,16 @@ function App() {
 
   // Apply threshold settings to muse detector when they change
   useEffect(() => {
-    muse.setThresholdSettings(thresholdSettings);
-  }, [thresholdSettings, muse.setThresholdSettings]);
+    // Convert sensitivity to actual thresholds
+    const coherenceThreshold = sensitivityToCoherenceThreshold(thresholdSettings.coherenceSensitivity);
+    const timeThreshold = sensitivityToTimeThreshold(thresholdSettings.coherenceSensitivity);
+    
+    // Pass converted thresholds to muse detector
+    muse.setThresholdSettings({
+      coherenceThreshold,
+      timeThreshold,
+    });
+  }, [thresholdSettings.coherenceSensitivity, muse.setThresholdSettings]);
 
   // Check if we have good electrode contact (at least 3 of 4 electrodes good/medium)
   const hasGoodContact = (() => {
@@ -65,14 +90,14 @@ function App() {
         timeSinceLastUpdate,
       };
       
-      // Update session flow state
-      session.updateFlowState(muse.flowState.isActive, muse.coherence);
+      // Update session coherence status
+      session.updateCoherenceStatus(muse.coherenceStatus.isActive, muse.coherence);
       
       // Update audio engine coherence with signal quality gating
       audioEngine.updateCoherence(muse.coherence, signalQuality);
     }
   }, [
-    muse.flowState.isActive,
+    muse.coherenceStatus.isActive,
     muse.coherence,
     muse.state.connected,
     muse.state.touching,
@@ -156,7 +181,7 @@ function App() {
             currentCoherence={muse.coherence}
             coherenceZone={muse.coherenceZone}
             coherenceState={audio.coherenceState}
-            flowStateActive={muse.flowState.isActive}
+            coherenceActive={muse.coherenceStatus.isActive}
             currentStreak={session.currentStreak}
             museConnected={muse.state.connected}
             touching={muse.state.touching}

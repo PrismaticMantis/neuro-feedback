@@ -8,7 +8,7 @@ export interface SessionSummaryData {
   date: string;
   time: string;
   duration: string;
-  flowStatePercent: number;
+  coherencePercent: number;
   longestStreak: string;
   avgCoherence: number;
   achievementScore: string;
@@ -29,7 +29,7 @@ export function formatSessionSummaryData(
     date: date.toLocaleDateString(),
     time: date.toLocaleTimeString(),
     duration: formatTime(stats.totalLength) + ' minutes',
-    flowStatePercent: Math.round(stats.flowStatePercent),
+    coherencePercent: Math.round(stats.coherencePercent),
     longestStreak: formatTime(stats.longestStreak) + ' minutes',
     avgCoherence: stats.avgCoherence,
     achievementScore: stats.achievementScore,
@@ -46,7 +46,7 @@ export function formatEmailBody(summary: SessionSummaryData): string {
 
 Date: ${summary.date} at ${summary.time}
 Session Duration: ${summary.duration}
-Time in Flow State: ${summary.flowStatePercent}%
+Time in Coherence: ${summary.coherencePercent}%
 Longest Coherence Streak: ${summary.longestStreak}
 Average Coherence: ${summary.avgCoherence.toFixed(2)}
 Achievement: ${summary.achievementScore}

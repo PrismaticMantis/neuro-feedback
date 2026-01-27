@@ -14,7 +14,7 @@ interface CoherenceGraphProps {
 // Zone configuration with labels, descriptions, and colors
 const ZONE_CONFIG = {
   flow: {
-    label: 'Flow State',
+    label: 'Coherence',
     description: 'Calm & Focused',
     color: 'var(--accent-teal)',
     bgColor: 'rgba(79, 209, 197, 0.15)',
@@ -87,7 +87,7 @@ export function CoherenceGraph({
     const flowY = height * (1 - ZONE_THRESHOLDS.flow);
     const stabilizingY = height * (1 - ZONE_THRESHOLDS.stabilizing);
 
-    // Flow State Zone (top) - green tint
+    // Coherence Zone (top) - green tint
     ctx.fillStyle = 'rgba(79, 209, 197, 0.12)';
     ctx.fillRect(0, 0, width, flowY);
 

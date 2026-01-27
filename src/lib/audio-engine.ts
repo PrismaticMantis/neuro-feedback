@@ -23,11 +23,14 @@ const CROSSFADE_CONSTANTS = {
   SHIMMER_UPDATE_SMOOTH_SECONDS: 0.8, // Smooth update time for shimmer gain changes
   // Fog effect constants (active mind sustain gating)
   ACTIVE_SUSTAIN_SECONDS: 3.0, // Must be non-coherent for this long before fog appears
-  FOG_LEVEL: 0.35, // Fog gain level (0-1)
+  FOG_REVERB_WET: 0.15, // Reverb wet mix (0-1), subtle spatial effect
   FOG_ATTACK_SECONDS: 3.0, // Fog fade-in time
   FOG_RELEASE_SECONDS: 4.0, // Fog fade-out time
-  FOG_LOWPASS_OPEN: 18000, // Lowpass frequency when fog is off (Hz)
-  FOG_LOWPASS_CLOSED: 5000, // Lowpass frequency when fog is on (Hz)
+  FOG_REVERB_ROOM_SIZE: 0.8, // Reverb room size (0-1)
+  FOG_REVERB_DAMPING: 0.3, // Reverb damping (0-1), higher = less reverb
+  FOG_HIGHPASS_CUTOFF: 80, // High-pass filter cutoff for reverb return (Hz)
+  // Session end fade-out
+  SESSION_END_FADE_SECONDS: 4.0, // Master gain fade-out duration on session end
 };
 
 // Binaural beat presets (carrier frequencies transposed down a tritone)
@@ -109,9 +112,15 @@ export class AudioEngine {
   // Shimmer limiter
   private shimmerLimiter: DynamicsCompressorNode | null = null;
 
-  // Fog effect nodes (active mind effect)
-  private fogGain: GainNode | null = null;
-  private fogLowpass: BiquadFilterNode | null = null;
+  // Fog effect nodes (active mind effect - reverb-based)
+  private fogReverbWetGain: GainNode | null = null; // Wet reverb signal gain
+  private fogReverbDryGain: GainNode | null = null; // Dry signal gain
+  private fogReverbHighpass: BiquadFilterNode | null = null; // High-pass filter for reverb return
+  private fogReverbDelay1: DelayNode | null = null; // Reverb delay 1
+  private fogReverbDelay2: DelayNode | null = null; // Reverb delay 2
+  private fogReverbDelay3: DelayNode | null = null; // Reverb delay 3
+  private fogReverbFeedbackGain: GainNode | null = null; // Reverb feedback gain
+  private fogReverbMixGain: GainNode | null = null; // Controls wet/dry mix (0 = no fog, 1 = full fog)
 
   // Entrainment nodes (binaural only)
   private entrainmentGain: GainNode | null = null;
@@ -224,23 +233,77 @@ export class AudioEngine {
     this.shimmerGain.connect(this.shimmerLimiter);
     this.shimmerLimiter.connect(this.masterGain);
 
-    // Create fog effect nodes (lowpass filter + gain)
-    this.fogLowpass = this.ctx.createBiquadFilter();
-    this.fogLowpass.type = 'lowpass';
-    this.fogLowpass.frequency.value = CROSSFADE_CONSTANTS.FOG_LOWPASS_OPEN; // Start open (no fog)
-    this.fogLowpass.Q.value = 1.0;
-
-    this.fogGain = this.ctx.createGain();
-    this.fogGain.gain.value = 1.0; // Start at 1.0 (full pass-through, no fog effect)
-
-    // Fog chain: master -> fogLowpass -> fogGain -> destination
-    // Route master output through fog filter chain
-    // fogGain controls fog intensity: 1.0 = no fog, FOG_LEVEL = full fog
-    // lowpass frequency creates the muffled effect
-    this.masterGain.disconnect(); // Disconnect from destination
-    this.masterGain.connect(this.fogLowpass);
-    this.fogLowpass.connect(this.fogGain);
-    this.fogGain.connect(this.ctx.destination);
+    // Create fog effect nodes (reverb-based spatial effect)
+    // Reverb implementation using multiple delays with feedback
+    
+    // Create delay nodes for reverb (different delay times for spatial effect)
+    this.fogReverbDelay1 = this.ctx.createDelay(1.0);
+    this.fogReverbDelay1.delayTime.value = 0.03; // 30ms delay
+    
+    this.fogReverbDelay2 = this.ctx.createDelay(1.0);
+    this.fogReverbDelay2.delayTime.value = 0.05; // 50ms delay
+    
+    this.fogReverbDelay3 = this.ctx.createDelay(1.0);
+    this.fogReverbDelay3.delayTime.value = 0.07; // 70ms delay
+    
+    // Feedback gain for reverb tail
+    this.fogReverbFeedbackGain = this.ctx.createGain();
+    this.fogReverbFeedbackGain.gain.value = CROSSFADE_CONSTANTS.FOG_REVERB_ROOM_SIZE * 0.3; // Subtle feedback
+    
+    // High-pass filter for reverb return (keep low end clean)
+    this.fogReverbHighpass = this.ctx.createBiquadFilter();
+    this.fogReverbHighpass.type = 'highpass';
+    this.fogReverbHighpass.frequency.value = CROSSFADE_CONSTANTS.FOG_HIGHPASS_CUTOFF;
+    this.fogReverbHighpass.Q.value = 1.0;
+    
+    // Wet reverb signal gain
+    this.fogReverbWetGain = this.ctx.createGain();
+    this.fogReverbWetGain.gain.value = 0; // Start at 0 (no fog)
+    
+    // Dry signal gain (always 1.0, dry signal stays present)
+    this.fogReverbDryGain = this.ctx.createGain();
+    this.fogReverbDryGain.gain.value = 1.0;
+    
+    // Mix gain controls overall fog intensity (0 = no fog, 1 = full fog)
+    this.fogReverbMixGain = this.ctx.createGain();
+    this.fogReverbMixGain.gain.value = 0; // Start at 0 (no fog)
+    
+    // Build reverb network:
+    // masterGain -> split to dry and reverb
+    // Dry: masterGain -> fogReverbDryGain -> destination
+    // Reverb: masterGain -> fogReverbMixGain -> delays -> feedback -> highpass -> fogReverbWetGain -> destination
+    
+    // Disconnect masterGain from destination
+    this.masterGain.disconnect();
+    
+    // Dry signal path (always present)
+    this.masterGain.connect(this.fogReverbDryGain);
+    this.fogReverbDryGain.connect(this.ctx.destination);
+    
+    // Reverb signal path (fog effect)
+    this.masterGain.connect(this.fogReverbMixGain);
+    this.fogReverbMixGain.connect(this.fogReverbDelay1);
+    this.fogReverbMixGain.connect(this.fogReverbDelay2);
+    this.fogReverbMixGain.connect(this.fogReverbDelay3);
+    
+    // Connect delays to feedback and highpass
+    this.fogReverbDelay1.connect(this.fogReverbFeedbackGain);
+    this.fogReverbDelay2.connect(this.fogReverbFeedbackGain);
+    this.fogReverbDelay3.connect(this.fogReverbFeedbackGain);
+    
+    // Feedback loop (subtle)
+    this.fogReverbFeedbackGain.connect(this.fogReverbDelay1);
+    this.fogReverbFeedbackGain.connect(this.fogReverbDelay2);
+    this.fogReverbFeedbackGain.connect(this.fogReverbDelay3);
+    
+    // Reverb output through highpass filter
+    this.fogReverbDelay1.connect(this.fogReverbHighpass);
+    this.fogReverbDelay2.connect(this.fogReverbHighpass);
+    this.fogReverbDelay3.connect(this.fogReverbHighpass);
+    
+    // Highpass -> wet gain -> destination
+    this.fogReverbHighpass.connect(this.fogReverbWetGain);
+    this.fogReverbWetGain.connect(this.ctx.destination);
 
     this.isAudioLoaded = true;
     console.log('[AudioEngine] Initialized with MP3 crossfade system');
@@ -481,39 +544,30 @@ export class AudioEngine {
   }
 
   /**
-   * End session audio
+   * End session audio with smooth fade-out
    */
   stopSession(): void {
     if (!this.ctx || !this.isSessionActive) return;
 
     const now = this.ctx.currentTime;
+    const fadeTime = CROSSFADE_CONSTANTS.SESSION_END_FADE_SECONDS;
 
-    // Fade out all sources
-    const fadeTime = 2.0;
+    console.log('[AudioEngine] Starting smooth session end fade-out', { fadeTime });
 
-    if (this.baselineGain) {
-      const currentGain = this.baselineGain.gain.value;
-      this.baselineGain.gain.cancelScheduledValues(now);
-      this.baselineGain.gain.setValueAtTime(currentGain, now);
-      this.baselineGain.gain.linearRampToValueAtTime(0, now + fadeTime);
+    // Fade out fog first if active (before master fade)
+    if (this.fogReverbMixGain && this.fogEnabled) {
+      this.fadeOutFog(now);
     }
 
-    if (this.coherenceGain) {
-      const currentGain = this.coherenceGain.gain.value;
-      this.coherenceGain.gain.cancelScheduledValues(now);
-      this.coherenceGain.gain.setValueAtTime(currentGain, now);
-      this.coherenceGain.gain.linearRampToValueAtTime(0, now + fadeTime);
+    // Global fade-out using masterGain (smooth and clean)
+    if (this.masterGain) {
+      const currentGain = this.masterGain.gain.value;
+      this.masterGain.gain.cancelScheduledValues(now);
+      this.masterGain.gain.setValueAtTime(currentGain, now);
+      this.masterGain.gain.linearRampToValueAtTime(0.001, now + fadeTime);
     }
 
-    if (this.shimmerGain) {
-      const currentGain = Math.max(0.001, this.shimmerGain.gain.value);
-      this.shimmerGain.gain.cancelScheduledValues(now);
-      this.shimmerGain.gain.setValueAtTime(currentGain, now);
-      // Use consistent fade-out time for shimmer
-      this.shimmerGain.gain.linearRampToValueAtTime(0.001, now + CROSSFADE_CONSTANTS.SHIMMER_FADE_OUT_SECONDS);
-    }
-
-    // Stop sources after fade
+    // Stop sources after fade completes
     setTimeout(() => {
       try {
         this.baselineSource?.stop();
@@ -526,12 +580,13 @@ export class AudioEngine {
       this.coherenceSource = null;
       this.shimmerSource = null;
       this.sourcesStarted = false; // Reset guard for next session
+      
+      // Reset master gain to 1.0 for next session
+      if (this.masterGain) {
+        this.masterGain.gain.cancelScheduledValues(this.ctx!.currentTime);
+        this.masterGain.gain.setValueAtTime(1.0, this.ctx!.currentTime);
+      }
     }, (fadeTime + 0.1) * 1000);
-
-    // Fade out fog if active
-    if (this.fogGain && this.fogLowpass && this.fogEnabled) {
-      this.fadeOutFog(now);
-    }
 
     this.isSessionActive = false;
     
@@ -542,11 +597,8 @@ export class AudioEngine {
     // Reset fog tracking
     this.activeMindEnteredAt = null;
     this.fogEnabled = false;
-    
-    // CRITICAL: Ensure audio is fully muted when session stops
-    this.forceBaselineAudio(now);
 
-    console.log('[AudioEngine] Session stopped');
+    console.log('[AudioEngine] Session stopped with smooth fade-out');
   }
 
   /**
@@ -638,32 +690,6 @@ export class AudioEngine {
     }
   }
 
-  /**
-   * Force baseline audio (fail-safe)
-   * Ensures coherence and shimmer are muted
-   */
-  private forceBaselineAudio(now: number): void {
-    if (!this.ctx) return;
-    
-    console.log('[AudioEngine] 🔒 Force baseline audio (fail-safe)');
-    
-    // Immediately mute coherence and shimmer
-    if (this.coherenceGain) {
-      this.coherenceGain.gain.cancelScheduledValues(now);
-      this.coherenceGain.gain.setValueAtTime(0, now);
-    }
-    
-    if (this.shimmerGain) {
-      this.shimmerGain.gain.cancelScheduledValues(now);
-      this.shimmerGain.gain.setValueAtTime(0.001, now);
-    }
-    
-    // Ensure baseline is at full volume
-    if (this.baselineGain) {
-      this.baselineGain.gain.cancelScheduledValues(now);
-      this.baselineGain.gain.setValueAtTime(1.0, now);
-    }
-  }
 
   /**
    * Update active mind sustain timer and trigger fog if needed
@@ -696,79 +722,79 @@ export class AudioEngine {
   }
 
   /**
-   * Fade in fog effect (active mind)
+   * Fade in fog effect (active mind) - reverb-based spatial effect
    */
   private fadeInFog(now: number): void {
-    if (!this.fogGain || !this.fogLowpass) return;
+    if (!this.fogReverbMixGain || !this.fogReverbWetGain) return;
 
-    console.log('[AudioEngine] 🌫️ Fading in fog effect');
+    console.log('[AudioEngine] 🌫️ Fading in fog effect (reverb-based)');
 
     // Cancel any existing scheduled changes
-    this.fogGain.gain.cancelScheduledValues(now);
-    this.fogLowpass.frequency.cancelScheduledValues(now);
+    this.fogReverbMixGain.gain.cancelScheduledValues(now);
+    this.fogReverbWetGain.gain.cancelScheduledValues(now);
 
     // Get current values
-    const currentGain = this.fogGain.gain.value;
-    const currentFreq = this.fogLowpass.frequency.value;
+    const currentMix = this.fogReverbMixGain.gain.value;
+    const currentWet = this.fogReverbWetGain.gain.value;
 
-    // Fade in fog gain (from current down to FOG_LEVEL)
-    // FOG_LEVEL controls fog intensity: lower gain = more muffled/foggy effect
-    // When fog is on, gain is reduced to FOG_LEVEL to create the foggy/muffled effect
-    // Note: fogGain starts at 1.0 (no fog), ramps down to FOG_LEVEL when fog activates
-    const targetGain = CROSSFADE_CONSTANTS.FOG_LEVEL;
-    this.fogGain.gain.setValueAtTime(currentGain, now);
-    this.fogGain.gain.linearRampToValueAtTime(
-      targetGain,
+    // Fade in fog mix gain (controls reverb input level)
+    // 0 = no fog, 1 = full fog reverb
+    this.fogReverbMixGain.gain.setValueAtTime(currentMix, now);
+    this.fogReverbMixGain.gain.linearRampToValueAtTime(
+      1.0, // Full reverb input when fog is active
       now + CROSSFADE_CONSTANTS.FOG_ATTACK_SECONDS
     );
 
-    // Ramp down lowpass frequency (create foggy/muffled effect)
-    this.fogLowpass.frequency.setValueAtTime(currentFreq, now);
-    this.fogLowpass.frequency.linearRampToValueAtTime(
-      CROSSFADE_CONSTANTS.FOG_LOWPASS_CLOSED,
+    // Fade in reverb wet gain (controls reverb output level)
+    // Wet mix is subtle (10-20%) to keep it spatial, not overwhelming
+    const targetWet = CROSSFADE_CONSTANTS.FOG_REVERB_WET;
+    this.fogReverbWetGain.gain.setValueAtTime(currentWet, now);
+    this.fogReverbWetGain.gain.linearRampToValueAtTime(
+      targetWet,
       now + CROSSFADE_CONSTANTS.FOG_ATTACK_SECONDS
     );
 
-    console.log('[AudioEngine] Fog fade-in scheduled', {
-      gain: `${currentGain.toFixed(3)} -> ${targetGain.toFixed(3)}`,
-      lowpass: `${currentFreq.toFixed(0)}Hz -> ${CROSSFADE_CONSTANTS.FOG_LOWPASS_CLOSED}Hz`,
+    console.log('[AudioEngine] Fog fade-in scheduled (reverb)', {
+      mixGain: `${currentMix.toFixed(3)} -> 1.000`,
+      wetGain: `${currentWet.toFixed(3)} -> ${targetWet.toFixed(3)}`,
       duration: CROSSFADE_CONSTANTS.FOG_ATTACK_SECONDS,
+      note: 'Dry signal remains at full volume, reverb adds spatial fog effect',
     });
   }
 
   /**
-   * Fade out fog effect (coherence returning)
+   * Fade out fog effect (coherence returning) - reverb-based spatial effect
    */
   private fadeOutFog(now: number): void {
-    if (!this.fogGain || !this.fogLowpass) return;
+    if (!this.fogReverbMixGain || !this.fogReverbWetGain) return;
 
-    console.log('[AudioEngine] 🌫️ Fading out fog effect');
+    console.log('[AudioEngine] 🌫️ Fading out fog effect (reverb-based)');
 
     // Cancel any existing scheduled changes
-    this.fogGain.gain.cancelScheduledValues(now);
-    this.fogLowpass.frequency.cancelScheduledValues(now);
+    this.fogReverbMixGain.gain.cancelScheduledValues(now);
+    this.fogReverbWetGain.gain.cancelScheduledValues(now);
 
     // Get current values
-    const currentGain = this.fogGain.gain.value;
-    const currentFreq = this.fogLowpass.frequency.value;
+    const currentMix = this.fogReverbMixGain.gain.value;
+    const currentWet = this.fogReverbWetGain.gain.value;
 
-    // Fade out fog gain (back to 1.0 for full pass-through)
-    this.fogGain.gain.setValueAtTime(currentGain, now);
-    this.fogGain.gain.linearRampToValueAtTime(
-      1.0, // Full pass-through when fog is off
+    // Fade out fog mix gain (back to 0 = no fog)
+    this.fogReverbMixGain.gain.setValueAtTime(currentMix, now);
+    this.fogReverbMixGain.gain.linearRampToValueAtTime(
+      0.0, // No reverb input when fog is off
       now + CROSSFADE_CONSTANTS.FOG_RELEASE_SECONDS
     );
 
-    // Ramp up lowpass frequency (restore clarity)
-    this.fogLowpass.frequency.setValueAtTime(currentFreq, now);
-    this.fogLowpass.frequency.linearRampToValueAtTime(
-      CROSSFADE_CONSTANTS.FOG_LOWPASS_OPEN,
+    // Fade out reverb wet gain (back to 0)
+    this.fogReverbWetGain.gain.setValueAtTime(currentWet, now);
+    this.fogReverbWetGain.gain.linearRampToValueAtTime(
+      0.0, // No reverb output when fog is off
       now + CROSSFADE_CONSTANTS.FOG_RELEASE_SECONDS
     );
 
-    console.log('[AudioEngine] Fog fade-out scheduled', {
-      gain: `${currentGain.toFixed(3)} -> 1.000`,
-      lowpass: `${currentFreq.toFixed(0)}Hz -> ${CROSSFADE_CONSTANTS.FOG_LOWPASS_OPEN}Hz`,
+    console.log('[AudioEngine] Fog fade-out scheduled (reverb)', {
+      mixGain: `${currentMix.toFixed(3)} -> 0.000`,
+      wetGain: `${currentWet.toFixed(3)} -> 0.000`,
       duration: CROSSFADE_CONSTANTS.FOG_RELEASE_SECONDS,
     });
   }

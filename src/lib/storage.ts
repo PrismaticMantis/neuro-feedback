@@ -276,18 +276,18 @@ export const storage = new StorageManager();
  */
 export function calculateSessionStats(session: Session): SessionStats {
   const totalLength = session.duration;
-  const flowStatePercent =
-    session.duration > 0 ? (session.flowStateTime / session.duration) * 100 : 0;
+  const coherencePercent =
+    session.duration > 0 ? (session.coherenceTime / session.duration) * 100 : 0;
 
   // Calculate achievement score based on performance
   let achievementScore: string;
-  if (flowStatePercent >= 70) {
+  if (coherencePercent >= 70) {
     achievementScore = 'Mastery';
-  } else if (flowStatePercent >= 50) {
+  } else if (coherencePercent >= 50) {
     achievementScore = 'Flowing';
-  } else if (flowStatePercent >= 30) {
+  } else if (coherencePercent >= 30) {
     achievementScore = 'Settled';
-  } else if (flowStatePercent >= 15) {
+  } else if (coherencePercent >= 15) {
     achievementScore = 'Emerging';
   } else {
     achievementScore = 'Beginning';
@@ -297,7 +297,7 @@ export function calculateSessionStats(session: Session): SessionStats {
     totalLength,
     longestStreak: session.longestStreak,
     avgCoherence: session.avgCoherence,
-    flowStatePercent,
+    coherencePercent,
     achievementScore,
   };
 }

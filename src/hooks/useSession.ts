@@ -16,7 +16,7 @@ export interface UseSessionReturn {
   isSessionActive: boolean;
   sessionStartTime: number | null;
   sessionDuration: number;
-  flowStateTime: number;
+  coherenceTime: number;
   longestStreak: number;
   currentStreak: number;
   coherenceHistory: number[];
@@ -24,7 +24,7 @@ export interface UseSessionReturn {
   // Session controls
   startSession: () => void;
   endSession: () => Session | null;
-  updateFlowState: (isActive: boolean, coherence: number) => void;
+  updateCoherenceStatus: (isActive: boolean, coherence: number) => void;
 
   // Completed session
   lastSession: Session | null;
@@ -49,7 +49,7 @@ export function useSession(): UseSessionReturn {
   const [isSessionActive, setIsSessionActive] = useState(false);
   const [sessionStartTime, setSessionStartTime] = useState<number | null>(null);
   const [sessionDuration, setSessionDuration] = useState(0);
-  const [flowStateTime, setFlowStateTime] = useState(0);
+  const [coherenceTime, setCoherenceTime] = useState(0);
   const [longestStreak, setLongestStreak] = useState(0);
   const [currentStreak, setCurrentStreak] = useState(0);
   const [coherenceHistory, setCoherenceHistory] = useState<number[]>([]);
@@ -62,11 +62,11 @@ export function useSession(): UseSessionReturn {
   const [screen, setScreen] = useState<AppScreen>('setup');
 
   // Refs for tracking
-  const flowStateStartRef = useRef<number | null>(null);
+  const coherenceStartRef = useRef<number | null>(null);
   const lastCoherenceTimeRef = useRef<number>(0);
   const durationIntervalRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
   // Refs to track current values for accurate endSession calculation
-  const flowStateTimeRef = useRef<number>(0);
+  const coherenceTimeRef = useRef<number>(0);
   const longestStreakRef = useRef<number>(0);
 
   // Update duration every second
@@ -111,13 +111,13 @@ export function useSession(): UseSessionReturn {
     const now = Date.now();
     setSessionStartTime(now);
     setSessionDuration(0);
-    setFlowStateTime(0);
+    setCoherenceTime(0);
     setLongestStreak(0);
     setCurrentStreak(0);
     setCoherenceHistory([]);
     setIsSessionActive(true);
-    flowStateStartRef.current = null;
-    flowStateTimeRef.current = 0;
+    coherenceStartRef.current = null;
+    coherenceTimeRef.current = 0;
     longestStreakRef.current = 0;
     lastCoherenceTimeRef.current = now;
     setScreen('session');
@@ -132,17 +132,17 @@ export function useSession(): UseSessionReturn {
     const endTime = Date.now();
     const duration = endTime - sessionStartTime;
 
-    // CRITICAL FIX: Add final flow period if session ends while still in flow state
-    let finalFlowStateTime = flowStateTimeRef.current;
+    // CRITICAL FIX: Add final coherence period if session ends while still in coherence
+    let finalCoherenceTime = coherenceTimeRef.current;
     let finalLongestStreak = longestStreakRef.current;
     
-    if (flowStateStartRef.current !== null) {
-      // User is still in flow state - add the final period
-      const finalTimeSpent = endTime - flowStateStartRef.current;
-      finalFlowStateTime = flowStateTimeRef.current + finalTimeSpent;
+    if (coherenceStartRef.current !== null) {
+      // User is still in coherence - add the final period
+      const finalTimeSpent = endTime - coherenceStartRef.current;
+      finalCoherenceTime = coherenceTimeRef.current + finalTimeSpent;
       
       // Update longest streak if this final period is longer
-      const finalStreak = endTime - flowStateStartRef.current;
+      const finalStreak = endTime - coherenceStartRef.current;
       if (finalStreak > longestStreakRef.current) {
         finalLongestStreak = finalStreak;
       }
@@ -159,7 +159,7 @@ export function useSession(): UseSessionReturn {
       startTime: new Date(sessionStartTime).toISOString(),
       endTime: new Date(endTime).toISOString(),
       duration,
-      flowStateTime: finalFlowStateTime,
+      coherenceTime: finalCoherenceTime,
       longestStreak: finalLongestStreak,
       avgCoherence,
       coherenceHistory,
@@ -178,7 +178,7 @@ export function useSession(): UseSessionReturn {
     coherenceHistory,
   ]);
 
-  const updateFlowState = useCallback(
+  const updateCoherenceStatus = useCallback(
     (isActive: boolean, coherence: number) => {
       if (!isSessionActive) return;
 
@@ -191,12 +191,12 @@ export function useSession(): UseSessionReturn {
       }
 
       if (isActive) {
-        // In flow state
-        if (flowStateStartRef.current === null) {
-          flowStateStartRef.current = now;
+        // In coherence
+        if (coherenceStartRef.current === null) {
+          coherenceStartRef.current = now;
         }
 
-        const streak = now - flowStateStartRef.current;
+        const streak = now - coherenceStartRef.current;
         setCurrentStreak(streak);
 
         // FIX: Use functional update to avoid stale closure bug
@@ -206,16 +206,16 @@ export function useSession(): UseSessionReturn {
           return newLongest;
         });
       } else {
-        // Not in flow state
-        if (flowStateStartRef.current !== null) {
-          // Add time spent in flow state
-          const timeSpent = now - flowStateStartRef.current;
-          setFlowStateTime((prev) => {
+        // Not in coherence
+        if (coherenceStartRef.current !== null) {
+          // Add time spent in coherence
+          const timeSpent = now - coherenceStartRef.current;
+          setCoherenceTime((prev) => {
             const newTotal = prev + timeSpent;
-            flowStateTimeRef.current = newTotal;
+            coherenceTimeRef.current = newTotal;
             return newTotal;
           });
-          flowStateStartRef.current = null;
+          coherenceStartRef.current = null;
         }
         setCurrentStreak(0);
       }
@@ -251,7 +251,7 @@ export function useSession(): UseSessionReturn {
     isSessionActive,
     sessionStartTime,
     sessionDuration,
-    flowStateTime,
+    coherenceTime,
     longestStreak,
     currentStreak,
     coherenceHistory,
@@ -259,7 +259,7 @@ export function useSession(): UseSessionReturn {
     // Session controls
     startSession,
     endSession,
-    updateFlowState,
+    updateCoherenceStatus,
 
     // Completed session
     lastSession,

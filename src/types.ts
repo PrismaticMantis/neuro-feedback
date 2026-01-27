@@ -12,7 +12,7 @@ export interface Session {
   startTime: string;
   endTime: string;
   duration: number; // ms
-  flowStateTime: number; // ms in target state
+  coherenceTime: number; // ms in coherence state
   longestStreak: number; // ms longest continuous
   avgCoherence: number; // 0-1
   coherenceHistory: number[]; // time-series for graph
@@ -51,7 +51,7 @@ export interface MuseState {
   focusIndex: number;
 }
 
-export interface FlowState {
+export interface CoherenceStatus {
   isActive: boolean;
   sustainedMs: number;
   betaAlphaRatio: number;
@@ -69,10 +69,12 @@ export interface AudioSettings {
   rewardVolume: number;
 }
 
-// Threshold settings for Flow State detection
+// Threshold settings for Coherence detection
 export interface ThresholdSettings {
-  coherenceThreshold: number; // 0-1, default 0.7 (70%)
-  timeThreshold: number; // ms, default 5000 (5 seconds)
+  coherenceSensitivity: number; // 0-1, default 0.5 (medium difficulty)
+  // Derived values (calculated from sensitivity):
+  // - coherenceThreshold: 0.2 (easy) to 0.9 (hard)
+  // - timeThreshold: 1000ms (easy) to 10000ms (hard)
 }
 
 // Binaural beat presets
@@ -120,6 +122,6 @@ export interface SessionStats {
   totalLength: number;
   longestStreak: number;
   avgCoherence: number;
-  flowStatePercent: number;
+  coherencePercent: number;
   achievementScore: string;
 }
