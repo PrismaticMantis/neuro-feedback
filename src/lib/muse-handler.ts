@@ -216,7 +216,7 @@ export class MuseHandler {
       // Subscribe to PPG (photoplethysmography) for heart rate (if feature enabled)
       if (ENABLE_PPG_MODULATION && this.museClient.ppgReadings) {
         this.ppgSubscription = this.museClient.ppgReadings.subscribe(
-          (ppg: { electrode: number; samples: number[]; timestamp: number }) => {
+          (ppg) => {
             this.handlePPGReading(ppg);
           }
         );
@@ -543,12 +543,9 @@ export class MuseHandler {
   /**
    * Handle incoming PPG (photoplethysmography) readings from Bluetooth
    * Only active if ENABLE_PPG_MODULATION is true
+   * PPGReading type from muse-js: { samples: number[]; timestamp: number }
    */
-  private handlePPGReading(ppg: {
-    electrode: number;
-    samples: number[];
-    timestamp: number;
-  }): void {
+  private handlePPGReading(ppg: { samples: number[]; timestamp: number }): void {
     if (!ENABLE_PPG_MODULATION) {
       return; // Feature disabled
     }
