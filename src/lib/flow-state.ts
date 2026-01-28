@@ -3,6 +3,10 @@
 
 import type { BrainwaveBands, CoherenceStatus } from '../types';
 
+// Feature flag for expressive modulation (calmScore and creativeFlowScore)
+// When false, all expressive modulation behavior is disabled and app behaves identically to current version
+export const ENABLE_EXPRESSIVE_MODULATION = true;
+
 export interface CoherenceConfig {
   sustainedMs: number; // How long conditions must be met (default 5000ms)
   varianceThreshold: number; // Maximum variance allowed (default 0.15)
@@ -397,4 +401,107 @@ export function getCoherenceZone(coherence: number): 'flow' | 'stabilizing' | 'n
   if (coherence >= 0.7) return 'flow';
   if (coherence >= 0.4) return 'stabilizing';
   return 'noise';
+}
+
+/**
+ * Calculate calm score (0-1) based on brainwave data
+ * Higher score = more calm/relaxed state
+ * Uses: alpha prominence, alpha/beta ratio, low variance (stability)
+ */
+export function calculateCalmScore(
+  bands: BrainwaveBands,
+  variance: number,
+  electrodeQuality: number = 1
+): number {
+  if (!ENABLE_EXPRESSIVE_MODULATION) {
+    return 0; // Feature disabled - return neutral value
+  }
+
+  const { alpha, beta, gamma, theta, delta } = bands;
+  const totalPower = alpha + beta + gamma + theta + delta;
+
+  // Signal validity checks
+  if (totalPower < 0.05 || electrodeQuality < 0.5 || alpha < 0.01) {
+    return 0;
+  }
+
+  // Alpha prominence: higher alpha relative to total power
+  const alphaRelative = alpha / totalPower;
+  const alphaProminenceScore = Math.min(1, alphaRelative * 3); // Scale up since alpha is typically 0.1-0.3
+
+  // Alpha/Beta ratio: lower ratio (more alpha, less beta) = more calm
+  const betaAlphaRatio = alpha > 0.01 ? beta / alpha : 2;
+  const ratioScore = Math.max(0, Math.min(1, 1.5 - betaAlphaRatio));
+
+  // Low variance (stability): lower variance = more stable/calm
+  const stabilityScore = Math.max(0, 1 - Math.sqrt(variance) * 3);
+
+  // Combine with weights
+  const calmScore = (
+    alphaProminenceScore * 0.4 +
+    ratioScore * 0.35 +
+    stabilityScore * 0.25
+  );
+
+  // Normalize and clamp to 0-1
+  return Math.max(0, Math.min(1, calmScore));
+}
+
+/**
+ * Calculate creative flow score (0-1) based on brainwave data
+ * Higher score = more creative/flow state
+ * Uses: low variance (stability), low theta (penalize high theta), moderate beta (beta-in-midrange)
+ */
+export function calculateCreativeFlowScore(
+  bands: BrainwaveBands,
+  variance: number,
+  electrodeQuality: number = 1
+): number {
+  if (!ENABLE_EXPRESSIVE_MODULATION) {
+    return 0; // Feature disabled - return neutral value
+  }
+
+  const { alpha, beta, gamma, theta, delta } = bands;
+  const totalPower = alpha + beta + gamma + theta + delta;
+
+  // Signal validity checks
+  if (totalPower < 0.05 || electrodeQuality < 0.5) {
+    return 0;
+  }
+
+  // Low variance (stability): lower variance = more stable/flow-like
+  const stabilityScore = Math.max(0, 1 - Math.sqrt(variance) * 3);
+
+  // Low theta: penalize high theta (theta is associated with drowsiness, not creative flow)
+  const thetaRelative = theta / totalPower;
+  const lowThetaScore = Math.max(0, 1 - thetaRelative * 4); // Penalize high theta
+
+  // Moderate beta: beta in midrange (not too low, not too high)
+  // Creative flow often has moderate beta (alert but not anxious)
+  const betaRelative = beta / totalPower;
+  // Target range: 0.15-0.35 relative beta power
+  let moderateBetaScore = 0;
+  if (betaRelative >= 0.15 && betaRelative <= 0.35) {
+    // In optimal range - score based on how close to center (0.25)
+    const center = 0.25;
+    const distance = Math.abs(betaRelative - center);
+    moderateBetaScore = Math.max(0, 1 - (distance / 0.1)); // Peak at center, fall off
+  } else if (betaRelative < 0.15) {
+    // Too low - score based on distance from 0.15
+    moderateBetaScore = Math.max(0, betaRelative / 0.15);
+  } else {
+    // Too high - score based on distance from 0.35
+    moderateBetaScore = Math.max(0, (0.5 - betaRelative) / 0.15);
+  }
+  moderateBetaScore = Math.min(1, moderateBetaScore);
+
+  // Combine with weights
+  const creativeFlowScore = (
+    stabilityScore * 0.4 +
+    lowThetaScore * 0.35 +
+    moderateBetaScore * 0.25
+  );
+
+  // Normalize and clamp to 0-1
+  return Math.max(0, Math.min(1, creativeFlowScore));
 }

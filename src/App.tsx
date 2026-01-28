@@ -10,6 +10,7 @@ import { ActiveSession } from './components/ActiveSession';
 import { SessionSummary } from './components/SessionSummary';
 import { audioEngine } from './lib/audio-engine';
 import { museHandler } from './lib/muse-handler';
+import { calculateCalmScore, calculateCreativeFlowScore } from './lib/flow-state';
 import type { ThresholdSettings } from './types';
 import './App.css';
 
@@ -97,14 +98,31 @@ function App() {
       // Update session coherence status
       session.updateCoherenceStatus(muse.coherenceStatus.isActive, muse.coherence);
       
-      // Update audio engine coherence with signal quality gating
-      audioEngine.updateCoherence(muse.coherence, signalQuality);
+      // Calculate expressive modulation scores (if feature enabled)
+      const calmScore = calculateCalmScore(
+        muse.state.bandsSmooth,
+        muse.coherenceStatus.signalVariance,
+        contactQuality
+      );
+      const creativeFlowScore = calculateCreativeFlowScore(
+        muse.state.bandsSmooth,
+        muse.coherenceStatus.signalVariance,
+        contactQuality
+      );
+      
+      // Update audio engine coherence with signal quality gating, expressive scores, and PPG
+      audioEngine.updateCoherence(muse.coherence, signalQuality, {
+        calmScore,
+        creativeFlowScore,
+      }, muse.ppg);
     }
   }, [
     muse.coherenceStatus.isActive,
     muse.coherence,
+    muse.coherenceStatus.signalVariance,
     muse.state.connected,
     muse.state.touching,
+    muse.state.bandsSmooth,
     muse.electrodeStatus,
     hasGoodContact,
     session.isSessionActive,
@@ -112,15 +130,41 @@ function App() {
 
   // Handle start session
   const handleStartSession = useCallback(async () => {
-    await audio.init();
-    // Start baseline/coherence audio session
-    await audioEngine.startSession();
+    console.warn('[App] ===== BEGIN SESSION CLICKED =====');
+    console.warn('[App] Muse connected:', muse.state.connected);
+    console.warn('[App] Current user:', session.currentUser?.name);
     
-    if (audio.entrainmentEnabled) {
-      await audio.setEntrainmentEnabled(true);
+    try {
+      console.warn('[App] Calling audio.init()...');
+      await audio.init();
+      console.warn('[App] ✅ audio.init() complete');
+      
+      // Start baseline/coherence audio session
+      console.warn('[App] Calling audioEngine.startSession()...');
+      await audioEngine.startSession();
+      console.warn('[App] ✅ audioEngine.startSession() complete');
+      
+      if (audio.entrainmentEnabled) {
+        console.warn('[App] Entrainment enabled, setting up...');
+        await audio.setEntrainmentEnabled(true);
+        console.warn('[App] ✅ Entrainment setup complete');
+      }
+      
+      console.warn('[App] Calling session.startSession()...');
+      session.startSession();
+      console.warn('[App] ✅ ===== BEGIN SESSION COMPLETE =====');
+    } catch (error) {
+      console.error('[App] ❌ ===== BEGIN SESSION FAILED =====');
+      console.error('[App] Error:', error);
+      if (error instanceof Error) {
+        console.error('[App] Error message:', error.message);
+        console.error('[App] Error stack:', error.stack);
+      }
+      // Don't throw - prevent page reload
+      // Show user-friendly error instead
+      console.warn('[App] ⚠️ Session start encountered an error, but continuing...');
     }
-    session.startSession();
-  }, [audio, session]);
+  }, [audio, session, muse.state.connected]);
 
   // Handle end session
   const handleEndSession = useCallback(() => {
@@ -190,7 +234,6 @@ function App() {
             coherenceHistory={session.coherenceHistory}
             currentCoherence={muse.coherence}
             coherenceZone={muse.coherenceZone}
-            coherenceState={audio.coherenceState}
             coherenceActive={muse.coherenceStatus.isActive}
             currentStreak={session.currentStreak}
             museConnected={muse.state.connected}

@@ -47,9 +47,20 @@ export function useAudio(): UseAudioReturn {
   const [isInitialized, setIsInitialized] = useState(false);
 
   const init = useCallback(async () => {
+    console.warn('[useAudio] init() called, isInitialized:', isInitialized);
     if (!isInitialized) {
-      await audioEngine.init();
-      setIsInitialized(true);
+      console.warn('[useAudio] Calling audioEngine.init()...');
+      try {
+        await audioEngine.init();
+        setIsInitialized(true);
+        console.warn('[useAudio] ✅ audioEngine.init() complete');
+      } catch (error) {
+        console.error('[useAudio] ❌ audioEngine.init() failed:', error);
+        // Don't throw - allow graceful degradation
+        console.warn('[useAudio] ⚠️ Continuing despite init error');
+      }
+    } else {
+      console.warn('[useAudio] ⚠️ Already initialized, skipping');
     }
   }, [isInitialized]);
 

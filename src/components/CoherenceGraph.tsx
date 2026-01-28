@@ -104,21 +104,75 @@ export function CoherenceGraph({
   }, [coherenceHistory]);
 
   // Update ball position using same coordinate system as graph
+  // Use requestAnimationFrame for smooth updates (5-10 fps minimum)
   useEffect(() => {
-    const container = containerRef.current;
-    const canvas = canvasRef.current;
-    if (!container || !canvas) return;
+    if (!isActive) {
+      // Reset ball to baseline when inactive
+      setBallY(50); // Middle position (0.5 coherence = 50%)
+      return;
+    }
 
-    const rect = canvas.getBoundingClientRect();
-    const height = rect.height;
-    
-    // Use the same mapping function as the graph
-    const y = mapValueToY(currentCoherence, height);
-    
-    // Convert to percentage for CSS positioning
-    const yPercent = (y / height) * 100;
-    setBallY(yPercent);
-  }, [currentCoherence]);
+    let animationFrameId: number;
+    let lastUpdateTime = 0;
+    const minUpdateInterval = 100; // ~10 fps minimum
+
+    const updateBallPosition = () => {
+      const now = Date.now();
+      if (now - lastUpdateTime < minUpdateInterval) {
+        animationFrameId = requestAnimationFrame(updateBallPosition);
+        return;
+      }
+      lastUpdateTime = now;
+
+      const container = containerRef.current;
+      const canvas = canvasRef.current;
+      if (!container || !canvas) {
+        animationFrameId = requestAnimationFrame(updateBallPosition);
+        return;
+      }
+
+      const rect = canvas.getBoundingClientRect();
+      const height = rect.height;
+      
+      // Validate currentCoherence value
+      let validCoherence = currentCoherence;
+      if (typeof validCoherence !== 'number' || isNaN(validCoherence) || !isFinite(validCoherence)) {
+        console.warn('[CoherenceGraph] Invalid currentCoherence value:', currentCoherence, 'defaulting to 0.5');
+        validCoherence = 0.5; // Default to middle (baseline)
+      }
+      
+      // Clamp to valid range [0, 1]
+      validCoherence = Math.max(0, Math.min(1, validCoherence));
+      
+      // Use the same mapping function as the graph
+      const y = mapValueToY(validCoherence, height);
+      
+      // Convert to percentage for CSS positioning
+      const yPercent = (y / height) * 100;
+      
+      // Debug logging (temporary)
+      if (Math.random() < 0.1) { // Log ~10% of updates to avoid spam
+        console.log('[CoherenceGraph] Ball position update:', {
+          currentCoherence: validCoherence,
+          y,
+          yPercent,
+          height,
+        });
+      }
+      
+      setBallY(yPercent);
+      animationFrameId = requestAnimationFrame(updateBallPosition);
+    };
+
+    // Start animation loop
+    animationFrameId = requestAnimationFrame(updateBallPosition);
+
+    return () => {
+      if (animationFrameId) {
+        cancelAnimationFrame(animationFrameId);
+      }
+    };
+  }, [currentCoherence, isActive]);
 
   // Draw the graph
   useEffect(() => {
@@ -141,33 +195,33 @@ export function CoherenceGraph({
     // Clear
     ctx.clearRect(0, 0, width, height);
 
-    // Draw zone backgrounds with distinct colors
+    // Draw zone backgrounds with subtle tints (minimal, professional)
     const flowY = height * (1 - ZONE_THRESHOLDS.flow);
     const stabilizingY = height * (1 - ZONE_THRESHOLDS.stabilizing);
 
-    // Coherence Zone (top) - green tint
-    ctx.fillStyle = 'rgba(79, 209, 197, 0.12)';
+    // Coherence Zone (top) - very subtle teal tint
+    ctx.fillStyle = 'rgba(79, 209, 197, 0.06)';
     ctx.fillRect(0, 0, width, flowY);
 
-    // Stabilizing Zone (middle) - yellow tint
-    ctx.fillStyle = 'rgba(251, 191, 36, 0.08)';
+    // Stabilizing Zone (middle) - very subtle yellow tint
+    ctx.fillStyle = 'rgba(251, 191, 36, 0.04)';
     ctx.fillRect(0, flowY, width, stabilizingY - flowY);
 
-    // Active Mind Zone (bottom) - red tint
-    ctx.fillStyle = 'rgba(248, 113, 113, 0.06)';
+    // Active Mind Zone (bottom) - very subtle red tint
+    ctx.fillStyle = 'rgba(248, 113, 113, 0.03)';
     ctx.fillRect(0, stabilizingY, width, height - stabilizingY);
 
-    // Draw zone divider lines
-    ctx.strokeStyle = 'rgba(79, 209, 197, 0.3)';
-    ctx.lineWidth = 1;
-    ctx.setLineDash([5, 5]);
+    // Draw minimal zone divider lines (faint, non-distracting)
+    ctx.strokeStyle = 'rgba(79, 209, 197, 0.15)';
+    ctx.lineWidth = 0.5;
+    ctx.setLineDash([8, 8]);
 
     ctx.beginPath();
     ctx.moveTo(0, flowY);
     ctx.lineTo(width, flowY);
     ctx.stroke();
 
-    ctx.strokeStyle = 'rgba(251, 191, 36, 0.3)';
+    ctx.strokeStyle = 'rgba(251, 191, 36, 0.15)';
     ctx.beginPath();
     ctx.moveTo(0, stabilizingY);
     ctx.lineTo(width, stabilizingY);
@@ -183,63 +237,85 @@ export function CoherenceGraph({
       const isTablet = window.innerWidth >= 768;
       const lineWidth = isTablet ? 3.5 : 2.5;
       
-      // Draw glow effect first (behind the line)
-      ctx.beginPath();
-      ctx.strokeStyle = 'rgba(79, 209, 197, 0.4)';
-      ctx.lineWidth = lineWidth + 4;
-      ctx.lineCap = 'round';
-      ctx.lineJoin = 'round';
-      ctx.shadowBlur = 8;
-      ctx.shadowColor = 'rgba(79, 209, 197, 0.6)';
-
       const pointSpacing = width / Math.max(historyToDraw.length - 1, 1);
 
-      historyToDraw.forEach((value, index) => {
-        const x = index * pointSpacing;
-        const y = mapValueToY(value, height);
+      // Prepare points for bezier curve smoothing
+      const points: Array<{ x: number; y: number }> = historyToDraw.map((value, index) => ({
+        x: index * pointSpacing,
+        y: mapValueToY(value, height),
+      }));
 
-        if (index === 0) {
-          ctx.moveTo(x, y);
-        } else {
-          ctx.lineTo(x, y);
+      // Draw glow effect first (behind the line) with smooth bezier curve
+      ctx.beginPath();
+      ctx.strokeStyle = 'rgba(79, 209, 197, 0.3)';
+      ctx.lineWidth = lineWidth + 6;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      ctx.shadowBlur = 12;
+      ctx.shadowColor = 'rgba(79, 209, 197, 0.5)';
+
+      // Draw smooth bezier curve
+      if (points.length >= 2) {
+        ctx.moveTo(points[0].x, points[0].y);
+        
+        for (let i = 0; i < points.length - 1; i++) {
+          const p0 = points[i];
+          const p1 = points[i + 1];
+          
+          if (i === 0) {
+            // First segment: use quadratic curve
+            const cpX = (p0.x + p1.x) / 2;
+            const cpY = (p0.y + p1.y) / 2;
+            ctx.quadraticCurveTo(cpX, cpY, p1.x, p1.y);
+          } else {
+            // Subsequent segments: use smooth bezier curves
+            const prevP = points[i - 1];
+            const cp1X = p0.x + (p1.x - prevP.x) * 0.3;
+            const cp1Y = p0.y + (p1.y - prevP.y) * 0.3;
+            const cp2X = p1.x - (p1.x - p0.x) * 0.3;
+            const cp2Y = p1.y - (p1.y - p0.y) * 0.3;
+            ctx.bezierCurveTo(cp1X, cp1Y, cp2X, cp2Y, p1.x, p1.y);
+          }
         }
-      });
+      }
 
       ctx.stroke();
       ctx.shadowBlur = 0;
       ctx.shadowColor = 'transparent';
 
-      // Draw main line on top
+      // Draw main line on top with smooth bezier curve
       ctx.beginPath();
       ctx.strokeStyle = '#ffffff';
       ctx.lineWidth = lineWidth;
       ctx.lineCap = 'round';
       ctx.lineJoin = 'round';
 
-      historyToDraw.forEach((value, index) => {
-        const x = index * pointSpacing;
-        const y = mapValueToY(value, height);
-
-        if (index === 0) {
-          ctx.moveTo(x, y);
-        } else {
-          ctx.lineTo(x, y);
+      // Draw smooth bezier curve (same as glow)
+      if (points.length >= 2) {
+        ctx.moveTo(points[0].x, points[0].y);
+        
+        for (let i = 0; i < points.length - 1; i++) {
+          const p0 = points[i];
+          const p1 = points[i + 1];
+          
+          if (i === 0) {
+            // First segment: use quadratic curve
+            const cpX = (p0.x + p1.x) / 2;
+            const cpY = (p0.y + p1.y) / 2;
+            ctx.quadraticCurveTo(cpX, cpY, p1.x, p1.y);
+          } else {
+            // Subsequent segments: use smooth bezier curves
+            const prevP = points[i - 1];
+            const cp1X = p0.x + (p1.x - prevP.x) * 0.3;
+            const cp1Y = p0.y + (p1.y - prevP.y) * 0.3;
+            const cp2X = p1.x - (p1.x - p0.x) * 0.3;
+            const cp2Y = p1.y - (p1.y - p0.y) * 0.3;
+            ctx.bezierCurveTo(cp1X, cp1Y, cp2X, cp2Y, p1.x, p1.y);
+          }
         }
-      });
+      }
 
       ctx.stroke();
-
-      // Draw last point marker for debugging alignment (small dot)
-      if (historyToDraw.length > 0) {
-        const lastValue = historyToDraw[historyToDraw.length - 1];
-        const lastX = (historyToDraw.length - 1) * pointSpacing;
-        const lastY = mapValueToY(lastValue, height);
-        
-        ctx.fillStyle = 'rgba(79, 209, 197, 0.8)';
-        ctx.beginPath();
-        ctx.arc(lastX, lastY, 2, 0, Math.PI * 2);
-        ctx.fill();
-      }
     }
   }, [coherenceHistory, smoothedHistory]);
 
@@ -261,42 +337,20 @@ export function CoherenceGraph({
 
   return (
     <div className="coherence-graph">
-      {/* Current State Badge */}
-      <motion.div 
-        className="current-state-badge"
-        style={{ 
-          backgroundColor: `${currentZoneConfig.color}15`,
-          borderColor: currentZoneConfig.color,
-          color: currentZoneConfig.color,
-        }}
-        key={coherenceZone}
-        initial={{ opacity: 0, y: -10 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.3 }}
-      >
-        <span className="state-icon">{currentZoneConfig.icon}</span>
-        <span className="state-label">{currentZoneConfig.label}</span>
-        <span className="state-desc">{currentZoneConfig.description}</span>
-      </motion.div>
-
-      {/* Zone labels with icons */}
+      {/* Zone labels with icons - minimal, clean design */}
       <div className="zone-labels">
         {(['flow', 'stabilizing', 'noise'] as const).map((zone) => {
           const config = ZONE_CONFIG[zone];
           const isActive = coherenceZone === zone;
           
           return (
-            <motion.div 
+            <div 
               key={zone}
               className={`zone-label ${isActive ? 'active' : ''}`}
               style={{ 
                 borderLeftColor: isActive ? config.color : 'transparent',
                 backgroundColor: isActive ? config.bgColor : 'transparent',
               }}
-              animate={isActive ? { 
-                opacity: [0.8, 1, 0.8],
-              } : {}}
-              transition={{ repeat: Infinity, duration: 2 }}
             >
               <span className="zone-icon" style={{ color: config.color }}>
                 {config.icon}
@@ -305,7 +359,7 @@ export function CoherenceGraph({
                 <span className="zone-name">{config.label}</span>
                 <span className="zone-desc">{config.description}</span>
               </div>
-            </motion.div>
+            </div>
           );
         })}
       </div>

@@ -6,6 +6,11 @@ import OSC from 'osc-js';
 import { FFTProcessor, FFT_SIZE } from './fft-processor';
 import type { BrainwaveBands, BrainwaveBandsDb, MuseState } from '../types';
 
+// Feature flag for PPG (photoplethysmography) heart rate modulation
+// When false, all PPG behavior is disabled and app behaves identically to current version
+// To disable: set ENABLE_PPG_MODULATION = false
+export const ENABLE_PPG_MODULATION = true;
+
 type ConnectionMode = 'bluetooth' | 'osc' | null;
 type BrainState = 'disconnected' | 'deep' | 'meditative' | 'relaxed' | 'focused' | 'neutral';
 
@@ -103,6 +108,20 @@ export class MuseHandler {
   private telemetrySubscription: { unsubscribe: () => void } | null = null;
   private accelerometerSubscription: { unsubscribe: () => void } | null = null;
   private connectionStatusSubscription: { unsubscribe: () => void } | null = null;
+  private ppgSubscription: { unsubscribe: () => void } | null = null; // PPG (heart rate) subscription
+
+  // PPG (photoplethysmography) heart rate tracking (only if ENABLE_PPG_MODULATION is true)
+  private ppgBuffer: Array<{ value: number; timestamp: number }> = []; // Ring buffer for PPG samples
+  private ppgBufferMaxSize = 1000; // Store ~10 seconds at 100Hz
+  private ppgPeakTimestamps: number[] = []; // Timestamps of detected peaks
+  private ppgSmoothed: number = 0; // Smoothed PPG signal for peak detection
+  private ppgBPM: number | null = null; // Current BPM estimate
+  private ppgBPMConfidence: number = 0; // Confidence 0-1
+  private ppgLastBeatMs: number | null = null; // Timestamp of last detected beat
+  private ppgSmoothingAlpha = 0.1; // EMA smoothing for raw signal
+  private ppgBPMSmoothingAlpha = 0.1; // EMA smoothing for BPM (heavy smoothing)
+  private ppgMinRefractoryPeriod = 300; // Minimum time between peaks (ms) - prevents double detection
+  private ppgLastPeakTime = 0; // Timestamp of last detected peak
 
   // FFT processor
   private fft: FFTProcessor;
@@ -190,6 +209,15 @@ export class MuseHandler {
         this.telemetrySubscription = this.museClient.telemetryData.subscribe(
           (telemetry: { batteryLevel: number; temperature: number }) => {
             this._batteryLevel = Math.round(telemetry.batteryLevel);
+          }
+        );
+      }
+
+      // Subscribe to PPG (photoplethysmography) for heart rate (if feature enabled)
+      if (ENABLE_PPG_MODULATION && this.museClient.ppgReadings) {
+        this.ppgSubscription = this.museClient.ppgReadings.subscribe(
+          (ppg: { electrode: number; samples: number[]; timestamp: number }) => {
+            this.handlePPGReading(ppg);
           }
         );
       }
@@ -413,11 +441,13 @@ export class MuseHandler {
     this.telemetrySubscription?.unsubscribe();
     this.accelerometerSubscription?.unsubscribe();
     this.connectionStatusSubscription?.unsubscribe();
+    this.ppgSubscription?.unsubscribe();
 
     this.eegSubscription = null;
     this.telemetrySubscription = null;
     this.accelerometerSubscription = null;
     this.connectionStatusSubscription = null;
+    this.ppgSubscription = null;
     this.museClient = null;
 
     this._connected = false;
@@ -429,6 +459,17 @@ export class MuseHandler {
     this.eegAmplitudes = [0, 0, 0, 0];
     this.eegVariances = [0, 0, 0, 0];
     this._batteryLevel = -1;
+
+    // Reset PPG state on disconnect
+    if (ENABLE_PPG_MODULATION) {
+      this.ppgBuffer = [];
+      this.ppgPeakTimestamps = [];
+      this.ppgSmoothed = 0;
+      this.ppgBPM = null;
+      this.ppgBPMConfidence = 0;
+      this.ppgLastBeatMs = null;
+      this.ppgLastPeakTime = 0;
+    }
     this._signalPausedSince = null;
 
     this.callbacks.onDisconnect?.();
@@ -497,6 +538,136 @@ export class MuseHandler {
         reject(error);
       }
     });
+  }
+
+  /**
+   * Handle incoming PPG (photoplethysmography) readings from Bluetooth
+   * Only active if ENABLE_PPG_MODULATION is true
+   */
+  private handlePPGReading(ppg: {
+    electrode: number;
+    samples: number[];
+    timestamp: number;
+  }): void {
+    if (!ENABLE_PPG_MODULATION) {
+      return; // Feature disabled
+    }
+
+    const now = Date.now();
+
+    // Process each sample
+    for (const sample of ppg.samples) {
+      // Smooth the signal (EMA)
+      this.ppgSmoothed = this.ppgSmoothed * (1 - this.ppgSmoothingAlpha) + sample * this.ppgSmoothingAlpha;
+
+      // Add to ring buffer
+      this.ppgBuffer.push({ value: this.ppgSmoothed, timestamp: now });
+      if (this.ppgBuffer.length > this.ppgBufferMaxSize) {
+        this.ppgBuffer.shift();
+      }
+
+      // Peak detection with refractory period
+      if (this.ppgBuffer.length >= 3) {
+        const prev = this.ppgBuffer[this.ppgBuffer.length - 3];
+        const curr = this.ppgBuffer[this.ppgBuffer.length - 2];
+        const next = this.ppgBuffer[this.ppgBuffer.length - 1];
+
+        // Detect peak: current > previous AND current > next
+        const isPeak = curr.value > prev.value && curr.value > next.value;
+        const timeSinceLastPeak = curr.timestamp - this.ppgLastPeakTime;
+
+        if (isPeak && timeSinceLastPeak >= this.ppgMinRefractoryPeriod) {
+          // Valid peak detected
+          this.ppgPeakTimestamps.push(curr.timestamp);
+          this.ppgLastPeakTime = curr.timestamp;
+          this.ppgLastBeatMs = curr.timestamp;
+
+          // Keep only recent peaks (last 15 seconds)
+          const cutoffTime = now - 15000;
+          this.ppgPeakTimestamps = this.ppgPeakTimestamps.filter(
+            (ts) => ts > cutoffTime
+          );
+
+          // Calculate BPM from inter-beat intervals
+          this.updateBPM();
+        }
+      }
+    }
+  }
+
+  /**
+   * Update BPM estimate from peak timestamps
+   * Confidence gating: requires at least 4 beats in last 10-15 seconds
+   * Rejects BPM outside plausible range (40-140)
+   */
+  private updateBPM(): void {
+    if (!ENABLE_PPG_MODULATION || this.ppgPeakTimestamps.length < 2) {
+      this.ppgBPM = null;
+      this.ppgBPMConfidence = 0;
+      return;
+    }
+
+    const now = Date.now();
+    const windowStart = now - 12000; // 12 second window
+
+    // Get peaks within window
+    const recentPeaks = this.ppgPeakTimestamps.filter((ts) => ts > windowStart);
+
+    if (recentPeaks.length < 4) {
+      // Not enough beats for confidence
+      this.ppgBPM = null;
+      this.ppgBPMConfidence = 0;
+      return;
+    }
+
+    // Calculate inter-beat intervals (IBI)
+    const ibis: number[] = [];
+    for (let i = 1; i < recentPeaks.length; i++) {
+      const ibi = recentPeaks[i] - recentPeaks[i - 1];
+      ibis.push(ibi);
+    }
+
+    // Calculate average IBI
+    const avgIBI = ibis.reduce((a, b) => a + b, 0) / ibis.length;
+
+    // Convert to BPM: BPM = 60,000 / IBI_ms
+    let newBPM = 60000 / avgIBI;
+
+    // Confidence gating: reject implausible BPM (40-140 range)
+    if (newBPM < 40 || newBPM > 140) {
+      this.ppgBPM = null;
+      this.ppgBPMConfidence = 0;
+      return;
+    }
+
+    // Calculate confidence based on number of beats and consistency
+    const ibiVariance =
+      ibis.reduce((sum, ibi) => sum + Math.pow(ibi - avgIBI, 2), 0) / ibis.length;
+    const ibiStdDev = Math.sqrt(ibiVariance);
+    const coefficientOfVariation = ibiStdDev / avgIBI; // Lower is better
+
+    // Confidence: higher with more beats, lower with high variance
+    const beatCountScore = Math.min(1, recentPeaks.length / 10); // Max at 10+ beats
+    const consistencyScore = Math.max(0, 1 - coefficientOfVariation * 2); // Penalize high variance
+    const confidence = (beatCountScore * 0.6 + consistencyScore * 0.4);
+
+    // Smooth BPM (heavy smoothing to avoid jitter)
+    if (this.ppgBPM === null) {
+      this.ppgBPM = newBPM;
+    } else {
+      this.ppgBPM =
+        this.ppgBPM * (1 - this.ppgBPMSmoothingAlpha) +
+        newBPM * this.ppgBPMSmoothingAlpha;
+    }
+
+    // Smooth confidence
+    this.ppgBPMConfidence =
+      this.ppgBPMConfidence * 0.9 + confidence * 0.1;
+
+    // Only output BPM if confidence is high enough
+    if (this.ppgBPMConfidence < 0.6) {
+      this.ppgBPM = null;
+    }
   }
 
   /**
@@ -656,8 +827,31 @@ export class MuseHandler {
       this.telemetrySubscription?.unsubscribe();
       this.accelerometerSubscription?.unsubscribe();
       this.connectionStatusSubscription?.unsubscribe();
+      this.ppgSubscription?.unsubscribe();
       this.museClient.disconnect();
       this.museClient = null;
+    }
+
+    // Reset PPG state on disconnect
+    if (ENABLE_PPG_MODULATION) {
+      this.ppgBuffer = [];
+      this.ppgPeakTimestamps = [];
+      this.ppgSmoothed = 0;
+      this.ppgBPM = null;
+      this.ppgBPMConfidence = 0;
+      this.ppgLastBeatMs = null;
+      this.ppgLastPeakTime = 0;
+    }
+
+    // Reset PPG state on disconnect
+    if (ENABLE_PPG_MODULATION) {
+      this.ppgBuffer = [];
+      this.ppgPeakTimestamps = [];
+      this.ppgSmoothed = 0;
+      this.ppgBPM = null;
+      this.ppgBPMConfidence = 0;
+      this.ppgLastBeatMs = null;
+      this.ppgLastPeakTime = 0;
     }
 
     // Disconnect OSC
@@ -887,6 +1081,22 @@ export class MuseHandler {
   }
   get batteryLevel(): number {
     return this._batteryLevel;
+  }
+
+  /**
+   * Get PPG (heart rate) metrics
+   * Returns null bpm and 0 confidence if feature disabled or insufficient data
+   * To disable: set ENABLE_PPG_MODULATION = false in this file
+   */
+  getPPG(): { bpm: number | null; confidence: number; lastBeatMs: number | null } {
+    if (!ENABLE_PPG_MODULATION) {
+      return { bpm: null, confidence: 0, lastBeatMs: null };
+    }
+    return {
+      bpm: this.ppgBPM,
+      confidence: this.ppgBPMConfidence,
+      lastBeatMs: this.ppgLastBeatMs,
+    };
   }
 }
 

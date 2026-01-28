@@ -12,6 +12,7 @@ export interface UseMuseReturn {
   coherenceZone: 'flow' | 'stabilizing' | 'noise';
   coherenceHistory: number[];
   electrodeStatus: ElectrodeStatus;
+  ppg: { bpm: number | null; confidence: number; lastBeatMs: number | null }; // PPG heart rate metrics
   isBluetoothAvailable: boolean;
   connectBluetooth: () => Promise<void>;
   connectOSC: (url?: string) => Promise<void>;
@@ -65,6 +66,11 @@ export function useMuse(): UseMuseReturn {
   const [coherence, setCoherence] = useState(0);
   const [coherenceHistory, setCoherenceHistory] = useState<number[]>([]);
   const [electrodeStatus, setElectrodeStatus] = useState<ElectrodeStatus>(INITIAL_ELECTRODE_STATUS);
+  const [ppg, setPPG] = useState<{ bpm: number | null; confidence: number; lastBeatMs: number | null }>({
+    bpm: null,
+    confidence: 0,
+    lastBeatMs: null,
+  });
   const [error, setError] = useState<string | null>(null);
 
   const coherenceDetector = useRef(new CoherenceDetector({}));
@@ -121,6 +127,10 @@ export function useMuse(): UseMuseReturn {
             return newHistory;
           });
         }
+
+        // Update PPG metrics (heart rate)
+        const ppgMetrics = museHandler.getPPG();
+        setPPG(ppgMetrics);
       }
 
       animationFrameRef.current = requestAnimationFrame(updateLoop);
@@ -181,6 +191,7 @@ export function useMuse(): UseMuseReturn {
     coherenceZone: getCoherenceZone(coherence),
     coherenceHistory,
     electrodeStatus,
+    ppg,
     isBluetoothAvailable: MuseHandler.isBluetoothAvailable(),
     connectBluetooth,
     connectOSC,

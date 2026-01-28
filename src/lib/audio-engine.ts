@@ -8,6 +8,8 @@ import type {
 } from '../types';
 import { CoherenceStateMachine, type SignalQuality } from './coherence-state-machine';
 import type { CoherenceState } from './coherence-state-machine';
+import { ENABLE_EXPRESSIVE_MODULATION } from './flow-state';
+import { ENABLE_PPG_MODULATION } from './muse-handler';
 
 // Crossfade constants (centralized for easy tweaking)
 const CROSSFADE_CONSTANTS = {
@@ -156,6 +158,16 @@ export class AudioEngine {
   // Smooth coherence strength for adaptive shimmer
   private smoothedCoherenceStrength: number = 0;
   
+  // Expressive modulation (calmScore and creativeFlowScore) - only used if feature flag enabled
+  private smoothedCalmScore: number = 0;
+  private smoothedCreativeFlowScore: number = 0;
+  private expressiveModulationEQ: BiquadFilterNode | null = null; // EQ for warmth/clarity modulation
+  
+  // PPG (heart rate) modulation - only used if ENABLE_PPG_MODULATION is true
+  private smoothedBPM: number | null = null; // Smoothed BPM for stable modulation
+  private ppgBPMSmoothingAlpha = 0.05; // Heavy smoothing for BPM (very slow changes)
+  private ppgModulationInterval: ReturnType<typeof setInterval> | null = null; // Interval for gentle gain modulation
+  
   // Shimmer fade-out tracking (to prevent abrupt cutouts)
   private shimmerTargetGain: number = 0;
   private shimmerCoherentStartTime: number | null = null; // When coherence started (for shimmer sustain)
@@ -180,6 +192,8 @@ export class AudioEngine {
   private isAudioLoaded = false;
   private isSessionActive = false;
   private sourcesStarted = false; // Guard to prevent multiple starts
+  private initPromise: Promise<void> | null = null; // Single-flight guard for init
+  private isLoadingAudio = false; // Guard to prevent parallel audio loading
 
   constructor(config: Partial<AudioEngineConfig> = {}) {
     this.config = { ...DEFAULT_CONFIG, ...config };
@@ -205,180 +219,333 @@ export class AudioEngine {
    * Initialize audio context (must be called after user gesture)
    */
   async init(): Promise<void> {
-    if (this.ctx) return;
-
-    this.ctx = new AudioContext();
-
-    // Monitor audio context state changes (important for iOS)
-    this.ctx.addEventListener('statechange', () => {
-      console.log('[AudioEngine] AudioContext state changed to:', this.ctx!.state);
-    });
-
-    if (this.ctx.state === 'suspended') {
-      await this.ctx.resume();
-      console.log('[AudioEngine] AudioContext resumed in init, state:', this.ctx.state);
+    // Single-flight guard: if init is already in progress, wait for it
+    if (this.initPromise) {
+      console.warn('[AudioEngine] ⚠️ Init already in progress, waiting for existing init...');
+      return this.initPromise;
     }
 
-    // Create master gain
-    this.masterGain = this.ctx.createGain();
-    this.masterGain.gain.value = 1.0;
-    this.masterGain.connect(this.ctx.destination);
+    // If already initialized, return immediately
+    if (this.ctx && this.isAudioLoaded) {
+      console.warn('[AudioEngine] ⚠️ Already initialized, skipping init');
+      return;
+    }
 
-    // Create entrainment gain
-    this.entrainmentGain = this.ctx.createGain();
-    this.entrainmentGain.gain.value = 0;
-    this.entrainmentGain.connect(this.masterGain);
+    console.warn('[AudioEngine] ===== INIT START =====');
+    console.warn('[AudioEngine] Creating AudioContext...');
 
-    // Load audio files
-    await this.loadAudioFiles();
+    // Create init promise for single-flight guard
+    this.initPromise = (async () => {
+      try {
+        if (this.ctx) {
+          console.warn('[AudioEngine] AudioContext already exists, reusing');
+          return;
+        }
 
-    // Create gain nodes for crossfade
-    this.baselineGain = this.ctx.createGain();
-    this.coherenceGain = this.ctx.createGain();
-    this.shimmerGain = this.ctx.createGain();
-    this.sustainedCoherenceGain = this.ctx.createGain();
+        this.ctx = new AudioContext();
+        console.warn('[AudioEngine] ✅ AudioContext created, state:', this.ctx.state);
 
-    // Initialize gains
-    this.baselineGain.gain.value = 0;
-    this.coherenceGain.gain.value = 0;
-    this.shimmerGain.gain.value = 0;
-    this.sustainedCoherenceGain.gain.value = 0;
+        // Monitor audio context state changes (important for iOS)
+        this.ctx.addEventListener('statechange', () => {
+          console.warn('[AudioEngine] AudioContext state changed to:', this.ctx!.state);
+        });
 
-    // Connect to master
-    this.baselineGain.connect(this.masterGain);
-    this.coherenceGain.connect(this.masterGain);
-    this.sustainedCoherenceGain.connect(this.masterGain);
+        if (this.ctx.state === 'suspended') {
+          console.warn('[AudioEngine] AudioContext suspended, attempting resume...');
+          await this.ctx.resume();
+          console.warn('[AudioEngine] ✅ AudioContext resumed, state:', this.ctx.state);
+        }
 
-    // Create shimmer limiter
-    this.shimmerLimiter = this.ctx.createDynamicsCompressor();
-    this.shimmerLimiter.threshold.value = -6;
-    this.shimmerLimiter.knee.value = 0;
-    this.shimmerLimiter.ratio.value = 20;
-    this.shimmerLimiter.attack.value = 0.001;
-    this.shimmerLimiter.release.value = 0.1;
+        // Create master gain
+        this.masterGain = this.ctx.createGain();
+        this.masterGain.gain.value = 1.0;
+        this.masterGain.connect(this.ctx.destination);
+        console.warn('[AudioEngine] ✅ Master gain created and connected');
 
-    // Shimmer chain: gain -> limiter -> master
-    this.shimmerGain.connect(this.shimmerLimiter);
-    this.shimmerLimiter.connect(this.masterGain);
+        // Create entrainment gain
+        this.entrainmentGain = this.ctx.createGain();
+        this.entrainmentGain.gain.value = 0;
+        this.entrainmentGain.connect(this.masterGain);
+        console.warn('[AudioEngine] ✅ Entrainment gain created');
 
-    // Create fog effect nodes (reverb-based spatial effect)
-    // Reverb implementation using multiple delays with feedback
-    
-    // Create delay nodes for reverb (different delay times for spatial effect)
-    this.fogReverbDelay1 = this.ctx.createDelay(1.0);
-    this.fogReverbDelay1.delayTime.value = 0.03; // 30ms delay
-    
-    this.fogReverbDelay2 = this.ctx.createDelay(1.0);
-    this.fogReverbDelay2.delayTime.value = 0.05; // 50ms delay
-    
-    this.fogReverbDelay3 = this.ctx.createDelay(1.0);
-    this.fogReverbDelay3.delayTime.value = 0.07; // 70ms delay
-    
-    // Feedback gain for reverb tail
-    this.fogReverbFeedbackGain = this.ctx.createGain();
-    this.fogReverbFeedbackGain.gain.value = CROSSFADE_CONSTANTS.FOG_REVERB_ROOM_SIZE * 0.3; // Subtle feedback
-    
-    // High-pass filter for reverb return (keep low end clean)
-    this.fogReverbHighpass = this.ctx.createBiquadFilter();
-    this.fogReverbHighpass.type = 'highpass';
-    this.fogReverbHighpass.frequency.value = CROSSFADE_CONSTANTS.FOG_HIGHPASS_CUTOFF;
-    this.fogReverbHighpass.Q.value = 1.0;
-    
-    // Wet reverb signal gain
-    this.fogReverbWetGain = this.ctx.createGain();
-    this.fogReverbWetGain.gain.value = 0; // Start at 0 (no fog)
-    
-    // Dry signal gain (always 1.0, dry signal stays present)
-    this.fogReverbDryGain = this.ctx.createGain();
-    this.fogReverbDryGain.gain.value = 1.0;
-    
-    // Mix gain controls overall fog intensity (0 = no fog, 1 = full fog)
-    this.fogReverbMixGain = this.ctx.createGain();
-    this.fogReverbMixGain.gain.value = 0; // Start at 0 (no fog)
-    
-    // Build reverb network:
-    // masterGain -> split to dry and reverb
-    // Dry: masterGain -> fogReverbDryGain -> destination
-    // Reverb: masterGain -> fogReverbMixGain -> delays -> feedback -> highpass -> fogReverbWetGain -> destination
-    
-    // Disconnect masterGain from destination
-    this.masterGain.disconnect();
-    
-    // Dry signal path (always present)
-    this.masterGain.connect(this.fogReverbDryGain);
-    this.fogReverbDryGain.connect(this.ctx.destination);
-    
-    // Reverb signal path (fog effect)
-    this.masterGain.connect(this.fogReverbMixGain);
-    this.fogReverbMixGain.connect(this.fogReverbDelay1);
-    this.fogReverbMixGain.connect(this.fogReverbDelay2);
-    this.fogReverbMixGain.connect(this.fogReverbDelay3);
-    
-    // Connect delays to feedback and highpass
-    this.fogReverbDelay1.connect(this.fogReverbFeedbackGain);
-    this.fogReverbDelay2.connect(this.fogReverbFeedbackGain);
-    this.fogReverbDelay3.connect(this.fogReverbFeedbackGain);
-    
-    // Feedback loop (subtle)
-    this.fogReverbFeedbackGain.connect(this.fogReverbDelay1);
-    this.fogReverbFeedbackGain.connect(this.fogReverbDelay2);
-    this.fogReverbFeedbackGain.connect(this.fogReverbDelay3);
-    
-    // Reverb output through highpass filter
-    this.fogReverbDelay1.connect(this.fogReverbHighpass);
-    this.fogReverbDelay2.connect(this.fogReverbHighpass);
-    this.fogReverbDelay3.connect(this.fogReverbHighpass);
-    
-    // Highpass -> wet gain -> destination
-    this.fogReverbHighpass.connect(this.fogReverbWetGain);
-    this.fogReverbWetGain.connect(this.ctx.destination);
+        // Load audio files (only if not already loaded)
+        if (!this.isAudioLoaded || !this.baselineBuffer || !this.coherenceBuffer) {
+          console.warn('[AudioEngine] Loading audio files...');
+          await this.loadAudioFiles();
+          console.warn('[AudioEngine] ✅ Audio files loaded');
+        } else {
+          console.warn('[AudioEngine] ⚠️ Audio buffers already loaded, skipping loadAudioFiles');
+        }
 
-    this.isAudioLoaded = true;
-    console.log('[AudioEngine] Initialized with MP3 crossfade system');
+        // Create gain nodes for crossfade (only if not already created)
+        if (!this.baselineGain) {
+          this.baselineGain = this.ctx.createGain();
+          this.coherenceGain = this.ctx.createGain();
+          this.shimmerGain = this.ctx.createGain();
+          this.sustainedCoherenceGain = this.ctx.createGain();
+
+          // Initialize gains
+          this.baselineGain.gain.value = 0;
+          this.coherenceGain.gain.value = 0;
+          this.shimmerGain.gain.value = 0;
+          this.sustainedCoherenceGain.gain.value = 0;
+
+                  // Connect to master
+                  this.baselineGain.connect(this.masterGain);
+                  
+                  // Create expressive modulation EQ if feature enabled (insert into coherence chain)
+                  if (ENABLE_EXPRESSIVE_MODULATION) {
+                    this.expressiveModulationEQ = this.ctx.createBiquadFilter();
+                    this.expressiveModulationEQ.type = 'peaking'; // Parametric EQ
+                    this.expressiveModulationEQ.frequency.value = 1000; // Center frequency
+                    this.expressiveModulationEQ.Q.value = 1.0; // Moderate Q
+                    this.expressiveModulationEQ.gain.value = 0; // Start neutral (no modulation)
+                    
+                    // Insert EQ into coherence chain: coherenceGain -> EQ -> masterGain
+                    this.coherenceGain.connect(this.expressiveModulationEQ);
+                    this.expressiveModulationEQ.connect(this.masterGain);
+                    console.warn('[AudioEngine] ✅ Expressive modulation EQ created and inserted into coherence chain');
+                  } else {
+                    // Feature disabled - connect coherence gain directly to master
+                    this.coherenceGain.connect(this.masterGain);
+                  }
+                  
+                  this.sustainedCoherenceGain.connect(this.masterGain);
+                  console.warn('[AudioEngine] ✅ Crossfade gain nodes created');
+                } else {
+                  console.warn('[AudioEngine] ⚠️ Gain nodes already exist, skipping creation');
+                }
+
+        // Create shimmer limiter (only if not already created)
+        if (!this.shimmerLimiter && this.shimmerGain && this.masterGain) {
+          this.shimmerLimiter = this.ctx.createDynamicsCompressor();
+          this.shimmerLimiter.threshold.value = -6;
+          this.shimmerLimiter.knee.value = 0;
+          this.shimmerLimiter.ratio.value = 20;
+          this.shimmerLimiter.attack.value = 0.001;
+          this.shimmerLimiter.release.value = 0.1;
+
+          // Shimmer chain: gain -> limiter -> master
+          this.shimmerGain.connect(this.shimmerLimiter);
+          this.shimmerLimiter.connect(this.masterGain);
+          console.warn('[AudioEngine] ✅ Shimmer limiter created');
+        }
+
+        // Create fog effect nodes (reverb-based spatial effect) - only if not already created
+        if (!this.fogReverbDelay1) {
+          console.warn('[AudioEngine] Creating fog effect nodes...');
+          // Reverb implementation using multiple delays with feedback
+          
+          // Create delay nodes for reverb (different delay times for spatial effect)
+          this.fogReverbDelay1 = this.ctx.createDelay(1.0);
+          this.fogReverbDelay1.delayTime.value = 0.03; // 30ms delay
+          
+          this.fogReverbDelay2 = this.ctx.createDelay(1.0);
+          this.fogReverbDelay2.delayTime.value = 0.05; // 50ms delay
+          
+          this.fogReverbDelay3 = this.ctx.createDelay(1.0);
+          this.fogReverbDelay3.delayTime.value = 0.07; // 70ms delay
+          
+          // Feedback gain for reverb tail
+          this.fogReverbFeedbackGain = this.ctx.createGain();
+          this.fogReverbFeedbackGain.gain.value = CROSSFADE_CONSTANTS.FOG_REVERB_ROOM_SIZE * 0.3; // Subtle feedback
+          
+          // High-pass filter for reverb return (keep low end clean)
+          this.fogReverbHighpass = this.ctx.createBiquadFilter();
+          this.fogReverbHighpass.type = 'highpass';
+          this.fogReverbHighpass.frequency.value = CROSSFADE_CONSTANTS.FOG_HIGHPASS_CUTOFF;
+          this.fogReverbHighpass.Q.value = 1.0;
+          
+          // Wet reverb signal gain
+          this.fogReverbWetGain = this.ctx.createGain();
+          this.fogReverbWetGain.gain.value = 0; // Start at 0 (no fog)
+          
+          // Dry signal gain (always 1.0, dry signal stays present)
+          this.fogReverbDryGain = this.ctx.createGain();
+          this.fogReverbDryGain.gain.value = 1.0;
+          
+          // Mix gain controls overall fog intensity (0 = no fog, 1 = full fog)
+          this.fogReverbMixGain = this.ctx.createGain();
+          this.fogReverbMixGain.gain.value = 0; // Start at 0 (no fog)
+          
+          // Build reverb network:
+          // masterGain -> split to dry and reverb
+          // Dry: masterGain -> fogReverbDryGain -> destination
+          // Reverb: masterGain -> fogReverbMixGain -> delays -> feedback -> highpass -> fogReverbWetGain -> destination
+          
+          // Disconnect masterGain from destination
+          if (this.masterGain) {
+            this.masterGain.disconnect();
+            
+            // Dry signal path (always present)
+            this.masterGain.connect(this.fogReverbDryGain);
+            this.fogReverbDryGain.connect(this.ctx.destination);
+            
+            // Reverb signal path (fog effect)
+            this.masterGain.connect(this.fogReverbMixGain);
+            this.fogReverbMixGain.connect(this.fogReverbDelay1);
+            this.fogReverbMixGain.connect(this.fogReverbDelay2);
+            this.fogReverbMixGain.connect(this.fogReverbDelay3);
+          }
+          
+          // Connect delays to feedback and highpass
+          this.fogReverbDelay1.connect(this.fogReverbFeedbackGain);
+          this.fogReverbDelay2.connect(this.fogReverbFeedbackGain);
+          this.fogReverbDelay3.connect(this.fogReverbFeedbackGain);
+          
+          // Feedback loop (subtle)
+          this.fogReverbFeedbackGain.connect(this.fogReverbDelay1);
+          this.fogReverbFeedbackGain.connect(this.fogReverbDelay2);
+          this.fogReverbFeedbackGain.connect(this.fogReverbDelay3);
+          
+          // Reverb output through highpass filter
+          this.fogReverbDelay1.connect(this.fogReverbHighpass);
+          this.fogReverbDelay2.connect(this.fogReverbHighpass);
+          this.fogReverbDelay3.connect(this.fogReverbHighpass);
+          
+          // Highpass -> wet gain -> destination
+          this.fogReverbHighpass.connect(this.fogReverbWetGain);
+          this.fogReverbWetGain.connect(this.ctx.destination);
+          console.warn('[AudioEngine] ✅ Fog effect nodes created');
+        } else {
+          console.warn('[AudioEngine] ⚠️ Fog effect nodes already exist, skipping creation');
+        }
+
+        this.isAudioLoaded = true;
+        console.warn('[AudioEngine] ✅ ===== INIT COMPLETE =====');
+      } catch (error) {
+        console.error('[AudioEngine] ❌ ===== INIT FAILED =====');
+        console.error('[AudioEngine] Error:', error);
+        if (error instanceof Error) {
+          console.error('[AudioEngine] Error message:', error.message);
+          console.error('[AudioEngine] Error stack:', error.stack);
+        }
+        // Clear init promise on error so it can be retried
+        this.initPromise = null;
+        throw error;
+      } finally {
+        // Clear init promise after completion (success or failure)
+        this.initPromise = null;
+      }
+    })();
+
+    return this.initPromise;
   }
 
   /**
    * Load MP3 audio files from /public/audio
+   * iPhone-safe: loads sequentially to avoid memory spikes
    */
   private async loadAudioFiles(): Promise<void> {
     if (!this.ctx) throw new Error('AudioContext not initialized');
 
+    // Single-flight guard: if already loading, wait for existing load
+    if (this.isLoadingAudio) {
+      console.warn('[AudioEngine] ⚠️ Audio loading already in progress, waiting...');
+      // Wait for existing load to complete (polling approach)
+      while (this.isLoadingAudio) {
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+      return;
+    }
+
+    // Check if buffers are already loaded
+    if (this.baselineBuffer && this.coherenceBuffer && this.shimmerBuffer && this.sustainedCoherenceBuffer) {
+      console.warn('[AudioEngine] ⚠️ Audio buffers already loaded, skipping loadAudioFiles');
+      return;
+    }
+
+    this.isLoadingAudio = true;
+    console.warn('[AudioEngine] ===== LOAD AUDIO FILES START =====');
+
     try {
-      // Load baseline.mp3
-      const baselineResponse = await fetch('/audio/baseline.mp3');
-      const baselineArrayBuffer = await baselineResponse.arrayBuffer();
-      this.baselineBuffer = await this.ctx.decodeAudioData(baselineArrayBuffer);
+      // Load baseline.mp3 (sequential, not parallel)
+      if (!this.baselineBuffer) {
+        console.warn('[AudioEngine] [1/4] Fetching baseline.mp3...');
+        const baselineResponse = await fetch('/audio/baseline.mp3');
+        if (!baselineResponse.ok) {
+          throw new Error(`Failed to fetch baseline.mp3: ${baselineResponse.status} ${baselineResponse.statusText}`);
+        }
+        console.warn('[AudioEngine] [1/4] ✅ baseline.mp3 fetched, decoding...');
+        const baselineArrayBuffer = await baselineResponse.arrayBuffer();
+        this.baselineBuffer = await this.ctx.decodeAudioData(baselineArrayBuffer);
+        console.warn('[AudioEngine] [1/4] ✅ baseline.mp3 decoded, duration:', this.baselineBuffer.duration.toFixed(2), 's');
+      } else {
+        console.warn('[AudioEngine] [1/4] ⚠️ baseline buffer already loaded, skipping');
+      }
 
       // Load coherence-v3.mp3
-      const coherenceResponse = await fetch('/audio/coherence-v3.mp3');
-      const coherenceArrayBuffer = await coherenceResponse.arrayBuffer();
-      this.coherenceBuffer = await this.ctx.decodeAudioData(coherenceArrayBuffer);
+      if (!this.coherenceBuffer) {
+        console.warn('[AudioEngine] [2/4] Fetching coherence-v3.mp3...');
+        const coherenceResponse = await fetch('/audio/coherence-v3.mp3');
+        if (!coherenceResponse.ok) {
+          throw new Error(`Failed to fetch coherence-v3.mp3: ${coherenceResponse.status} ${coherenceResponse.statusText}`);
+        }
+        console.warn('[AudioEngine] [2/4] ✅ coherence-v3.mp3 fetched, decoding...');
+        const coherenceArrayBuffer = await coherenceResponse.arrayBuffer();
+        this.coherenceBuffer = await this.ctx.decodeAudioData(coherenceArrayBuffer);
+        console.warn('[AudioEngine] [2/4] ✅ coherence-v3.mp3 decoded, duration:', this.coherenceBuffer.duration.toFixed(2), 's');
+      } else {
+        console.warn('[AudioEngine] [2/4] ⚠️ coherence buffer already loaded, skipping');
+      }
 
       // Load shimmer (try .mp3 first, fallback to .wav)
-      let shimmerResponse: Response;
-      try {
-        shimmerResponse = await fetch('/audio/shimmer.mp3');
-        if (!shimmerResponse.ok) throw new Error('shimmer.mp3 not found');
-      } catch {
-        shimmerResponse = await fetch('/audio/shimmer.wav');
+      if (!this.shimmerBuffer) {
+        console.warn('[AudioEngine] [3/4] Fetching shimmer audio...');
+        let shimmerResponse: Response;
+        try {
+          shimmerResponse = await fetch('/audio/shimmer.mp3');
+          if (!shimmerResponse.ok) throw new Error('shimmer.mp3 not found');
+          console.warn('[AudioEngine] [3/4] ✅ shimmer.mp3 found');
+        } catch {
+          console.warn('[AudioEngine] [3/4] ⚠️ shimmer.mp3 not found, trying shimmer.wav...');
+          shimmerResponse = await fetch('/audio/shimmer.wav');
+          if (!shimmerResponse.ok) {
+            throw new Error(`Failed to fetch shimmer audio: ${shimmerResponse.status} ${shimmerResponse.statusText}`);
+          }
+          console.warn('[AudioEngine] [3/4] ✅ shimmer.wav found');
+        }
+        console.warn('[AudioEngine] [3/4] Decoding shimmer audio...');
+        const shimmerArrayBuffer = await shimmerResponse.arrayBuffer();
+        this.shimmerBuffer = await this.ctx.decodeAudioData(shimmerArrayBuffer);
+        console.warn('[AudioEngine] [3/4] ✅ shimmer decoded, duration:', this.shimmerBuffer.duration.toFixed(2), 's');
+      } else {
+        console.warn('[AudioEngine] [3/4] ⚠️ shimmer buffer already loaded, skipping');
       }
-      const shimmerArrayBuffer = await shimmerResponse.arrayBuffer();
-      this.shimmerBuffer = await this.ctx.decodeAudioData(shimmerArrayBuffer);
 
       // Load sustained-coherence.mp3
-      const sustainedResponse = await fetch('/audio/sustained-coherence.mp3');
-      const sustainedArrayBuffer = await sustainedResponse.arrayBuffer();
-      this.sustainedCoherenceBuffer = await this.ctx.decodeAudioData(sustainedArrayBuffer);
+      if (!this.sustainedCoherenceBuffer) {
+        console.warn('[AudioEngine] [4/4] Fetching sustained-coherence.mp3...');
+        const sustainedResponse = await fetch('/audio/sustained-coherence.mp3');
+        if (!sustainedResponse.ok) {
+          throw new Error(`Failed to fetch sustained-coherence.mp3: ${sustainedResponse.status} ${sustainedResponse.statusText}`);
+        }
+        console.warn('[AudioEngine] [4/4] ✅ sustained-coherence.mp3 fetched, decoding...');
+        const sustainedArrayBuffer = await sustainedResponse.arrayBuffer();
+        this.sustainedCoherenceBuffer = await this.ctx.decodeAudioData(sustainedArrayBuffer);
+        console.warn('[AudioEngine] [4/4] ✅ sustained-coherence.mp3 decoded, duration:', this.sustainedCoherenceBuffer.duration.toFixed(2), 's');
+      } else {
+        console.warn('[AudioEngine] [4/4] ⚠️ sustained-coherence buffer already loaded, skipping');
+      }
 
-      console.log('[AudioEngine] Loaded audio files', {
+      console.warn('[AudioEngine] ✅ ===== LOAD AUDIO FILES COMPLETE =====', {
         baseline: !!this.baselineBuffer,
         coherence: !!this.coherenceBuffer,
         shimmer: !!this.shimmerBuffer,
         sustainedCoherence: !!this.sustainedCoherenceBuffer,
       });
     } catch (error) {
-      console.error('[AudioEngine] Failed to load audio files:', error);
-      throw error;
+      console.error('[AudioEngine] ❌ ===== LOAD AUDIO FILES FAILED =====');
+      console.error('[AudioEngine] Error:', error);
+      if (error instanceof Error) {
+        console.error('[AudioEngine] Error message:', error.message);
+        console.error('[AudioEngine] Error stack:', error.stack);
+      }
+      // Don't throw - allow graceful degradation
+      // Set a flag so we know some buffers failed
+      console.warn('[AudioEngine] ⚠️ Continuing with partial audio load (some buffers may be missing)');
+    } finally {
+      this.isLoadingAudio = false;
     }
   }
 
@@ -386,68 +553,89 @@ export class AudioEngine {
    * Start session audio (baseline fade-in)
    */
   async startSession(): Promise<void> {
+    console.warn('[AudioEngine] ===== START SESSION CALLED =====');
+    
+    // Ensure initialized (with single-flight guard)
     if (!this.ctx || !this.isAudioLoaded) {
+      console.warn('[AudioEngine] Not initialized, calling init()...');
       await this.init();
+      console.warn('[AudioEngine] ✅ Init complete, continuing startSession');
     }
 
     if (this.isSessionActive) {
-      console.warn('[AudioEngine] Session already active');
+      console.warn('[AudioEngine] ⚠️ Session already active, skipping startSession');
       return;
     }
 
     // Ensure audio context is running (critical for iOS)
     const ctx = this.ctx!;
+    console.warn('[AudioEngine] AudioContext state:', ctx.state);
+    
     if (ctx.state === 'suspended') {
-      console.log('[AudioEngine] Audio context is suspended, attempting to resume...');
+      console.warn('[AudioEngine] ⚠️ Audio context is suspended, attempting to resume...');
       try {
         await ctx.resume();
-        console.log('[AudioEngine] Audio context resumed successfully, state:', ctx.state);
+        console.warn('[AudioEngine] ✅ Audio context resumed successfully, state:', ctx.state);
       } catch (error) {
-        console.error('[AudioEngine] Failed to resume audio context:', error);
-        throw new Error('Failed to resume audio context. User interaction may be required.');
+        console.error('[AudioEngine] ❌ Failed to resume audio context:', error);
+        // Don't throw - allow graceful degradation
+        console.warn('[AudioEngine] ⚠️ Continuing despite suspend state (may not play audio)');
       }
     }
 
     // Double-check state after resume attempt
     const currentState = ctx.state;
     if (currentState !== 'running') {
-      console.warn('[AudioEngine] Audio context is not running. Current state:', currentState);
+      console.warn('[AudioEngine] ⚠️ Audio context is not running. Current state:', currentState);
       // Try one more time
       try {
         await ctx.resume();
         const newState = ctx.state;
+        console.warn('[AudioEngine] After second resume attempt, state:', newState);
         if (newState !== 'running') {
-          throw new Error(`Audio context state is ${newState} instead of 'running'`);
+          console.warn('[AudioEngine] ⚠️ Audio context still not running, but continuing (state:', newState, ')');
+          // Don't throw - allow graceful degradation
         }
       } catch (error) {
-        console.error('[AudioEngine] Audio context failed to start:', error);
-        throw error;
+        console.error('[AudioEngine] ❌ Audio context failed to start:', error);
+        // Don't throw - allow graceful degradation
+        console.warn('[AudioEngine] ⚠️ Continuing despite audio context error');
       }
     }
 
-    console.log('[AudioEngine] Audio context confirmed running, state:', ctx.state);
+    console.warn('[AudioEngine] ✅ Audio context confirmed, state:', ctx.state);
 
     // Guard: prevent multiple starts
     if (this.sourcesStarted) {
-      console.warn('[AudioEngine] Sources already started, skipping');
+      console.warn('[AudioEngine] ⚠️ Sources already started, skipping');
       return;
     }
 
-    // Validate buffers are loaded
+    // Validate buffers are loaded (graceful degradation - don't throw)
     if (!this.baselineBuffer) {
-      console.error('[AudioEngine] Baseline buffer not loaded');
-      throw new Error('Baseline audio buffer not loaded');
+      console.error('[AudioEngine] ❌ Baseline buffer not loaded');
+      // Don't throw - allow graceful degradation
+      console.warn('[AudioEngine] ⚠️ Continuing without baseline audio');
     }
     if (!this.coherenceBuffer) {
-      console.error('[AudioEngine] Coherence buffer not loaded');
-      throw new Error('Coherence audio buffer not loaded');
+      console.error('[AudioEngine] ❌ Coherence buffer not loaded');
+      // Don't throw - allow graceful degradation
+      console.warn('[AudioEngine] ⚠️ Continuing without coherence audio');
     }
     if (!this.shimmerBuffer) {
-      console.warn('[AudioEngine] Shimmer buffer not loaded (will skip shimmer)');
+      console.warn('[AudioEngine] ⚠️ Shimmer buffer not loaded (will skip shimmer)');
     }
     if (!this.sustainedCoherenceBuffer) {
-      console.error('[AudioEngine] Sustained coherence buffer not loaded');
-      throw new Error('Sustained coherence audio buffer not loaded');
+      console.error('[AudioEngine] ❌ Sustained coherence buffer not loaded');
+      // Don't throw - allow graceful degradation
+      console.warn('[AudioEngine] ⚠️ Continuing without sustained coherence audio');
+    }
+
+    // If critical buffers are missing, don't start sources
+    if (!this.baselineBuffer || !this.coherenceBuffer) {
+      console.error('[AudioEngine] ❌ Critical buffers missing, cannot start session');
+      // Don't throw - just return gracefully
+      return;
     }
 
     // Reset metrics
@@ -668,16 +856,33 @@ export class AudioEngine {
       this.coherenceGainActiveStart = null;
     }
 
-    console.log('[AudioEngine] Session stopped with smooth fade-out');
+    // Reset sources started flag for next session
+    this.sourcesStarted = false;
+
+    // Stop PPG modulation interval if running
+    if (ENABLE_PPG_MODULATION && this.ppgModulationInterval) {
+      clearInterval(this.ppgModulationInterval);
+      this.ppgModulationInterval = null;
+      this.smoothedBPM = null;
+    }
+
+    console.warn('[AudioEngine] ✅ Session stopped with smooth fade-out');
   }
 
   /**
    * Update coherence value (called from coherence detection)
    * Now uses unified state machine with signal quality gating
+   * 
+   * @param expressiveScores Optional calmScore and creativeFlowScore for expressive modulation
+   *                         Only used if ENABLE_EXPRESSIVE_MODULATION is true
+   * @param ppg Optional PPG (heart rate) metrics for subtle BPM-based modulation
+   *            Only used if ENABLE_PPG_MODULATION is true
    */
   updateCoherence(
     coherence: number,
-    signalQuality: SignalQuality
+    signalQuality: SignalQuality,
+    expressiveScores?: { calmScore: number; creativeFlowScore: number },
+    ppg?: { bpm: number | null; confidence: number; lastBeatMs: number | null }
   ): void {
     if (!this.ctx || !this.isSessionActive) {
       // Log why we're not updating (for debugging)
@@ -691,6 +896,18 @@ export class AudioEngine {
 
     // Update unified state machine (handles all state transitions)
     const newState = this.coherenceStateMachine.update(coherence, signalQuality, currentTime);
+    
+    // Update expressive modulation scores (if feature enabled and scores provided)
+    if (ENABLE_EXPRESSIVE_MODULATION && expressiveScores) {
+      // Smooth the scores (gentle, slow changes - no abrupt transitions)
+      const smoothingAlpha = 0.05; // Very slow smoothing (~20 updates to reach target)
+      this.smoothedCalmScore = this.smoothedCalmScore * (1 - smoothingAlpha) + expressiveScores.calmScore * smoothingAlpha;
+      this.smoothedCreativeFlowScore = this.smoothedCreativeFlowScore * (1 - smoothingAlpha) + expressiveScores.creativeFlowScore * smoothingAlpha;
+    } else {
+      // Feature disabled or no scores provided - reset to neutral
+      this.smoothedCalmScore = 0;
+      this.smoothedCreativeFlowScore = 0;
+    }
     
     // Calculate coherence strength for adaptive shimmer (only if coherent)
     if (newState === 'coherent') {
@@ -750,6 +967,11 @@ export class AudioEngine {
         this.fadeOutFog(now);
         this.fogEnabled = false;
       }
+      
+      // Apply expressive modulation (if feature enabled)
+      if (ENABLE_EXPRESSIVE_MODULATION) {
+        this.applyExpressiveModulation(now);
+      }
     } else {
       // Not coherent - reset shimmer tracking
       if (this.shimmerCoherentStartTime !== null) {
@@ -787,6 +1009,21 @@ export class AudioEngine {
         }
         this.currentCoherentStreakStart = null;
       }
+      
+      // Reset expressive modulation when not coherent (if feature enabled)
+      if (ENABLE_EXPRESSIVE_MODULATION) {
+        this.resetExpressiveModulation(now);
+      }
+
+      // Reset PPG modulation when not coherent (if feature enabled)
+      if (ENABLE_PPG_MODULATION) {
+        this.resetPPGModulation();
+      }
+    }
+
+    // Update PPG modulation (if feature enabled and coherent state)
+    if (ENABLE_PPG_MODULATION && newState === 'coherent' && ppg) {
+      this.updatePPGModulation(ppg);
     }
   }
 
@@ -942,6 +1179,181 @@ export class AudioEngine {
       wetGain: `${currentWet.toFixed(3)} -> 0.000`,
       duration: CROSSFADE_CONSTANTS.FOG_RELEASE_SECONDS,
     });
+  }
+
+  /**
+   * Apply expressive modulation based on calmScore and creativeFlowScore
+   * Only called when ENABLE_EXPRESSIVE_MODULATION is true and state is 'coherent'
+   * 
+   * calmScore -> spaciousness (width, warmth, noise reduction)
+   * creativeFlowScore -> musical definition (clarity, harmonic motion)
+   */
+  private applyExpressiveModulation(now: number): void {
+    if (!ENABLE_EXPRESSIVE_MODULATION || !this.expressiveModulationEQ) {
+      return; // Feature disabled or EQ not created
+    }
+
+    // Map calmScore to warmth (boost low-mids around 300-500Hz for warmth)
+    // Map creativeFlowScore to clarity (boost high-mids around 2-4kHz for clarity)
+    // Combine both effects with subtle blending
+    
+    // Warmth boost: calmScore * 3dB max boost at ~400Hz
+    const warmthBoost = this.smoothedCalmScore * 3.0; // 0-3dB boost
+    
+    // Clarity boost: creativeFlowScore * 2.5dB max boost at ~3kHz
+    const clarityBoost = this.smoothedCreativeFlowScore * 2.5; // 0-2.5dB boost
+    
+    // Use a single parametric EQ that blends between warmth and clarity
+    // When calmScore is high, emphasize warmth (lower frequency)
+    // When creativeFlowScore is high, emphasize clarity (higher frequency)
+    // Blend the center frequency based on which score is dominant
+    const warmthWeight = this.smoothedCalmScore / (this.smoothedCalmScore + this.smoothedCreativeFlowScore + 0.001);
+    const clarityWeight = this.smoothedCreativeFlowScore / (this.smoothedCalmScore + this.smoothedCreativeFlowScore + 0.001);
+    
+    // Blend center frequency: 400Hz (warmth) to 3000Hz (clarity)
+    const centerFreq = 400 + (3000 - 400) * clarityWeight;
+    
+    // Total gain is weighted combination of both boosts
+    const totalGain = warmthBoost * warmthWeight + clarityBoost * clarityWeight;
+    
+    // Apply changes smoothly (cancel existing, set new values)
+    this.expressiveModulationEQ.frequency.cancelScheduledValues(now);
+    this.expressiveModulationEQ.gain.cancelScheduledValues(now);
+    
+    // Smooth transitions (gentle, slow changes)
+    const currentFreq = this.expressiveModulationEQ.frequency.value;
+    const currentGain = this.expressiveModulationEQ.gain.value;
+    
+    // Update frequency (smooth transition over 2 seconds)
+    this.expressiveModulationEQ.frequency.setValueAtTime(currentFreq, now);
+    this.expressiveModulationEQ.frequency.linearRampToValueAtTime(centerFreq, now + 2.0);
+    
+    // Update gain (smooth transition over 2 seconds)
+    this.expressiveModulationEQ.gain.setValueAtTime(currentGain, now);
+    this.expressiveModulationEQ.gain.linearRampToValueAtTime(totalGain, now + 2.0);
+  }
+
+  /**
+   * Reset expressive modulation when not in coherent state
+   * Only called when ENABLE_EXPRESSIVE_MODULATION is true
+   */
+  private resetExpressiveModulation(now: number): void {
+    if (!ENABLE_EXPRESSIVE_MODULATION || !this.expressiveModulationEQ) {
+      return; // Feature disabled or EQ not created
+    }
+
+    // Fade out modulation smoothly (return to neutral)
+    this.expressiveModulationEQ.gain.cancelScheduledValues(now);
+    const currentGain = this.expressiveModulationEQ.gain.value;
+    
+    // Fade to neutral (0dB) over 1 second
+    this.expressiveModulationEQ.gain.setValueAtTime(currentGain, now);
+    this.expressiveModulationEQ.gain.linearRampToValueAtTime(0, now + 1.0);
+    
+    // Reset smoothed scores
+    this.smoothedCalmScore = 0;
+    this.smoothedCreativeFlowScore = 0;
+  }
+
+  /**
+   * Update PPG (heart rate) based audio modulation
+   * Only called when ENABLE_PPG_MODULATION is true, state is 'coherent', and confidence >= 0.6
+   * Creates a very subtle slow modulation based on BPM trend (not an obvious heartbeat pulse)
+   * Uses gentle gain envelope derived from BPM/60 Hz, clamped to narrow range
+   * To disable: set ENABLE_PPG_MODULATION = false in muse-handler.ts
+   */
+  private updatePPGModulation(
+    ppg: { bpm: number | null; confidence: number; lastBeatMs: number | null }
+  ): void {
+    if (!ENABLE_PPG_MODULATION || !this.ctx || !this.coherenceGain) {
+      return; // Feature disabled or not initialized
+    }
+
+    // Confidence gating: only modulate if confidence is high enough
+    if (ppg.confidence < 0.6 || ppg.bpm === null) {
+      // Not confident enough - disable modulation
+      this.resetPPGModulation();
+      return;
+    }
+
+    // Smooth BPM (heavy smoothing to avoid jittery behavior)
+    // At this point, we know ppg.bpm is not null (checked above)
+    const bpm = ppg.bpm!; // Non-null assertion safe due to check at line 1273
+    if (this.smoothedBPM === null) {
+      this.smoothedBPM = bpm;
+    } else {
+      this.smoothedBPM =
+        this.smoothedBPM * (1 - this.ppgBPMSmoothingAlpha) +
+        bpm * this.ppgBPMSmoothingAlpha;
+    }
+
+    // Start gentle gain modulation interval if not already running
+    if (!this.ppgModulationInterval) {
+      let phase = 0; // Phase accumulator for sine wave
+      
+      this.ppgModulationInterval = setInterval(() => {
+        if (!this.coherenceGain || !ENABLE_PPG_MODULATION) {
+          return;
+        }
+
+        // Only modulate if we have valid smoothed BPM
+        if (this.smoothedBPM === null) {
+          return;
+        }
+
+        // Calculate modulation frequency from BPM: BPM/60 Hz, clamped to 0.05-0.3 Hz (very slow)
+        const modFreq = Math.max(0.05, Math.min(0.3, this.smoothedBPM / 60));
+        const modPeriod = 1000 / modFreq; // Period in ms
+
+        // Update phase (increment by small step each interval)
+        phase += (100 / modPeriod) * Math.PI * 2; // 100ms interval
+        if (phase > Math.PI * 2) {
+          phase -= Math.PI * 2;
+        }
+
+        // Calculate subtle gain variation: ±1% (very gentle)
+        const modulationDepth = 0.01; // 1% variation
+        const gainVariation = 1.0 + Math.sin(phase) * modulationDepth;
+
+        // Apply to coherence gain smoothly (use current time for scheduling)
+        const audioNow = this.ctx!.currentTime;
+        this.coherenceGain.gain.cancelScheduledValues(audioNow);
+        const currentGain = this.coherenceGain.gain.value;
+        
+        // Only modulate if coherence gain is active (not 0)
+        if (currentGain > 0.01) {
+          // Calculate target gain: base gain * variation
+          // But preserve the base gain level (don't change overall volume)
+          const baseGain = currentGain; // Use current as base
+          const targetGain = baseGain * gainVariation;
+          
+          // Smooth transition (very gentle)
+          this.coherenceGain.gain.setValueAtTime(currentGain, audioNow);
+          this.coherenceGain.gain.linearRampToValueAtTime(targetGain, audioNow + 0.1);
+        }
+      }, 100); // Update every 100ms for smooth modulation
+
+      console.log('[AudioEngine] ✅ PPG modulation interval started for subtle BPM-based gain variation');
+    }
+  }
+
+  /**
+   * Reset PPG modulation when not in coherent state or confidence is low
+   * Only called when ENABLE_PPG_MODULATION is true
+   */
+  private resetPPGModulation(): void {
+    if (!ENABLE_PPG_MODULATION) {
+      return; // Feature disabled
+    }
+
+    // Stop modulation interval
+    if (this.ppgModulationInterval) {
+      clearInterval(this.ppgModulationInterval);
+      this.ppgModulationInterval = null;
+    }
+
+    // Reset smoothed BPM
+    this.smoothedBPM = null;
   }
 
   /**

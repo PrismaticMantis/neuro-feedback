@@ -683,43 +683,42 @@ body {
   display: flex;
   flex-direction: column;
   gap: 0;
-  margin-bottom: -10px;
+  margin-bottom: 8px;
 }
 
 .zone-label {
-  font-size: 12px;
+  font-size: 11px;
   color: var(--text-dim);
-  padding: 8px 12px;
-  background: rgba(79, 209, 197, 0.05);
+  padding: 6px 10px;
+  background: transparent;
   border-left: 2px solid transparent;
-  transition: all 0.3s ease;
+  transition: all 0.2s ease;
+  font-weight: 400;
 }
 
 .zone-label.active {
   color: var(--accent-teal);
   border-left-color: var(--accent-teal);
-  background: rgba(79, 209, 197, 0.1);
+  background: rgba(79, 209, 197, 0.05);
 }
 
 .graph-container {
   flex: 1;
   position: relative;
-  background: linear-gradient(
-    to bottom,
-    var(--zone-quiet) 0%,
-    var(--zone-quiet) 30%,
-    var(--zone-stabilizing) 30%,
-    var(--zone-stabilizing) 60%,
-    var(--zone-noise) 60%,
-    var(--zone-noise) 100%
-  );
+  background: var(--bg-primary); /* Clean dark background */
   border-radius: var(--radius-md);
   overflow: hidden;
+  /* Spacious padding for uncluttered feel */
+  padding: 12px;
 }
 
 .graph-canvas {
   width: 100%;
   height: 100%;
+  display: block;
+  /* Smooth rendering */
+  image-rendering: -webkit-optimize-contrast;
+  image-rendering: crisp-edges;
 }
 
 .current-indicator {
@@ -739,7 +738,11 @@ body {
 .time-axis {
   display: flex;
   justify-content: space-between;
-  padding: 8px 0;
+  padding: 12px 0 8px 0;
+  font-size: 11px;
+  color: var(--text-dim);
+  font-weight: 400;
+  letter-spacing: 0.3px;
 }
 
 .time-marker {

@@ -4,7 +4,6 @@ import { motion } from 'framer-motion';
 import { CoherenceGraph } from './CoherenceGraph';
 import { ElectrodeStatus } from './ElectrodeStatus';
 import type { ElectrodeStatus as ElectrodeStatusType, BrainwaveBands, BrainwaveBandsDb } from '../types';
-import type { CoherenceState } from '../lib/audio-engine';
 
 interface ActiveSessionProps {
   // Session data
@@ -12,7 +11,6 @@ interface ActiveSessionProps {
   coherenceHistory: number[];
   currentCoherence: number;
   coherenceZone: 'flow' | 'stabilizing' | 'noise';
-  coherenceState: CoherenceState;
   coherenceActive: boolean;
   currentStreak: number;
 
@@ -37,7 +35,6 @@ export function ActiveSession({
   coherenceHistory,
   currentCoherence,
   coherenceZone,
-  coherenceState,
   coherenceActive,
   currentStreak,
   museConnected,
@@ -150,20 +147,7 @@ export function ActiveSession({
           </motion.div>
         )}
 
-        {/* Coherence State Indicator */}
-        {coherenceState !== 'baseline' && (
-          <motion.div
-            className={`coherence-state-indicator ${coherenceState === 'coherent' ? 'coherent' : 'stabilizing'}`}
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 10 }}
-          >
-            <div className={`coherence-glow ${coherenceState === 'coherent' ? 'coherent' : 'stabilizing'}`} />
-            <span className="coherence-text">
-              {coherenceState === 'coherent' ? 'Coherent' : 'Stabilizing...'}
-            </span>
-          </motion.div>
-        )}
+        {/* Coherence State Indicator - REMOVED per user request */}
 
         {/* Connection Warning */}
         {(!museConnected || !touching) && (
