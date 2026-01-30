@@ -1,8 +1,11 @@
 // Active Session Screen Component
 
+import { useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { CoherenceGraph } from './CoherenceGraph';
 import { ElectrodeStatus } from './ElectrodeStatus';
+import { DEBUG_SESSION_TELEMETRY } from '../lib/feature-flags';
+import { museHandler } from '../lib/muse-handler';
 import type { ElectrodeStatus as ElectrodeStatusType, BrainwaveBands, BrainwaveBandsDb } from '../types';
 
 interface ActiveSessionProps {
@@ -42,6 +45,38 @@ export function ActiveSession({
   onEndSession,
 }: ActiveSessionProps) {
   void _bands; // Silence unused warning
+  
+  // Debug: Track update timestamps
+  const [debugInfo, setDebugInfo] = useState<{
+    lastUpdate: number;
+    lastHistoryAppend: number;
+    historyLength: number;
+  }>({ lastUpdate: 0, lastHistoryAppend: 0, historyLength: 0 });
+
+  const prevHistoryLengthRef = useRef(coherenceHistory.length);
+  const lastHistoryAppendTimeRef = useRef<number>(0);
+
+  useEffect(() => {
+    if (!DEBUG_SESSION_TELEMETRY) return;
+    
+    // Track when history changes
+    if (coherenceHistory.length !== prevHistoryLengthRef.current) {
+      lastHistoryAppendTimeRef.current = Date.now();
+      prevHistoryLengthRef.current = coherenceHistory.length;
+    }
+
+    const interval = setInterval(() => {
+      const handlerDetail = museHandler.getConnectionStateDetail();
+      const now = Date.now();
+      setDebugInfo({
+        lastUpdate: handlerDetail.timeSinceLastUpdate,
+        lastHistoryAppend: lastHistoryAppendTimeRef.current > 0 ? now - lastHistoryAppendTimeRef.current : 999999,
+        historyLength: coherenceHistory.length,
+      });
+    }, 200);
+    return () => clearInterval(interval);
+  }, [coherenceHistory.length]);
+
   // Format time display
   const formatTime = (ms: number) => {
     const totalSeconds = Math.floor(ms / 1000);
@@ -89,6 +124,25 @@ export function ActiveSession({
           </svg>
         </div>
       </header>
+
+      {/* Debug Overlay (when enabled) */}
+      {DEBUG_SESSION_TELEMETRY && (
+        <div className="debug-overlay" style={{ position: 'fixed', top: 80, right: 20, zIndex: 1000, maxWidth: '300px' }}>
+          <h3 style={{ color: 'var(--accent-primary)', marginBottom: 12, fontSize: '14px' }}>🔍 Session Debug</h3>
+          <div style={{ fontFamily: 'monospace', fontSize: '11px', lineHeight: 1.6 }}>
+            <div>museConnected: {String(museConnected)}</div>
+            <div>touching: {String(touching)}</div>
+            <div>lastUpdate: {debugInfo.lastUpdate}ms ago</div>
+            <div>raw horseshoe: [{museHandler.getElectrodeQuality().join(', ')}]</div>
+            <div>electrodeStatus: {JSON.stringify(electrodeStatus)}</div>
+            <div>bandsDb: δ={bandsDb.delta.toFixed(0)} θ={bandsDb.theta.toFixed(0)} α={bandsDb.alpha.toFixed(0)} β={bandsDb.beta.toFixed(0)} γ={bandsDb.gamma.toFixed(0)}</div>
+            <div>coherenceHistory: {coherenceHistory.length} points</div>
+            <div>lastHistoryAppend: {debugInfo.lastHistoryAppend > 5000 ? 'stale' : `${Math.round(debugInfo.lastHistoryAppend)}ms ago`}</div>
+            <div>coherenceZone: {coherenceZone}</div>
+            <div>latest coherence: {coherenceHistory.length > 0 ? coherenceHistory[coherenceHistory.length - 1].toFixed(3) : 'none'}</div>
+          </div>
+        </div>
+      )}
 
       {/* Electrode Status Bar */}
       <div className="electrode-bar">

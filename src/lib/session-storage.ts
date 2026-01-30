@@ -54,10 +54,10 @@ export interface Journey {
 
 /* Lovable design: Calm, Deep Rest, Creative Flow, Night Wind-Down */
 export const DEFAULT_JOURNEYS: Journey[] = [
-  { id: 'calm', name: 'Calm', description: 'Gentle waves to settle the mind and body.', configId: 'calm' },
-  { id: 'deepRest', name: 'Deep Rest', description: 'Slow, deep layers for restorative rest.', configId: 'deepRest' },
-  { id: 'creativeFlow', name: 'Creative Flow', description: 'Unlock expansive thinking and flow.', configId: 'creativeFlow' },
-  { id: 'nightWindDown', name: 'Night Wind-Down', description: 'Soften the day and ease into sleep.', configId: 'nightWindDown' },
+  { id: 'calm', name: 'Calm', description: 'Release tension, quiet the mind, and restore inner stillness. Perfect for moments of overwhelm.', configId: 'calm' },
+  { id: 'deepRest', name: 'Deep Rest', description: 'Full nervous system reset. Drop into profound restoration and physical renewal.', configId: 'deepRest' },
+  { id: 'creativeFlow', name: 'Creative Flow', description: 'Unlock expansive thinking and creative possibility. Shift from force to flow.', configId: 'creativeFlow' },
+  { id: 'nightWindDown', name: 'Night Wind-Down', description: 'Gentle transition from day to night. Prepare body and mind for restorative sleep.', configId: 'nightWindDown' },
 ];
 
 const DEFAULT_JOURNEY_ID = 'calm';

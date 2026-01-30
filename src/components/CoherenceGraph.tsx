@@ -239,7 +239,7 @@ export function CoherenceGraph({
 
       ctx.stroke();
     }
-  }, [coherenceHistory, smoothedHistory]);
+  }, [coherenceHistory, smoothedHistory, duration]);
 
   // Format time display
   const formatTime = (ms: number) => {

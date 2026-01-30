@@ -9,26 +9,40 @@ import type { User } from '../types';
 
 const ENABLED_JOURNEY_ID = 'creativeFlow';
 
-/* Journey display tokens from Lovable spec (duration + color) */
-const JOURNEY_DISPLAY: Record<string, { duration: string; color: string }> = {
-  calm: { duration: '15 min', color: '#4d99b3' },
-  deepRest: { duration: '25 min', color: '#8c4da6' },
-  creativeFlow: { duration: '20 min', color: '#d4b86b' },
-  nightWindDown: { duration: '20 min', color: '#6b5299' },
+/* Journey display tokens from Lovable spec (duration + icon color + card background) */
+const JOURNEY_DISPLAY: Record<string, { 
+  duration: string; 
+  iconColor: string;
+  cardBg: 'grey' | 'purple';
+}> = {
+  calm: { duration: '15 min', iconColor: '#4d99b3', cardBg: 'grey' },
+  deepRest: { duration: '25 min', iconColor: '#a67bc8', cardBg: 'purple' },
+  creativeFlow: { duration: '20 min', iconColor: '#d9c478', cardBg: 'grey' },
+  nightWindDown: { duration: '30 min', iconColor: '#a67bc8', cardBg: 'purple' },
 };
 
 function JourneyIcon({ id }: { id: string }) {
   if (id === 'calm') {
+    // Three horizontal wavy lines
     return (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M2 12c0 5 4 8 10 8s10-3 10-8-4-8-10-8-10 3-10 8z"/><path d="M2 12h20"/></svg>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M2 12c1-1.5 3-1.5 5 0s4 1.5 6 0 4-1.5 6 0 4-1.5 6 0"/>
+        <path d="M2 8c1-1.5 3-1.5 5 0s4 1.5 6 0 4-1.5 6 0 4-1.5 6 0"/>
+        <path d="M2 16c1-1.5 3-1.5 5 0s4 1.5 6 0 4-1.5 6 0 4-1.5 6 0"/>
+      </svg>
     );
   }
   if (id === 'deepRest') {
+    // Crescent moon with small star/swirl
     return (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+      <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+        <circle cx="18" cy="6" r="1.5" fill="currentColor"/>
+      </svg>
     );
   }
   if (id === 'creativeFlow') {
+    // Four-point sparkle/star (already correct)
     return (
       <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden>
         <path d="M12 2l2.5 7.5L22 12l-7.5 2.5L12 22l-2.5-7.5L2 12l7.5-2.5L12 2z" />
@@ -36,8 +50,13 @@ function JourneyIcon({ id }: { id: string }) {
     );
   }
   if (id === 'nightWindDown') {
+    // Two horizontal lines with downward arrow
     return (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="2" y1="12" x2="22" y2="12"/><line x1="2" y1="8" x2="22" y2="8"/><line x1="2" y1="16" x2="22" y2="16"/></svg>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <line x1="3" y1="10" x2="21" y2="10"/>
+        <line x1="3" y1="14" x2="21" y2="14"/>
+        <path d="M12 14l-3 3 3 3"/>
+      </svg>
     );
   }
   return (
@@ -88,19 +107,17 @@ export function JourneySelect({ currentUser }: JourneySelectProps) {
       )}
       <div className="journey-grid">
         {journeys.map((j) => {
-          const display = JOURNEY_DISPLAY[j.id] ?? { duration: '15 min', color: '#9e59b8' };
-          const isEnabled = j.id === ENABLED_JOURNEY_ID;
+          const display = JOURNEY_DISPLAY[j.id] ?? { duration: '15 min', iconColor: '#9e59b8', cardBg: 'grey' };
           return (
             <motion.button
               key={j.id}
               type="button"
-              className={`journey-card ${!isEnabled ? 'journey-card-disabled' : ''}`}
+              className={`journey-card journey-card-${display.cardBg}`}
               onClick={() => handleSelect(j.id)}
-              whileHover={isEnabled ? { scale: 1.02 } : undefined}
-              whileTap={isEnabled ? { scale: 0.98 } : undefined}
-              aria-disabled={!isEnabled}
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
             >
-              <div className="journey-card-icon" style={{ background: display.color, boxShadow: `0 0 20px ${display.color}40` }}>
+              <div className="journey-card-icon" style={{ background: display.iconColor, boxShadow: `0 0 20px ${display.iconColor}40` }}>
                 <JourneyIcon id={j.id} />
               </div>
               <span className="journey-name">{j.name}</span>
@@ -111,7 +128,7 @@ export function JourneySelect({ currentUser }: JourneySelectProps) {
               </span>
               <div className="journey-card-footer">
                 <span />
-                <span className="journey-play-btn" style={{ background: display.color, color: '#fff' }} aria-hidden>
+                <span className="journey-play-btn" style={{ background: display.iconColor, color: '#fff' }} aria-hidden>
                   <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
                 </span>
               </div>
@@ -123,7 +140,7 @@ export function JourneySelect({ currentUser }: JourneySelectProps) {
       <section className="about-journeys-card">
         <h3>About Sound Journeys</h3>
         <p>
-          Sound journeys combine binaural tones and ambient layers to support focus, relaxation, or sleep. Choose a journey, connect your Muse headband, and follow the session setup to begin.
+          Each journey combines neuroadaptive sound frequencies with real-time biofeedback to guide your nervous system toward coherence. The experience adapts to your unique state, meeting you where you are.
         </p>
       </section>
     </motion.div>

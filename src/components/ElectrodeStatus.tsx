@@ -22,12 +22,16 @@ const QUALITY_COLORS: Record<ElectrodeQuality, string> = {
   off: 'var(--text-subtle)',
 };
 
+/**
+ * Overall signal quality from electrode states (matches connectionQuality logic exactly).
+ * 3-4 good → Strong signal, 1-2 good → Partial signal, 0 good → Poor signal.
+ */
 function getOverallStatus(status: ElectrodeStatusType): { label: string; quality: ElectrodeQuality } {
   const qualities = [status.tp9, status.af7, status.af8, status.tp10];
   const goodCount = qualities.filter(q => q === 'good').length;
 
   if (goodCount >= 3) return { label: 'Strong signal', quality: 'good' };
-  if (goodCount >= 1) return { label: 'Partial contact', quality: 'medium' };
+  if (goodCount >= 1) return { label: 'Partial signal', quality: 'medium' };
   return { label: 'Poor signal', quality: 'off' };
 }
 

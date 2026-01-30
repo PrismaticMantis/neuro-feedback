@@ -7,6 +7,8 @@ import { getLastJourneyId, getJourneys } from '../lib/session-storage';
 import { ConnectionStatus } from './ConnectionStatus';
 import { ElectrodeStatus } from './ElectrodeStatus';
 import { BINAURAL_PRESETS } from '../hooks/useAudio';
+import { DEBUG_ELECTRODES_OVERLAY } from '../lib/feature-flags';
+import { museHandler } from '../lib/muse-handler';
 import type {
   User,
   BinauralPresetName,
@@ -119,6 +121,23 @@ export function SessionSetup({
           isBluetoothAvailable={isBluetoothAvailable}
           error={connectionError}
         />
+
+        {/* Debug Overlay (when enabled) */}
+        {DEBUG_ELECTRODES_OVERLAY && museConnected && (
+          <section className="setup-section debug-overlay">
+            <h3 style={{ color: 'var(--accent-primary)', marginBottom: 12 }}>🔍 Electrode Debug</h3>
+            <div style={{ fontFamily: 'monospace', fontSize: '12px', lineHeight: 1.6 }}>
+              <div>connected: {String(museConnected)}</div>
+              <div>raw horseshoe: [{museHandler.getElectrodeQuality().join(', ')}]</div>
+              <div>electrodeStatus: {JSON.stringify(electrodeStatus)}</div>
+              <div>connectionQuality: {connectionQuality.toFixed(2)}</div>
+              <div>signalLabel: {(() => {
+                const goodCount = [electrodeStatus.tp9, electrodeStatus.af7, electrodeStatus.af8, electrodeStatus.tp10].filter(q => q === 'good').length;
+                return goodCount >= 3 ? 'Strong' : goodCount >= 1 ? 'Partial' : 'Poor';
+              })()}</div>
+            </div>
+          </section>
+        )}
 
         {/* Electrode Status (show when connected) */}
         {museConnected && (

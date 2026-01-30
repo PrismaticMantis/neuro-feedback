@@ -1217,7 +1217,20 @@ h3 {
   width: 16px;
   height: 16px;
   border-radius: 50%;
-  transition: all 0.3s ease;
+  transition: background-color 0.2s ease, box-shadow 0.2s ease;
+  /* Ensure vivid colors - no opacity or muting */
+  opacity: 1;
+}
+
+/* Debug overlay for electrode quality diagnosis */
+.debug-overlay {
+  background: rgba(0, 0, 0, 0.8);
+  border: 2px solid var(--accent-primary);
+  border-radius: var(--radius-md);
+  padding: 16px;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  color: var(--text-primary);
+  z-index: 1000;
 }
 
 .electrode-label {
@@ -2288,8 +2301,6 @@ h3 {
   align-items: flex-start;
   text-align: left;
   padding: 24px;
-  background: linear-gradient(165deg, hsl(270 7% 14% / 0.7), hsl(270 10% 8% / 0.8));
-  border: 1px solid hsl(275 20% 25% / 0.35);
   border-radius: 16px;
   cursor: pointer;
   transition: all 0.3s ease;
@@ -2299,32 +2310,28 @@ h3 {
   box-shadow: 0 4px 20px hsl(270 20% 2% / 0.6);
 }
 
-.journey-card::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(135deg, transparent, transparent);
-  opacity: 0.15; /* Journey-specific color overlay at 15% */
-  pointer-events: none;
-  transition: opacity 0.3s ease;
+/* Grey background for Calm and Creative Flow */
+.journey-card-grey {
+  background: var(--bg-card); /* hsl(270 8% 11%) - dark grey */
+  border: 1px solid hsl(275 20% 25% / 0.35);
+}
+
+/* Purple background for Deep Rest and Night Wind-Down */
+.journey-card-purple {
+  background: linear-gradient(165deg, hsl(275 15% 12% / 0.9), hsl(275 18% 8% / 0.95));
+  border: 1px solid hsl(275 25% 30% / 0.4);
 }
 
 .journey-card:hover {
   transform: translateY(-3px);
-  border-color: hsl(275 15% 32% / 0.5); /* Brighter border on hover */
 }
 
-.journey-card:hover::before {
-  opacity: 0.3; /* Overlay to 30% on hover */
+.journey-card-grey:hover {
+  border-color: hsl(275 15% 32% / 0.5);
 }
 
-.journey-card-disabled {
-  cursor: default;
-  opacity: 0.9;
-}
-
-.journey-card-disabled:hover {
-  transform: none;
+.journey-card-purple:hover {
+  border-color: hsl(275 20% 35% / 0.5);
 }
 
 .journey-card-icon {
@@ -2403,7 +2410,7 @@ h3 {
 
 .about-journeys-card {
   padding: 24px;
-  background: linear-gradient(165deg, hsl(270 7% 14% / 0.7), hsl(270 10% 8% / 0.8));
+  background: var(--bg-card); /* Match grey cards */
   border: 1px solid hsl(275 20% 25% / 0.35);
   border-radius: 16px;
   backdrop-filter: blur(20px);

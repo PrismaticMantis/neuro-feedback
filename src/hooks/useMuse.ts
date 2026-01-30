@@ -90,13 +90,15 @@ export function useMuse(): UseMuseReturn {
   const animationFrameRef = useRef<number | undefined>(undefined);
   const lastHistoryUpdate = useRef<number>(0);
   const lastElectrodeUpdate = useRef<number>(0);
+  const lastStateUpdate = useRef<number>(0);
   const lastDebugLog = useRef<number>(0);
   const wasConnectedRef = useRef<boolean>(false);
 
   // Electrode contact: source = museHandler.getElectrodeQuality() [TP9, AF7, AF8, TP10];
   // values 1=good, 2=medium, 3=poor, 4=off. Overall quality = good-count: 3–4→1, 1–2→0.5, 0→0.
   useEffect(() => {
-    const ELECTRODE_UPDATE_MS = 150; // ~6–7 Hz so nodes and meter update within ~0.2s
+    const ELECTRODE_UPDATE_MS = 100; // ~10 Hz for responsive updates (<300ms perceived)
+    const STATE_UPDATE_MS = 50; // ~20 Hz for bandsDb and other state (smooth animation)
     const DEBUG_LOG_MS = 500; // ~2x/sec for debug
 
     const updateLoop = () => {
@@ -114,18 +116,34 @@ export function useMuse(): UseMuseReturn {
         const connectionQualityFromElectrodes = electrodeStatusToConnectionQuality(next);
 
         wasConnectedRef.current = true;
-        // Always update electrode status when connected (throttled to avoid spam)
+        
+        // Update electrode status (throttled to avoid spam but always push updates)
         if (tNow - lastElectrodeUpdate.current >= ELECTRODE_UPDATE_MS) {
           lastElectrodeUpdate.current = tNow;
-          // Force React to see this as a new object by creating a fresh copy
+          // Always create fresh object to force React re-render
           setElectrodeStatus({ ...next });
-          setState({ ...museState, connectionQuality: connectionQualityFromElectrodes });
 
+          // Debug logging (always enabled when DEBUG_ELECTRODES flag is true)
           if (DEBUG_ELECTRODES && tNow - lastDebugLog.current >= DEBUG_LOG_MS) {
             lastDebugLog.current = tNow;
             const overallLabel = connectionQualityFromElectrodes >= 1 ? 'Strong' : connectionQualityFromElectrodes >= 0.5 ? 'Partial' : 'Poor';
-            console.log(`[DEBUG_ELECTRODES] ${new Date().toISOString()} raw=[${horseshoe.join(',')}] mapped=`, next, `overall=${overallLabel}`);
+            console.log(`[DEBUG_ELECTRODES] ${new Date().toISOString()} raw=[${horseshoe.join(',')}] mapped=`, next, `overall=${overallLabel} connectionQuality=${connectionQualityFromElectrodes.toFixed(2)}`);
           }
+        }
+
+        // Update all state (bandsDb, bandsSmooth, etc.) more frequently for smooth animation
+        // CRITICAL: Always update state when connected to ensure live telemetry
+        if (tNow - lastStateUpdate.current >= STATE_UPDATE_MS) {
+          lastStateUpdate.current = tNow;
+          // Always create fresh objects to force React re-render (no memoization blocking)
+          setState({ 
+            ...museState, 
+            connectionQuality: connectionQualityFromElectrodes,
+            bands: { ...museState.bands },
+            bandsSmooth: { ...museState.bandsSmooth },
+            bandsDb: { ...museState.bandsDb },
+            bandsDbSmooth: { ...museState.bandsDbSmooth },
+          });
         }
 
         // Calculate motion level from accelerometer
@@ -147,16 +165,14 @@ export function useMuse(): UseMuseReturn {
         const coh = calculateCoherence(museState.bandsSmooth, csState.signalVariance, electrodeQuality);
         setCoherence(coh);
 
-        // Update history at ~1Hz (every 1000ms)
+        // Update history at ~1Hz (every 1000ms) - always append, no change detection
         if (tNow - lastHistoryUpdate.current >= 1000) {
           lastHistoryUpdate.current = tNow;
+          // Always append to history for continuous graph updates
           setCoherenceHistory((prev) => {
             const newHistory = [...prev, coh];
             // Keep last 300 points = 5 minutes at 1Hz
-            if (newHistory.length > 300) {
-              return newHistory.slice(-300);
-            }
-            return newHistory;
+            return newHistory.length > 300 ? newHistory.slice(-300) : newHistory;
           });
         }
 
@@ -173,9 +189,11 @@ export function useMuse(): UseMuseReturn {
         }
       }
 
+      // Always continue the loop - never stop while component is mounted
       animationFrameRef.current = requestAnimationFrame(updateLoop);
     };
 
+    // Start the update loop immediately
     animationFrameRef.current = requestAnimationFrame(updateLoop);
 
     return () => {
@@ -205,17 +223,25 @@ export function useMuse(): UseMuseReturn {
     }
   }, []);
 
-  // Force immediate electrode status update when Muse connects
+  // Force immediate electrode status update when Muse connects (and periodically refresh)
   useEffect(() => {
     if (state.connected) {
-      const horseshoe = museHandler.getElectrodeQuality();
-      const next: ElectrodeStatus = {
-        tp9: horseshoeToQuality(horseshoe[0] ?? 4),
-        af7: horseshoeToQuality(horseshoe[1] ?? 4),
-        af8: horseshoeToQuality(horseshoe[2] ?? 4),
-        tp10: horseshoeToQuality(horseshoe[3] ?? 4),
+      const updateElectrodes = () => {
+        const horseshoe = museHandler.getElectrodeQuality();
+        const next: ElectrodeStatus = {
+          tp9: horseshoeToQuality(horseshoe[0] ?? 4),
+          af7: horseshoeToQuality(horseshoe[1] ?? 4),
+          af8: horseshoeToQuality(horseshoe[2] ?? 4),
+          tp10: horseshoeToQuality(horseshoe[3] ?? 4),
+        };
+        // Always create new object to force React re-render
+        setElectrodeStatus({ ...next });
       };
-      setElectrodeStatus({ ...next });
+      
+      updateElectrodes();
+      // Also refresh every 200ms to catch any missed updates
+      const interval = setInterval(updateElectrodes, 200);
+      return () => clearInterval(interval);
     }
   }, [state.connected]);
 
