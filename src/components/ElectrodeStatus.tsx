@@ -16,10 +16,10 @@ const ELECTRODE_LABELS = {
 };
 
 const QUALITY_COLORS: Record<ElectrodeQuality, string> = {
-  good: 'var(--accent-primary)', /* Champagne */
+  good: 'var(--success)',   /* Green = good contact */
   medium: 'var(--warning)',
   poor: 'var(--error)',
-  off: 'var(--text-subtle)',
+  off: 'var(--text-subtle)', /* Gray = unknown / not connected */
 };
 
 function getOverallStatus(status: ElectrodeStatusType): { label: string; quality: ElectrodeQuality } {

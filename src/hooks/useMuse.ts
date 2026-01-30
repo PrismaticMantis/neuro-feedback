@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { museHandler, MuseHandler } from '../lib/muse-handler';
 import { CoherenceDetector, calculateCoherence, getCoherenceZone } from '../lib/flow-state';
+import { DEBUG_ELECTRODES } from '../lib/feature-flags';
 import type { MuseState, CoherenceStatus, ElectrodeStatus, ElectrodeQuality } from '../types';
 
 export interface UseMuseReturn {
@@ -76,22 +77,41 @@ export function useMuse(): UseMuseReturn {
   const coherenceDetector = useRef(new CoherenceDetector({}));
   const animationFrameRef = useRef<number | undefined>(undefined);
   const lastHistoryUpdate = useRef<number>(0);
+  const lastElectrodeUpdate = useRef<number>(0);
+  const lastElectrodeStatus = useRef<ElectrodeStatus>(INITIAL_ELECTRODE_STATUS);
 
   // Update loop
   useEffect(() => {
+    const ELECTRODE_UPDATE_MS = 300; // ~3 Hz max to avoid re-render spam
+
     const updateLoop = () => {
       if (museHandler.connected) {
         const museState = museHandler.getState();
         setState(museState);
 
-        // Update electrode status from horseshoe data
         const horseshoe = museHandler.getElectrodeQuality();
-        setElectrodeStatus({
-          tp9: horseshoeToQuality(horseshoe[0]),
-          af7: horseshoeToQuality(horseshoe[1]),
-          af8: horseshoeToQuality(horseshoe[2]),
-          tp10: horseshoeToQuality(horseshoe[3]),
-        });
+
+        // Update electrode status from horseshoe data (throttled)
+        const tNow = Date.now();
+        if (tNow - lastElectrodeUpdate.current >= ELECTRODE_UPDATE_MS) {
+          lastElectrodeUpdate.current = tNow;
+          const next: ElectrodeStatus = {
+            tp9: horseshoeToQuality(horseshoe[0]),
+            af7: horseshoeToQuality(horseshoe[1]),
+            af8: horseshoeToQuality(horseshoe[2]),
+            tp10: horseshoeToQuality(horseshoe[3]),
+          };
+          const prev = lastElectrodeStatus.current;
+          const changed =
+            next.tp9 !== prev.tp9 || next.af7 !== prev.af7 || next.af8 !== prev.af8 || next.tp10 !== prev.tp10;
+          if (changed) {
+            lastElectrodeStatus.current = next;
+            setElectrodeStatus(next);
+            if (DEBUG_ELECTRODES) {
+              console.log(`[DEBUG_ELECTRODES] ${new Date().toISOString()}`, next);
+            }
+          }
+        }
 
         // Calculate motion level from accelerometer
         const motionLevel = Math.abs(museHandler.accX) + Math.abs(museHandler.accY) + Math.abs(museHandler.accZ);
@@ -100,7 +120,7 @@ export function useMuse(): UseMuseReturn {
         // Get electrode contact quality (0-1 scale)
         // Quality: 1=good, 2=medium, 3=poor, 4=off
         // Convert to 0-1 where 1 is best
-        const electrodeQuality = horseshoe.reduce((sum, v) => {
+        const electrodeQuality = horseshoe.reduce((sum: number, v: number) => {
           if (v === 1) return sum + 1;      // good = 1.0
           if (v === 2) return sum + 0.5;    // medium = 0.5
           return sum;                        // poor/off = 0
@@ -115,9 +135,8 @@ export function useMuse(): UseMuseReturn {
         setCoherence(coh);
 
         // Update history at ~1Hz (every 1000ms)
-        const now = Date.now();
-        if (now - lastHistoryUpdate.current >= 1000) {
-          lastHistoryUpdate.current = now;
+        if (tNow - lastHistoryUpdate.current >= 1000) {
+          lastHistoryUpdate.current = tNow;
           setCoherenceHistory((prev) => {
             const newHistory = [...prev, coh];
             // Keep last 300 points = 5 minutes at 1Hz
@@ -131,6 +150,20 @@ export function useMuse(): UseMuseReturn {
         // Update PPG metrics (heart rate)
         const ppgMetrics = museHandler.getPPG();
         setPPG(ppgMetrics);
+      } else {
+        // Muse disconnected: reset electrode status to unknown/off
+        if (
+          lastElectrodeStatus.current.tp9 !== 'off' ||
+          lastElectrodeStatus.current.af7 !== 'off' ||
+          lastElectrodeStatus.current.af8 !== 'off' ||
+          lastElectrodeStatus.current.tp10 !== 'off'
+        ) {
+          lastElectrodeStatus.current = INITIAL_ELECTRODE_STATUS;
+          setElectrodeStatus(INITIAL_ELECTRODE_STATUS);
+          if (DEBUG_ELECTRODES) {
+            console.log(`[DEBUG_ELECTRODES] ${new Date().toISOString()} disconnected`, INITIAL_ELECTRODE_STATUS);
+          }
+        }
       }
 
       animationFrameRef.current = requestAnimationFrame(updateLoop);
