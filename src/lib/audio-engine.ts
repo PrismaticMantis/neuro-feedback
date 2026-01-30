@@ -6,10 +6,10 @@ import type {
   BinauralPreset,
   BinauralPresetName,
 } from '../types';
-import { CoherenceStateMachine, type SignalQuality } from './coherence-state-machine';
+import { CoherenceStateMachine, type SignalQuality, type CoherenceStateMachineConfig } from './coherence-state-machine';
 import type { CoherenceState } from './coherence-state-machine';
 import { ENABLE_EXPRESSIVE_MODULATION } from './flow-state';
-import { ENABLE_PPG_MODULATION } from './muse-handler';
+import { ENABLE_PPG_MODULATION, DEBUG_PPG } from './muse-handler';
 
 // Crossfade constants (centralized for easy tweaking)
 const CROSSFADE_CONSTANTS = {
@@ -166,7 +166,11 @@ export class AudioEngine {
   // PPG (heart rate) modulation - only used if ENABLE_PPG_MODULATION is true
   private smoothedBPM: number | null = null; // Smoothed BPM for stable modulation
   private ppgBPMSmoothingAlpha = 0.05; // Heavy smoothing for BPM (very slow changes)
-  private ppgModulationInterval: ReturnType<typeof setInterval> | null = null; // Interval for gentle gain modulation
+  private ppgModulationInterval: ReturnType<typeof setInterval> | null = null; // Interval for gentle modulation
+  private ppgModulationLastLogTime: number = 0; // For throttled debug logging
+  private ppgLowpassFilter: BiquadFilterNode | null = null; // Lowpass filter for PPG modulation
+  private ppgBaseCutoff: number = 8000; // Base cutoff frequency (Hz) - will be modulated around this
+  private currentCoherenceState: CoherenceState = 'baseline'; // Track current state for depth calculation
   
   // Shimmer fade-out tracking (to prevent abrupt cutouts)
   private shimmerTargetGain: number = 0;
@@ -198,7 +202,7 @@ export class AudioEngine {
   constructor(config: Partial<AudioEngineConfig> = {}) {
     this.config = { ...DEFAULT_CONFIG, ...config };
     
-    // Initialize coherence state machine with updated thresholds
+    // Initialize coherence state machine with default thresholds (will be updated based on difficulty)
     this.coherenceStateMachine = new CoherenceStateMachine({
       enterThreshold: 0.75,
       exitThreshold: 0.70,
@@ -213,6 +217,43 @@ export class AudioEngine {
     this.coherenceStateMachine.onStateChange = (newState, oldState) => {
       this.handleCoherenceStateChange(newState, oldState);
     };
+  }
+
+  /**
+   * Update coherence state machine config based on difficulty preset
+   * Called when user changes difficulty setting in UI
+   */
+  setDifficultyPreset(coherenceSensitivity: number): void {
+    // Determine difficulty level from sensitivity (0-1)
+    // EASY: sensitivity < 0.33
+    // MEDIUM/HARD: sensitivity >= 0.33 (use default values)
+    const isEasy = coherenceSensitivity < 0.33;
+
+    let config: Partial<CoherenceStateMachineConfig>;
+    
+    if (isEasy) {
+      // EASY preset: easier to enter, harder to exit
+      config = {
+        enterThreshold: 0.68,
+        exitThreshold: 0.63,
+        enterSustainSeconds: 1.0,
+        exitSustainSeconds: 1.0,
+      };
+      console.log('[AudioEngine] Difficulty preset: EASY', config);
+    } else {
+      // MEDIUM/HARD preset: default values (unchanged)
+      config = {
+        enterThreshold: 0.75,
+        exitThreshold: 0.70,
+        enterSustainSeconds: 1.8,
+        exitSustainSeconds: 0.6,
+      };
+      const presetName = coherenceSensitivity < 0.67 ? 'MEDIUM' : 'HARD';
+      console.log(`[AudioEngine] Difficulty preset: ${presetName}`, config);
+    }
+
+    // Update state machine config
+    this.coherenceStateMachine.setConfig(config);
   }
 
   /**
@@ -259,7 +300,22 @@ export class AudioEngine {
         // Create master gain
         this.masterGain = this.ctx.createGain();
         this.masterGain.gain.value = 1.0;
-        this.masterGain.connect(this.ctx.destination);
+        
+        // Create PPG lowpass filter for modulation (if feature enabled)
+        if (ENABLE_PPG_MODULATION) {
+          this.ppgLowpassFilter = this.ctx.createBiquadFilter();
+          this.ppgLowpassFilter.type = 'lowpass';
+          this.ppgLowpassFilter.frequency.value = this.ppgBaseCutoff; // Start at base cutoff
+          this.ppgLowpassFilter.Q.value = 1.0; // Moderate Q for smooth response
+          
+          // Connect: masterGain -> ppgLowpassFilter -> destination
+          this.masterGain.connect(this.ppgLowpassFilter);
+          this.ppgLowpassFilter.connect(this.ctx.destination);
+          console.warn('[AudioEngine] ✅ PPG lowpass filter created for modulation');
+        } else {
+          // Feature disabled - connect master gain directly to destination
+          this.masterGain.connect(this.ctx.destination);
+        }
         console.warn('[AudioEngine] ✅ Master gain created and connected');
 
         // Create entrainment gain
@@ -645,6 +701,13 @@ export class AudioEngine {
       totalCoherenceAudioTimeMs: 0, // PART 2: Audio-based time tracking
     };
     
+    // Reset coherence time tracking
+    this.totalCoherenceAudioTime = 0;
+    this.coherenceGainActiveStart = null;
+    
+    // Reset PPG modulation state
+    this.currentCoherenceState = 'baseline';
+    
     // Reset state machine
     this.coherenceStateMachine.reset();
     this.currentCoherentStreakStart = null;
@@ -853,6 +916,12 @@ export class AudioEngine {
     if (this.coherenceGainActiveStart !== null) {
       const finalDuration = Date.now() - this.coherenceGainActiveStart;
       this.totalCoherenceAudioTime += finalDuration;
+      console.log('[AudioEngine] Finalized coherence time on stop:', {
+        finalDuration,
+        finalDurationSeconds: (finalDuration / 1000).toFixed(2),
+        totalCoherenceTimeMs: this.totalCoherenceAudioTime,
+        totalCoherenceTimeSeconds: (this.totalCoherenceAudioTime / 1000).toFixed(2),
+      });
       this.coherenceGainActiveStart = null;
     }
 
@@ -864,6 +933,15 @@ export class AudioEngine {
       clearInterval(this.ppgModulationInterval);
       this.ppgModulationInterval = null;
       this.smoothedBPM = null;
+      
+      // Reset lowpass filter to base cutoff
+      if (this.ppgLowpassFilter && this.ctx) {
+        const now = this.ctx.currentTime;
+        const currentCutoff = this.ppgLowpassFilter.frequency.value;
+        this.ppgLowpassFilter.frequency.cancelScheduledValues(now);
+        this.ppgLowpassFilter.frequency.setValueAtTime(currentCutoff, now);
+        this.ppgLowpassFilter.frequency.linearRampToValueAtTime(this.ppgBaseCutoff, now + 0.5);
+      }
     }
 
     console.warn('[AudioEngine] ✅ Session stopped with smooth fade-out');
@@ -1015,15 +1093,23 @@ export class AudioEngine {
         this.resetExpressiveModulation(now);
       }
 
-      // Reset PPG modulation when not coherent (if feature enabled)
-      if (ENABLE_PPG_MODULATION) {
+      // Reset PPG modulation when in baseline state (if feature enabled)
+      if (ENABLE_PPG_MODULATION && newState === 'baseline') {
         this.resetPPGModulation();
       }
     }
 
-    // Update PPG modulation (if feature enabled and coherent state)
-    if (ENABLE_PPG_MODULATION && newState === 'coherent' && ppg) {
-      this.updatePPGModulation(ppg);
+    // Update current state for PPG depth calculation
+    this.currentCoherenceState = newState;
+
+    // Update PPG modulation (if feature enabled and in stabilizing/coherent states)
+    // Allow PPG modulation during stabilizing and coherent states (not just coherent)
+    if (ENABLE_PPG_MODULATION && (newState === 'stabilizing' || newState === 'coherent') && ppg) {
+      this.updatePPGModulation(ppg, newState);
+    } else if (ENABLE_PPG_MODULATION && newState === 'baseline' && ppg) {
+      // Optional: allow reduced modulation during baseline (commented out by default)
+      // Uncomment the line below to enable baseline PPG modulation at reduced depth
+      // this.updatePPGModulation(ppg, newState);
     }
   }
 
@@ -1042,12 +1128,19 @@ export class AudioEngine {
       // Coherence gain will become active - start tracking
       if (this.coherenceGainActiveStart === null) {
         this.coherenceGainActiveStart = currentTime;
+        console.log('[AudioEngine] Coherence tracking started at:', currentTime);
       }
     } else {
       // Coherence gain is no longer active - accumulate time
       if (this.coherenceGainActiveStart !== null) {
         const activeDuration = currentTime - this.coherenceGainActiveStart;
         this.totalCoherenceAudioTime += activeDuration;
+        console.log('[AudioEngine] Coherence period ended, accumulated:', {
+          duration: activeDuration,
+          durationSeconds: (activeDuration / 1000).toFixed(2),
+          totalAccumulated: this.totalCoherenceAudioTime,
+          totalAccumulatedSeconds: (this.totalCoherenceAudioTime / 1000).toFixed(2),
+        });
         this.coherenceGainActiveStart = null;
       }
     }
@@ -1257,15 +1350,16 @@ export class AudioEngine {
 
   /**
    * Update PPG (heart rate) based audio modulation
-   * Only called when ENABLE_PPG_MODULATION is true, state is 'coherent', and confidence >= 0.6
-   * Creates a very subtle slow modulation based on BPM trend (not an obvious heartbeat pulse)
-   * Uses gentle gain envelope derived from BPM/60 Hz, clamped to narrow range
+   * Now active during 'stabilizing' and 'coherent' states (not just coherent)
+   * Modulates lowpass filter cutoff frequency for clearly audible but smooth effect
+   * Uses BPM/60 Hz clamped to 0.7-1.3 Hz as modulation rate
    * To disable: set ENABLE_PPG_MODULATION = false in muse-handler.ts
    */
   private updatePPGModulation(
-    ppg: { bpm: number | null; confidence: number; lastBeatMs: number | null }
+    ppg: { bpm: number | null; confidence: number; lastBeatMs: number | null },
+    _state: CoherenceState // State parameter kept for API consistency, but we use this.currentCoherenceState instead
   ): void {
-    if (!ENABLE_PPG_MODULATION || !this.ctx || !this.coherenceGain) {
+    if (!ENABLE_PPG_MODULATION || !this.ctx || !this.ppgLowpassFilter) {
       return; // Feature disabled or not initialized
     }
 
@@ -1278,7 +1372,7 @@ export class AudioEngine {
 
     // Smooth BPM (heavy smoothing to avoid jittery behavior)
     // At this point, we know ppg.bpm is not null (checked above)
-    const bpm = ppg.bpm!; // Non-null assertion safe due to check at line 1273
+    const bpm = ppg.bpm!; // Non-null assertion safe due to check above
     if (this.smoothedBPM === null) {
       this.smoothedBPM = bpm;
     } else {
@@ -1287,12 +1381,17 @@ export class AudioEngine {
         bpm * this.ppgBPMSmoothingAlpha;
     }
 
-    // Start gentle gain modulation interval if not already running
+    // Modulation depth constants (used inside interval based on current state)
+    const depthCoherent = 0.20; // 20% modulation during coherence
+    const depthStabilizing = 0.12; // 12% modulation during stabilizing
+    // Note: Baseline modulation depth would be 0.06 if enabled (currently disabled)
+
+    // Start modulation interval if not already running
     if (!this.ppgModulationInterval) {
       let phase = 0; // Phase accumulator for sine wave
       
       this.ppgModulationInterval = setInterval(() => {
-        if (!this.coherenceGain || !ENABLE_PPG_MODULATION) {
+        if (!this.ppgLowpassFilter || !ENABLE_PPG_MODULATION) {
           return;
         }
 
@@ -1301,9 +1400,21 @@ export class AudioEngine {
           return;
         }
 
-        // Calculate modulation frequency from BPM: BPM/60 Hz, clamped to 0.05-0.3 Hz (very slow)
-        const modFreq = Math.max(0.05, Math.min(0.3, this.smoothedBPM / 60));
-        const modPeriod = 1000 / modFreq; // Period in ms
+        // Get current state for depth calculation (may have changed)
+        const currentState = this.currentCoherenceState;
+        
+        let currentDepth: number;
+        if (currentState === 'coherent') {
+          currentDepth = depthCoherent;
+        } else if (currentState === 'stabilizing') {
+          currentDepth = depthStabilizing;
+        } else {
+          currentDepth = 0; // No modulation in baseline (unless enabled)
+        }
+
+        // Calculate modulation frequency from BPM: BPM/60 Hz, clamped to 0.7-1.3 Hz (perceptible range)
+        const ppgRateHz = Math.max(0.7, Math.min(1.3, this.smoothedBPM / 60));
+        const modPeriod = 1000 / ppgRateHz; // Period in ms
 
         // Update phase (increment by small step each interval)
         phase += (100 / modPeriod) * Math.PI * 2; // 100ms interval
@@ -1311,34 +1422,52 @@ export class AudioEngine {
           phase -= Math.PI * 2;
         }
 
-        // Calculate subtle gain variation: ±1% (very gentle)
-        const modulationDepth = 0.01; // 1% variation
-        const gainVariation = 1.0 + Math.sin(phase) * modulationDepth;
+        // Calculate normalized wave value (-1 to 1)
+        const normalizedWave = Math.sin(phase);
 
-        // Apply to coherence gain smoothly (use current time for scheduling)
+        // Calculate cutoff frequency variation: base ± (depth * normalizedWave)
+        // Depth is a fraction (0-1), so we scale it to Hz range
+        // Example: baseCutoff=8000Hz, depth=0.20, normalizedWave=1.0 → cutoff=8000 + (8000*0.20*1.0) = 9600Hz
+        // Example: baseCutoff=8000Hz, depth=0.20, normalizedWave=-1.0 → cutoff=8000 + (8000*0.20*-1.0) = 6400Hz
+        const cutoffVariation = this.ppgBaseCutoff * currentDepth * normalizedWave;
+        const targetCutoff = this.ppgBaseCutoff + cutoffVariation;
+
+        // Apply to lowpass filter cutoff smoothly (use current time for scheduling)
         const audioNow = this.ctx!.currentTime;
-        this.coherenceGain.gain.cancelScheduledValues(audioNow);
-        const currentGain = this.coherenceGain.gain.value;
+        this.ppgLowpassFilter.frequency.cancelScheduledValues(audioNow);
+        const currentCutoff = this.ppgLowpassFilter.frequency.value;
         
-        // Only modulate if coherence gain is active (not 0)
-        if (currentGain > 0.01) {
-          // Calculate target gain: base gain * variation
-          // But preserve the base gain level (don't change overall volume)
-          const baseGain = currentGain; // Use current as base
-          const targetGain = baseGain * gainVariation;
-          
-          // Smooth transition (very gentle)
-          this.coherenceGain.gain.setValueAtTime(currentGain, audioNow);
-          this.coherenceGain.gain.linearRampToValueAtTime(targetGain, audioNow + 0.1);
+        // Smooth transition (gentle ramping)
+        this.ppgLowpassFilter.frequency.setValueAtTime(currentCutoff, audioNow);
+        this.ppgLowpassFilter.frequency.linearRampToValueAtTime(targetCutoff, audioNow + 0.1);
+
+        // Debug logging (throttled to once every 4-5 seconds)
+        if (DEBUG_PPG) {
+          const now = Date.now();
+          const timeSinceLastLog = now - this.ppgModulationLastLogTime;
+          if (timeSinceLastLog >= 4000) { // Log at most once every 4 seconds
+            console.log('[AudioEngine] PPG modulation active:', {
+              state: currentState,
+              bpm: this.smoothedBPM.toFixed(1),
+              confidence: ppg.confidence.toFixed(2),
+              ppgRateHz: ppgRateHz.toFixed(2) + ' Hz',
+              modPeriod: modPeriod.toFixed(0) + ' ms',
+              modulationDepth: (currentDepth * 100).toFixed(1) + '%',
+              baseCutoff: this.ppgBaseCutoff + ' Hz',
+              currentCutoff: currentCutoff.toFixed(0) + ' Hz',
+              targetCutoff: targetCutoff.toFixed(0) + ' Hz',
+            });
+            this.ppgModulationLastLogTime = now;
+          }
         }
       }, 100); // Update every 100ms for smooth modulation
 
-      console.log('[AudioEngine] ✅ PPG modulation interval started for subtle BPM-based gain variation');
+      console.log('[AudioEngine] ✅ PPG modulation interval started for BPM-based lowpass filter modulation');
     }
   }
 
   /**
-   * Reset PPG modulation when not in coherent state or confidence is low
+   * Reset PPG modulation when in baseline state or confidence is low
    * Only called when ENABLE_PPG_MODULATION is true
    */
   private resetPPGModulation(): void {
@@ -1354,6 +1483,15 @@ export class AudioEngine {
 
     // Reset smoothed BPM
     this.smoothedBPM = null;
+
+    // Reset lowpass filter to base cutoff (smooth transition)
+    if (this.ppgLowpassFilter && this.ctx) {
+      const now = this.ctx.currentTime;
+      const currentCutoff = this.ppgLowpassFilter.frequency.value;
+      this.ppgLowpassFilter.frequency.cancelScheduledValues(now);
+      this.ppgLowpassFilter.frequency.setValueAtTime(currentCutoff, now);
+      this.ppgLowpassFilter.frequency.linearRampToValueAtTime(this.ppgBaseCutoff, now + 0.5); // Smooth return over 0.5s
+    }
   }
 
   /**
@@ -1764,9 +1902,27 @@ export class AudioEngine {
    * Get coherence metrics
    */
   getCoherenceMetrics(): CoherenceMetrics {
-    // Metrics are updated when coherent state ends
-    // Note: longestCoherentStreakSeconds is only updated when coherent state ends
-    return { ...this.metrics };
+    // Calculate current coherence time including active period if still coherent
+    let currentCoherenceTimeMs = this.totalCoherenceAudioTime;
+    if (this.coherenceGainActiveStart !== null && this.isSessionActive) {
+      // Add time since coherence started (if still in coherent state)
+      const activeDuration = Date.now() - this.coherenceGainActiveStart;
+      currentCoherenceTimeMs += activeDuration;
+    }
+    
+    // Debug logging (can be removed after verification)
+    console.log('[AudioEngine] getCoherenceMetrics:', {
+      accumulated: this.totalCoherenceAudioTime,
+      activeStart: this.coherenceGainActiveStart,
+      isSessionActive: this.isSessionActive,
+      currentTotal: currentCoherenceTimeMs,
+      currentTotalSeconds: (currentCoherenceTimeMs / 1000).toFixed(2),
+    });
+    
+    return {
+      ...this.metrics,
+      totalCoherenceAudioTimeMs: currentCoherenceTimeMs, // Use actual tracked time, not metrics object
+    };
   }
 
   /**

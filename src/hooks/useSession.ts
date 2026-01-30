@@ -43,7 +43,7 @@ export interface UseSessionReturn {
 export function useSession(): UseSessionReturn {
   // User state
   const [currentUser, setCurrentUser] = useState<User | null>(storage.getCurrentUser());
-  const [users, setUsers] = useState<User[]>(storage.getUsers());
+  const [users, setUsers] = useState<User[]>(() => storage.getUsers() as User[]);
 
   // Session state
   const [isSessionActive, setIsSessionActive] = useState(false);
@@ -137,7 +137,13 @@ export function useSession(): UseSessionReturn {
     if (audioCoherenceTimeMs !== undefined) {
       // Use audio engine's tracking (based on coherence gain activation)
       finalCoherenceTime = audioCoherenceTimeMs;
-      console.log('[useSession] Using audio-based coherence time:', finalCoherenceTime, 'ms');
+      console.log('[useSession] Using audio-based coherence time:', {
+        coherenceTimeMs: finalCoherenceTime,
+        coherenceTimeSeconds: (finalCoherenceTime / 1000).toFixed(2),
+        sessionDurationMs: duration,
+        sessionDurationSeconds: (duration / 1000).toFixed(2),
+        coherencePercent: duration > 0 ? ((finalCoherenceTime / duration) * 100).toFixed(1) : '0',
+      });
     } else {
       // Fallback to meter-based tracking (legacy)
       finalCoherenceTime = coherenceTimeRef.current;
@@ -251,7 +257,7 @@ export function useSession(): UseSessionReturn {
   return {
     // User management
     currentUser,
-    users,
+    users: users as User[],
     createUser,
     selectUser,
     deleteUser,

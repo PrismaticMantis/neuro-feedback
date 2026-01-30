@@ -1,4 +1,5 @@
-/* Inter font import - must be first */
+/* Font imports - SoundBed Design System */
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap');
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 
 /* Base Reset & Global Styles */
@@ -19,8 +20,8 @@ body {
   padding: 0;
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 
     'Helvetica Neue', Arial, sans-serif;
-  background-color: #0a1414;
-  color: #ffffff;
+  background-color: #0c0a0e; /* bg.primary from SoundBed spec */
+  color: #f7f4ed; /* text.primary from SoundBed spec (45 30% 95%) */
   min-height: 100vh;
   overflow-x: hidden;
 }
@@ -50,14 +51,14 @@ html {
 
 /* Better focus styles */
 :focus-visible {
-  outline: 2px solid #4fd1c5;
+  outline: 2px solid #dfc58b; /* accent.primary (Champagne) */
   outline-offset: 2px;
 }
 
 /* Selection color */
 ::selection {
-  background: rgba(79, 209, 197, 0.3);
-  color: #ffffff;
+  background: rgba(223, 197, 139, 0.3); /* accent.primary with opacity */
+  color: #f7f4ec;
 }
 
 /* Scrollbar styling */
@@ -67,14 +68,14 @@ html {
 }
 
 ::-webkit-scrollbar-track {
-  background: #0d1a1a;
+  background: #141117; /* bg.elevated */
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #2a4040;
+  background: #2a272d; /* bg.muted */
   border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #3a5555;
+  background: #3a363d; /* border.subtle */
 }

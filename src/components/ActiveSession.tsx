@@ -9,10 +9,7 @@ interface ActiveSessionProps {
   // Session data
   duration: number;
   coherenceHistory: number[];
-  currentCoherence: number;
   coherenceZone: 'flow' | 'stabilizing' | 'noise';
-  coherenceActive: boolean;
-  currentStreak: number;
 
   // Muse state
   museConnected: boolean;
@@ -33,10 +30,7 @@ interface ActiveSessionProps {
 export function ActiveSession({
   duration,
   coherenceHistory,
-  currentCoherence,
   coherenceZone,
-  coherenceActive,
-  currentStreak,
   museConnected,
   touching,
   electrodeStatus,
@@ -127,26 +121,11 @@ export function ActiveSession({
       <main className="session-main">
         <CoherenceGraph
           coherenceHistory={coherenceHistory}
-          currentCoherence={currentCoherence}
           coherenceZone={coherenceZone}
           duration={duration}
-          isActive={true}
         />
 
-        {/* Coherence Indicator */}
-        {coherenceActive && (
-          <motion.div
-            className="coherence-indicator"
-            initial={{ opacity: 0, scale: 0.8 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.8 }}
-          >
-            <div className="coherence-glow" />
-            <span className="coherence-text">Coherence</span>
-            <span className="coherence-streak">{formatTime(currentStreak)}</span>
-          </motion.div>
-        )}
-
+        {/* Coherence Indicator - REMOVED per user request */}
         {/* Coherence State Indicator - REMOVED per user request */}
 
         {/* Connection Warning */}

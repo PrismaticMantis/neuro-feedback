@@ -11,6 +11,11 @@ import type { BrainwaveBands, BrainwaveBandsDb, MuseState } from '../types';
 // To disable: set ENABLE_PPG_MODULATION = false
 export const ENABLE_PPG_MODULATION = true;
 
+// Debug flag for PPG logging (temporary, for verification)
+// Set to true to enable throttled debug logs for PPG BPM/confidence
+// To disable: set DEBUG_PPG = false
+export const DEBUG_PPG = false;
+
 type ConnectionMode = 'bluetooth' | 'osc' | null;
 type BrainState = 'disconnected' | 'deep' | 'meditative' | 'relaxed' | 'focused' | 'neutral';
 
@@ -122,6 +127,7 @@ export class MuseHandler {
   private ppgBPMSmoothingAlpha = 0.1; // EMA smoothing for BPM (heavy smoothing)
   private ppgMinRefractoryPeriod = 300; // Minimum time between peaks (ms) - prevents double detection
   private ppgLastPeakTime = 0; // Timestamp of last detected peak
+  private ppgLastLogTime: number = 0; // For throttled debug logging
 
   // FFT processor
   private fft: FFTProcessor;
@@ -664,6 +670,20 @@ export class MuseHandler {
     // Only output BPM if confidence is high enough
     if (this.ppgBPMConfidence < 0.6) {
       this.ppgBPM = null;
+    }
+
+    // Debug logging (throttled to once every 3-5 seconds)
+    if (DEBUG_PPG && this.ppgBPM !== null && this.ppgBPMConfidence >= 0.6) {
+      const timeSinceLastLog = now - this.ppgLastLogTime;
+      if (timeSinceLastLog >= 3000) { // Log at most once every 3 seconds
+        console.log('[MuseHandler] PPG data:', {
+          bpm: this.ppgBPM.toFixed(1),
+          confidence: this.ppgBPMConfidence.toFixed(2),
+          recentPeaks: recentPeaks.length,
+          lastBeatMs: this.ppgLastBeatMs,
+        });
+        this.ppgLastLogTime = now;
+      }
     }
   }
 

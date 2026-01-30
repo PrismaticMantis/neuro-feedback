@@ -1,14 +1,11 @@
 // HeartMath-style Coherence Graph Component
 
 import { useRef, useEffect, useState } from 'react';
-import { motion } from 'framer-motion';
 
 interface CoherenceGraphProps {
   coherenceHistory: number[];
-  currentCoherence: number;
   coherenceZone: 'flow' | 'stabilizing' | 'noise';
   duration: number; // Current session duration in ms
-  isActive: boolean;
 }
 
 // Zone configuration with labels, descriptions, and colors
@@ -16,8 +13,8 @@ const ZONE_CONFIG = {
   flow: {
     label: 'Coherence',
     description: 'Calm & Focused',
-    color: 'var(--accent-teal)',
-    bgColor: 'rgba(79, 209, 197, 0.15)',
+    color: 'var(--accent-primary)', /* Champagne */
+    bgColor: 'rgba(223, 197, 139, 0.15)', /* accent.primary with opacity */
     icon: (
       <svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16">
         <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z" />
@@ -53,7 +50,7 @@ const ZONE_THRESHOLDS = {
   stabilizing: 0.4,
 };
 
-// Centralized coordinate mapping function (used by both graph and ball)
+// Coordinate mapping function for graph
 function mapValueToY(
   value: number,
   height: number,
@@ -71,14 +68,10 @@ function smoothValue(current: number, previous: number, alpha: number = 0.3): nu
 
 export function CoherenceGraph({
   coherenceHistory,
-  currentCoherence,
   coherenceZone,
   duration,
-  isActive,
 }: CoherenceGraphProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const containerRef = useRef<HTMLDivElement>(null);
-  const [ballY, setBallY] = useState(0);
   const [smoothedHistory, setSmoothedHistory] = useState<number[]>([]);
   const previousSmoothedRef = useRef<number | null>(null);
 
@@ -102,77 +95,6 @@ export function CoherenceGraph({
 
     setSmoothedHistory(smoothed);
   }, [coherenceHistory]);
-
-  // Update ball position using same coordinate system as graph
-  // Use requestAnimationFrame for smooth updates (5-10 fps minimum)
-  useEffect(() => {
-    if (!isActive) {
-      // Reset ball to baseline when inactive
-      setBallY(50); // Middle position (0.5 coherence = 50%)
-      return;
-    }
-
-    let animationFrameId: number;
-    let lastUpdateTime = 0;
-    const minUpdateInterval = 100; // ~10 fps minimum
-
-    const updateBallPosition = () => {
-      const now = Date.now();
-      if (now - lastUpdateTime < minUpdateInterval) {
-        animationFrameId = requestAnimationFrame(updateBallPosition);
-        return;
-      }
-      lastUpdateTime = now;
-
-      const container = containerRef.current;
-      const canvas = canvasRef.current;
-      if (!container || !canvas) {
-        animationFrameId = requestAnimationFrame(updateBallPosition);
-        return;
-      }
-
-      const rect = canvas.getBoundingClientRect();
-      const height = rect.height;
-      
-      // Validate currentCoherence value
-      let validCoherence = currentCoherence;
-      if (typeof validCoherence !== 'number' || isNaN(validCoherence) || !isFinite(validCoherence)) {
-        console.warn('[CoherenceGraph] Invalid currentCoherence value:', currentCoherence, 'defaulting to 0.5');
-        validCoherence = 0.5; // Default to middle (baseline)
-      }
-      
-      // Clamp to valid range [0, 1]
-      validCoherence = Math.max(0, Math.min(1, validCoherence));
-      
-      // Use the same mapping function as the graph
-      const y = mapValueToY(validCoherence, height);
-      
-      // Convert to percentage for CSS positioning
-      const yPercent = (y / height) * 100;
-      
-      // Debug logging (temporary)
-      if (Math.random() < 0.1) { // Log ~10% of updates to avoid spam
-        console.log('[CoherenceGraph] Ball position update:', {
-          currentCoherence: validCoherence,
-          y,
-          yPercent,
-          height,
-        });
-      }
-      
-      setBallY(yPercent);
-      animationFrameId = requestAnimationFrame(updateBallPosition);
-    };
-
-    // Start animation loop
-    animationFrameId = requestAnimationFrame(updateBallPosition);
-
-    return () => {
-      if (animationFrameId) {
-        cancelAnimationFrame(animationFrameId);
-      }
-    };
-  }, [currentCoherence, isActive]);
 
   // Draw the graph
   useEffect(() => {
@@ -199,8 +121,8 @@ export function CoherenceGraph({
     const flowY = height * (1 - ZONE_THRESHOLDS.flow);
     const stabilizingY = height * (1 - ZONE_THRESHOLDS.stabilizing);
 
-    // Coherence Zone (top) - very subtle teal tint
-    ctx.fillStyle = 'rgba(79, 209, 197, 0.06)';
+    // Coherence Zone (top) - very subtle champagne tint (SoundBed spec)
+    ctx.fillStyle = 'rgba(223, 197, 139, 0.06)'; /* accent.primary with opacity */
     ctx.fillRect(0, 0, width, flowY);
 
     // Stabilizing Zone (middle) - very subtle yellow tint
@@ -212,7 +134,7 @@ export function CoherenceGraph({
     ctx.fillRect(0, stabilizingY, width, height - stabilizingY);
 
     // Draw minimal zone divider lines (faint, non-distracting)
-    ctx.strokeStyle = 'rgba(79, 209, 197, 0.15)';
+    ctx.strokeStyle = 'rgba(223, 197, 139, 0.15)'; /* accent.primary with opacity */
     ctx.lineWidth = 0.5;
     ctx.setLineDash([8, 8]);
 
@@ -247,12 +169,12 @@ export function CoherenceGraph({
 
       // Draw glow effect first (behind the line) with smooth bezier curve
       ctx.beginPath();
-      ctx.strokeStyle = 'rgba(79, 209, 197, 0.3)';
+      ctx.strokeStyle = 'rgba(223, 197, 139, 0.3)'; /* accent.primary with opacity */
       ctx.lineWidth = lineWidth + 6;
       ctx.lineCap = 'round';
       ctx.lineJoin = 'round';
       ctx.shadowBlur = 12;
-      ctx.shadowColor = 'rgba(79, 209, 197, 0.5)';
+      ctx.shadowColor = 'rgba(223, 197, 139, 0.5)'; /* accent.primary with opacity */
 
       // Draw smooth bezier curve
       if (points.length >= 2) {
@@ -333,8 +255,6 @@ export function CoherenceGraph({
     Math.round((i / 3) * totalMinutes)
   );
 
-  const currentZoneConfig = ZONE_CONFIG[coherenceZone];
-
   return (
     <div className="coherence-graph">
       {/* Zone labels with icons - minimal, clean design */}
@@ -365,32 +285,8 @@ export function CoherenceGraph({
       </div>
 
       {/* Graph canvas */}
-      <div ref={containerRef} className="graph-container">
+      <div className="graph-container">
         <canvas ref={canvasRef} className="graph-canvas" />
-
-        {/* Current position indicator - uses same coordinate mapping as graph */}
-        {isActive && (
-          <motion.div
-            className="current-indicator"
-            style={{
-              top: `${ballY}%`,
-              right: 0,
-              backgroundColor: currentZoneConfig.color,
-            }}
-            animate={{
-              scale: [1, 1.2, 1],
-              boxShadow: [
-                `0 0 12px ${currentZoneConfig.color}80`,
-                `0 0 24px ${currentZoneConfig.color}cc`,
-                `0 0 12px ${currentZoneConfig.color}80`,
-              ],
-            }}
-            transition={{ 
-              repeat: Infinity, 
-              duration: 1.5,
-            }}
-          />
-        )}
       </div>
 
       {/* Time axis */}

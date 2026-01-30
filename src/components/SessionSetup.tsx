@@ -1,7 +1,9 @@
-// Session Setup Screen Component
+// Session Setup Screen Component (Lovable header layout)
 
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
+import { getLastJourneyId, getJourneys } from '../lib/session-storage';
 import { ConnectionStatus } from './ConnectionStatus';
 import { ElectrodeStatus } from './ElectrodeStatus';
 import { BINAURAL_PRESETS } from '../hooks/useAudio';
@@ -84,6 +86,9 @@ export function SessionSetup({
   };
 
   const canStartSession = museConnected && currentUser;
+  const journeyId = currentUser ? getLastJourneyId(currentUser.id) : null;
+  const journey = journeyId ? getJourneys().find((j) => j.id === journeyId) : null;
+  const subtitle = journey ? `${journey.name} Journey` : '';
 
   return (
     <motion.div
@@ -92,8 +97,14 @@ export function SessionSetup({
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: -20 }}
     >
-      <header className="screen-header">
-        <h1>Session Setup</h1>
+      <header className="setup-header-row">
+        <Link to="/home" className="setup-header-back" aria-label="Back">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+        </Link>
+        <div className="setup-header-title-block">
+          <h1 className="setup-header-title">Session Setup</h1>
+          {subtitle && <p className="setup-header-subtitle">{subtitle}</p>}
+        </div>
       </header>
 
       <div className="setup-content">

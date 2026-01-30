@@ -20,10 +20,10 @@ export class StorageManager {
   getUsers(): User[] {
     try {
       const data = localStorage.getItem(STORAGE_KEYS.USERS);
-      return data ? JSON.parse(data) : [];
+      return (data ? JSON.parse(data) : []) as User[];
     } catch {
       console.error('[Storage] Failed to parse users');
-      return [];
+      return [] as User[];
     }
   }
 
