@@ -114,9 +114,11 @@ export function useMuse(): UseMuseReturn {
         const connectionQualityFromElectrodes = electrodeStatusToConnectionQuality(next);
 
         wasConnectedRef.current = true;
+        // Always update electrode status when connected (throttled to avoid spam)
         if (tNow - lastElectrodeUpdate.current >= ELECTRODE_UPDATE_MS) {
           lastElectrodeUpdate.current = tNow;
-          setElectrodeStatus(next);
+          // Force React to see this as a new object by creating a fresh copy
+          setElectrodeStatus({ ...next });
           setState({ ...museState, connectionQuality: connectionQualityFromElectrodes });
 
           if (DEBUG_ELECTRODES && tNow - lastDebugLog.current >= DEBUG_LOG_MS) {
@@ -202,6 +204,20 @@ export function useMuse(): UseMuseReturn {
       throw err;
     }
   }, []);
+
+  // Force immediate electrode status update when Muse connects
+  useEffect(() => {
+    if (state.connected) {
+      const horseshoe = museHandler.getElectrodeQuality();
+      const next: ElectrodeStatus = {
+        tp9: horseshoeToQuality(horseshoe[0] ?? 4),
+        af7: horseshoeToQuality(horseshoe[1] ?? 4),
+        af8: horseshoeToQuality(horseshoe[2] ?? 4),
+        tp10: horseshoeToQuality(horseshoe[3] ?? 4),
+      };
+      setElectrodeStatus({ ...next });
+    }
+  }, [state.connected]);
 
   const disconnect = useCallback(() => {
     museHandler.disconnect();

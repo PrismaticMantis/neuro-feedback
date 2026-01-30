@@ -4,7 +4,6 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { ENABLE_JOURNEYS } from '../lib/feature-flags';
-import { getLastJourneyId } from '../lib/session-storage';
 import type { User } from '../types';
 
 interface HomeProps {
@@ -54,9 +53,9 @@ export function Home({ currentUser, users, onCreateUser, onSelectUser }: HomePro
       setShowCreateUser(true);
       return;
     }
-    const lastJourneyId = getLastJourneyId(currentUser.id);
+    // Always navigate to Journeys page to select a journey
     if (ENABLE_JOURNEYS) {
-      navigate(lastJourneyId ? '/setup' : '/journeys');
+      navigate('/journeys');
     } else {
       navigate('/setup');
     }
@@ -215,19 +214,6 @@ export function Home({ currentUser, users, onCreateUser, onSelectUser }: HomePro
             <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
             Start Session
           </motion.button>
-
-          {/* Choose Journey link - reachable from Home */}
-          {ENABLE_JOURNEYS && (
-            <p className="hero-choose-journey">
-              <button
-                type="button"
-                className="btn-ghost btn-link"
-                onClick={() => navigate('/journeys')}
-              >
-                Choose Journey
-              </button>
-            </p>
-          )}
         </motion.div>
       </main>
     </motion.div>

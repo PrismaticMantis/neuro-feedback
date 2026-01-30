@@ -61,6 +61,7 @@ export function ElectrodeStatus({ status, compact = false }: ElectrodeStatusProp
           return (
             <div key={electrode} className="electrode-item">
               <motion.div 
+                key={`${electrode}-${quality}`}
                 className="electrode-dot"
                 style={{ backgroundColor: color }}
                 animate={quality === 'good' ? {
