@@ -86,10 +86,13 @@ export function useMuse(): UseMuseReturn {
 
     const updateLoop = () => {
       if (museHandler.connected) {
-        const museState = museHandler.getState();
-        setState(museState);
-
         const horseshoe = museHandler.getElectrodeQuality();
+        const goodCount = horseshoe.filter((v: number) => v === 1).length;
+        const connectionQualityFromElectrodes =
+          goodCount >= 3 ? 1 : goodCount >= 1 ? 0.5 : 0;
+
+        const museState = museHandler.getState();
+        setState({ ...museState, connectionQuality: connectionQualityFromElectrodes });
 
         // Update electrode status from horseshoe data (throttled)
         const tNow = Date.now();

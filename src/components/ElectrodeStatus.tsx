@@ -16,26 +16,19 @@ const ELECTRODE_LABELS = {
 };
 
 const QUALITY_COLORS: Record<ElectrodeQuality, string> = {
-  good: 'var(--success)',   /* Green = good contact */
+  good: 'var(--success)',
   medium: 'var(--warning)',
-  poor: 'var(--error)',
-  off: 'var(--text-subtle)', /* Gray = unknown / not connected */
+  poor: 'var(--destructive)',
+  off: 'var(--text-subtle)',
 };
 
 function getOverallStatus(status: ElectrodeStatusType): { label: string; quality: ElectrodeQuality } {
   const qualities = [status.tp9, status.af7, status.af8, status.tp10];
   const goodCount = qualities.filter(q => q === 'good').length;
-  const offCount = qualities.filter(q => q === 'off').length;
-  
-  if (goodCount === 4) {
-    return { label: 'Good contact', quality: 'good' };
-  } else if (offCount >= 3) {
-    return { label: 'No contact', quality: 'off' };
-  } else if (goodCount >= 2) {
-    return { label: 'Partial contact', quality: 'medium' };
-  } else {
-    return { label: 'Adjust headband', quality: 'poor' };
-  }
+
+  if (goodCount >= 3) return { label: 'Strong signal', quality: 'good' };
+  if (goodCount >= 1) return { label: 'Partial contact', quality: 'medium' };
+  return { label: 'Poor signal', quality: 'off' };
 }
 
 export function ElectrodeStatus({ status, compact = false }: ElectrodeStatusProps) {
