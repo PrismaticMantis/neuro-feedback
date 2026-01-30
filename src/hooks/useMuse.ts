@@ -53,12 +53,24 @@ const INITIAL_ELECTRODE_STATUS: ElectrodeStatus = {
   tp10: 'off',
 };
 
-// Convert horseshoe value (1-4) to electrode quality
+/**
+ * Map muse-js horseshoe value to UI electrode state.
+ * Muse semantics: 1 = good, 2 = medium, 3 = poor, 4 = off (no inverted thresholds).
+ */
 function horseshoeToQuality(value: number): ElectrodeQuality {
   if (value === 1) return 'good';
   if (value === 2) return 'medium';
   if (value === 3) return 'poor';
   return 'off';
+}
+
+/**
+ * Overall signal quality from electrode states (same green-count logic as connection meter).
+ * 3-4 good → strong, 1-2 good → partial, 0 good → poor.
+ */
+function electrodeStatusToConnectionQuality(status: ElectrodeStatus): number {
+  const goodCount = [status.tp9, status.af7, status.af8, status.tp10].filter((q) => q === 'good').length;
+  return goodCount >= 3 ? 1 : goodCount >= 1 ? 0.5 : 0;
 }
 
 export function useMuse(): UseMuseReturn {
@@ -78,41 +90,39 @@ export function useMuse(): UseMuseReturn {
   const animationFrameRef = useRef<number | undefined>(undefined);
   const lastHistoryUpdate = useRef<number>(0);
   const lastElectrodeUpdate = useRef<number>(0);
-  const lastElectrodeStatus = useRef<ElectrodeStatus>(INITIAL_ELECTRODE_STATUS);
+  const lastDebugLog = useRef<number>(0);
+  const wasConnectedRef = useRef<boolean>(false);
 
-  // Update loop
+  // Electrode contact: source = museHandler.getElectrodeQuality() [TP9, AF7, AF8, TP10];
+  // values 1=good, 2=medium, 3=poor, 4=off. Overall quality = good-count: 3–4→1, 1–2→0.5, 0→0.
   useEffect(() => {
-    const ELECTRODE_UPDATE_MS = 300; // ~3 Hz max to avoid re-render spam
+    const ELECTRODE_UPDATE_MS = 150; // ~6–7 Hz so nodes and meter update within ~0.2s
+    const DEBUG_LOG_MS = 500; // ~2x/sec for debug
 
     const updateLoop = () => {
       if (museHandler.connected) {
         const horseshoe = museHandler.getElectrodeQuality();
-        const goodCount = horseshoe.filter((v: number) => v === 1).length;
-        const connectionQualityFromElectrodes =
-          goodCount >= 3 ? 1 : goodCount >= 1 ? 0.5 : 0;
-
         const museState = museHandler.getState();
-        setState({ ...museState, connectionQuality: connectionQualityFromElectrodes });
-
-        // Update electrode status from horseshoe data (throttled)
         const tNow = Date.now();
+
+        const next: ElectrodeStatus = {
+          tp9: horseshoeToQuality(horseshoe[0] ?? 4),
+          af7: horseshoeToQuality(horseshoe[1] ?? 4),
+          af8: horseshoeToQuality(horseshoe[2] ?? 4),
+          tp10: horseshoeToQuality(horseshoe[3] ?? 4),
+        };
+        const connectionQualityFromElectrodes = electrodeStatusToConnectionQuality(next);
+
+        wasConnectedRef.current = true;
         if (tNow - lastElectrodeUpdate.current >= ELECTRODE_UPDATE_MS) {
           lastElectrodeUpdate.current = tNow;
-          const next: ElectrodeStatus = {
-            tp9: horseshoeToQuality(horseshoe[0]),
-            af7: horseshoeToQuality(horseshoe[1]),
-            af8: horseshoeToQuality(horseshoe[2]),
-            tp10: horseshoeToQuality(horseshoe[3]),
-          };
-          const prev = lastElectrodeStatus.current;
-          const changed =
-            next.tp9 !== prev.tp9 || next.af7 !== prev.af7 || next.af8 !== prev.af8 || next.tp10 !== prev.tp10;
-          if (changed) {
-            lastElectrodeStatus.current = next;
-            setElectrodeStatus(next);
-            if (DEBUG_ELECTRODES) {
-              console.log(`[DEBUG_ELECTRODES] ${new Date().toISOString()}`, next);
-            }
+          setElectrodeStatus(next);
+          setState({ ...museState, connectionQuality: connectionQualityFromElectrodes });
+
+          if (DEBUG_ELECTRODES && tNow - lastDebugLog.current >= DEBUG_LOG_MS) {
+            lastDebugLog.current = tNow;
+            const overallLabel = connectionQualityFromElectrodes >= 1 ? 'Strong' : connectionQualityFromElectrodes >= 0.5 ? 'Partial' : 'Poor';
+            console.log(`[DEBUG_ELECTRODES] ${new Date().toISOString()} raw=[${horseshoe.join(',')}] mapped=`, next, `overall=${overallLabel}`);
           }
         }
 
@@ -120,13 +130,11 @@ export function useMuse(): UseMuseReturn {
         const motionLevel = Math.abs(museHandler.accX) + Math.abs(museHandler.accY) + Math.abs(museHandler.accZ);
         const normalizedMotion = Math.min(1, motionLevel / 30);
 
-        // Get electrode contact quality (0-1 scale)
-        // Quality: 1=good, 2=medium, 3=poor, 4=off
-        // Convert to 0-1 where 1 is best
+        // Electrode quality 0-1 for coherence (1=good, 2=medium→0.5, 3=poor, 4=off→0)
         const electrodeQuality = horseshoe.reduce((sum: number, v: number) => {
-          if (v === 1) return sum + 1;      // good = 1.0
-          if (v === 2) return sum + 0.5;    // medium = 0.5
-          return sum;                        // poor/off = 0
+          if (v === 1) return sum + 1;
+          if (v === 2) return sum + 0.5;
+          return sum;
         }, 0) / 4;
 
         // Update coherence detector with electrode quality
@@ -154,14 +162,8 @@ export function useMuse(): UseMuseReturn {
         const ppgMetrics = museHandler.getPPG();
         setPPG(ppgMetrics);
       } else {
-        // Muse disconnected: reset electrode status to unknown/off
-        if (
-          lastElectrodeStatus.current.tp9 !== 'off' ||
-          lastElectrodeStatus.current.af7 !== 'off' ||
-          lastElectrodeStatus.current.af8 !== 'off' ||
-          lastElectrodeStatus.current.tp10 !== 'off'
-        ) {
-          lastElectrodeStatus.current = INITIAL_ELECTRODE_STATUS;
+        if (wasConnectedRef.current) {
+          wasConnectedRef.current = false;
           setElectrodeStatus(INITIAL_ELECTRODE_STATUS);
           if (DEBUG_ELECTRODES) {
             console.log(`[DEBUG_ELECTRODES] ${new Date().toISOString()} disconnected`, INITIAL_ELECTRODE_STATUS);

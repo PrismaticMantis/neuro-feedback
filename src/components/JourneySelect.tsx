@@ -1,9 +1,13 @@
 // Journey Selection – Choose Journey (Lovable layout)
+// Only Creative Flow is wired; other cards show "Coming soon".
 
+import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { getJourneys, setLastJourneyId } from '../lib/session-storage';
 import type { User } from '../types';
+
+const ENABLED_JOURNEY_ID = 'creativeFlow';
 
 /* Journey display tokens from Lovable spec (duration + color) */
 const JOURNEY_DISPLAY: Record<string, { duration: string; color: string }> = {
@@ -26,7 +30,9 @@ function JourneyIcon({ id }: { id: string }) {
   }
   if (id === 'creativeFlow') {
     return (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+      <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+        <path d="M12 2l2.5 7.5L22 12l-7.5 2.5L12 22l-2.5-7.5L2 12l7.5-2.5L12 2z" />
+      </svg>
     );
   }
   if (id === 'nightWindDown') {
@@ -45,9 +51,15 @@ interface JourneySelectProps {
 
 export function JourneySelect({ currentUser }: JourneySelectProps) {
   const navigate = useNavigate();
+  const [comingSoonId, setComingSoonId] = useState<string | null>(null);
   const journeys = getJourneys();
 
   const handleSelect = (journeyId: string) => {
+    if (journeyId !== ENABLED_JOURNEY_ID) {
+      setComingSoonId(journeyId);
+      setTimeout(() => setComingSoonId(null), 2000);
+      return;
+    }
     if (currentUser) setLastJourneyId(currentUser.id, journeyId);
     navigate('/setup');
   };
@@ -69,17 +81,24 @@ export function JourneySelect({ currentUser }: JourneySelectProps) {
         </div>
       </header>
 
+      {comingSoonId && (
+        <div className="journey-coming-soon-toast" role="status">
+          Coming soon
+        </div>
+      )}
       <div className="journey-grid">
         {journeys.map((j) => {
           const display = JOURNEY_DISPLAY[j.id] ?? { duration: '15 min', color: '#9e59b8' };
+          const isEnabled = j.id === ENABLED_JOURNEY_ID;
           return (
             <motion.button
               key={j.id}
               type="button"
-              className="journey-card"
+              className={`journey-card ${!isEnabled ? 'journey-card-disabled' : ''}`}
               onClick={() => handleSelect(j.id)}
-              whileHover={{ scale: 1.02 }}
-              whileTap={{ scale: 0.98 }}
+              whileHover={isEnabled ? { scale: 1.02 } : undefined}
+              whileTap={isEnabled ? { scale: 0.98 } : undefined}
+              aria-disabled={!isEnabled}
             >
               <div className="journey-card-icon" style={{ background: display.color, boxShadow: `0 0 20px ${display.color}40` }}>
                 <JourneyIcon id={j.id} />

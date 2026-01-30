@@ -168,8 +168,8 @@ export function Home({ currentUser, users, onCreateUser, onSelectUser }: HomePro
       {/* Header: greeting left, actions right (Lovable spec) */}
       <header className="home-header">
         <div className="home-greeting">
-          <p className="greeting-text">{greeting}</p>
-          <p className="user-name-text">{userName}</p>
+          <p className="greeting-text text-caption">{greeting}</p>
+          <p className="user-name-text text-heading-1">{userName}</p>
         </div>
         <div className="home-header-actions">
           <button type="button" className="btn-ghost" aria-label="Notifications">
@@ -189,19 +189,18 @@ export function Home({ currentUser, users, onCreateUser, onSelectUser }: HomePro
           animate={{ opacity: 1, scale: 1 }}
           transition={{ delay: 0.1 }}
         >
-          {/* Icon Circle */}
+          {/* Icon Circle - sparkle/star (Lovable spec, centered at top) */}
           <div className="hero-icon-circle">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M12 2L2 7l10 5 10-5-10-5z" />
-              <path d="M2 17l10 5 10-5M2 12l10 5 10-5" />
+            <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+              <path d="M12 2l2.5 7.5L22 12l-7.5 2.5L12 22l-2.5-7.5L2 12l7.5-2.5L12 2z" />
             </svg>
           </div>
 
-          {/* Heading */}
-          <h1 className="hero-title">Ready to begin?</h1>
+          {/* Heading - text-display (48px, 600, Space Grotesk) */}
+          <h1 className="hero-title text-display">Ready to begin?</h1>
 
-          {/* Description (Lovable copy) */}
-          <p className="hero-description">
+          {/* Description (Lovable copy) - text-body */}
+          <p className="hero-description text-body-large">
             Release mental strain and access spacious, clear thinking
           </p>
 
@@ -216,6 +215,19 @@ export function Home({ currentUser, users, onCreateUser, onSelectUser }: HomePro
             <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
             Start Session
           </motion.button>
+
+          {/* Choose Journey link - reachable from Home */}
+          {ENABLE_JOURNEYS && (
+            <p className="hero-choose-journey">
+              <button
+                type="button"
+                className="btn-ghost btn-link"
+                onClick={() => navigate('/journeys')}
+              >
+                Choose Journey
+              </button>
+            </p>
+          )}
         </motion.div>
       </main>
     </motion.div>

@@ -83,12 +83,13 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* Typography - SoundBed Design System (exact spec values) */
+/* Typography - SoundBed Design System (exact spec values, no fallbacks) */
 .text-display {
   font-family: 'Space Grotesk', sans-serif;
   font-size: 48px;
   font-weight: 600;
   line-height: 1.1;
+  letter-spacing: -0.02em;
   color: var(--text-primary);
 }
 
@@ -97,6 +98,7 @@ body {
   font-size: 30px;
   font-weight: 600;
   line-height: 1.2;
+  letter-spacing: -0.02em;
   color: var(--text-primary);
 }
 
@@ -105,6 +107,7 @@ body {
   font-size: 24px;
   font-weight: 500;
   line-height: 1.25;
+  letter-spacing: -0.01em;
   color: var(--text-primary);
 }
 
@@ -129,6 +132,7 @@ body {
   font-size: 18px;
   font-weight: 400;
   line-height: 1.6;
+  color: var(--text-primary);
 }
 
 .text-caption {
@@ -144,6 +148,16 @@ body {
   font-size: 12px;
   font-weight: 400;
   line-height: 1.4;
+  color: var(--text-muted);
+}
+
+.text-label {
+  font-family: 'Inter', sans-serif;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.4;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
   color: var(--text-muted);
 }
 
@@ -957,6 +971,17 @@ h3 {
   }
 }
 
+@keyframes fade-in-up {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+}
+
 /* Connection Warning */
 .connection-warning {
   position: absolute;
@@ -1161,6 +1186,18 @@ h3 {
   font-size: 12px;
   font-weight: 500;
   border: 1px solid;
+}
+.electrode-badge--good {
+  background-color: color-mix(in srgb, var(--success) 14%, transparent);
+}
+.electrode-badge--medium {
+  background-color: color-mix(in srgb, var(--warning) 14%, transparent);
+}
+.electrode-badge--poor {
+  background-color: color-mix(in srgb, var(--destructive) 14%, transparent);
+}
+.electrode-badge--off {
+  background-color: color-mix(in srgb, var(--text-subtle) 14%, transparent);
 }
 
 .electrode-grid {
@@ -2042,11 +2079,33 @@ h3 {
 }
 
 .hero-description {
-  font-size: 16px;
   font-family: 'Inter', sans-serif;
-  color: var(--text-muted);
+  font-size: 18px;
+  font-weight: 400;
   line-height: 1.6;
+  color: var(--text-muted);
   margin: 0 0 24px 0;
+}
+
+.hero-choose-journey {
+  margin: 16px 0 0;
+}
+
+.hero-choose-journey .btn-link {
+  font-family: 'Inter', sans-serif;
+  font-size: 14px;
+  font-weight: 400;
+  color: var(--accent-primary);
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.hero-choose-journey .btn-link:hover {
+  color: var(--text-primary);
 }
 
 /* Create User Modal */
@@ -2182,9 +2241,10 @@ h3 {
 
 .journey-select-title {
   font-family: 'Space Grotesk', sans-serif;
-  font-size: 24px;
-  font-weight: 500;
-  line-height: 1.25;
+  font-size: 30px;
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: -0.02em;
   color: var(--text-primary);
   margin: 0 0 8px 0;
 }
@@ -2198,17 +2258,28 @@ h3 {
   line-height: 1.6;
 }
 
+.journey-coming-soon-toast {
+  position: fixed;
+  bottom: 80px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 12px 24px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  font-family: 'Inter', sans-serif;
+  font-size: 14px;
+  color: var(--text-muted);
+  z-index: 100;
+  box-shadow: var(--shadow-md);
+  animation: fade-in-up 0.3s ease;
+}
+
 .journey-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 16px;
+  gap: 24px;
   margin-bottom: 32px;
-}
-
-@media (min-width: 768px) {
-  .journey-grid {
-    grid-template-columns: repeat(3, 1fr);
-  }
 }
 
 .journey-card {
@@ -2245,6 +2316,15 @@ h3 {
 
 .journey-card:hover::before {
   opacity: 0.3; /* Overlay to 30% on hover */
+}
+
+.journey-card-disabled {
+  cursor: default;
+  opacity: 0.9;
+}
+
+.journey-card-disabled:hover {
+  transform: none;
 }
 
 .journey-card-icon {

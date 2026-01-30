@@ -296,48 +296,41 @@ export class MuseHandler {
   }
 
   /**
-   * Derive electrode quality from EEG signal characteristics (for Bluetooth)
+   * Derive electrode quality from EEG signal characteristics (for Bluetooth).
+   * Uses responsive smoothing so contact changes show within ~0.5s.
    */
   private updateBluetoothElectrodeQuality(channel: number, samples: number[]): void {
     if (samples.length === 0) return;
 
-    // Filter out NaN/Infinity values
     const validSamples = samples.filter(s => isFinite(s) && !isNaN(s));
     if (validSamples.length === 0) {
       this._electrodeQuality[channel] = 4; // off
+      this.eegAmplitudes[channel] = 0;
+      this.eegVariances[channel] = 0;
       return;
     }
 
-    // Calculate mean amplitude (absolute)
     const mean = validSamples.reduce((a, b) => a + b, 0) / validSamples.length;
     const absAmplitude = validSamples.reduce((a, b) => a + Math.abs(b - mean), 0) / validSamples.length;
-    
-    // Calculate variance
     const variance = validSamples.reduce((a, b) => a + (b - mean) ** 2, 0) / validSamples.length;
-    
-    // Smooth the amplitude and variance estimates
-    this.eegAmplitudes[channel] = this.eegAmplitudes[channel] * 0.9 + absAmplitude * 0.1;
-    this.eegVariances[channel] = this.eegVariances[channel] * 0.9 + variance * 0.1;
 
-    // Determine quality based on signal characteristics
-    // Good signal: reasonable amplitude (10-500 µV typical), variance present
-    // Poor signal: very low or very high amplitude, or near-zero variance (flat line)
+    // More responsive smoothing (0.7) so UI updates within ~0.5s when headset moves
+    const smooth = 0.7;
+    this.eegAmplitudes[channel] = this.eegAmplitudes[channel] * smooth + absAmplitude * (1 - smooth);
+    this.eegVariances[channel] = this.eegVariances[channel] * smooth + variance * (1 - smooth);
+
     const amp = this.eegAmplitudes[channel];
     const vari = this.eegVariances[channel];
 
     let quality: number;
     if (amp < 1 || vari < 1) {
-      // Very weak or flat signal - no contact
-      quality = 4;
+      quality = 4; // off
     } else if (amp > 1000 || vari > 100000) {
-      // Extremely noisy - poor contact
-      quality = 3;
+      quality = 3; // poor
     } else if (amp > 500 || vari > 50000) {
-      // Somewhat noisy - medium contact
-      quality = 2;
+      quality = 2; // medium
     } else {
-      // Good signal range
-      quality = 1;
+      quality = 1; // good
     }
 
     this._electrodeQuality[channel] = quality;

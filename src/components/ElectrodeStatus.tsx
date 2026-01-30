@@ -40,11 +40,10 @@ export function ElectrodeStatus({ status, compact = false }: ElectrodeStatusProp
       <div className="electrode-header">
         <span className="electrode-title">ELECTRODE CONTACT</span>
         <motion.span 
-          className="electrode-badge"
+          className={`electrode-badge electrode-badge--${overall.quality}`}
           style={{ 
-            backgroundColor: `${QUALITY_COLORS[overall.quality]}20`,
             borderColor: QUALITY_COLORS[overall.quality],
-            color: QUALITY_COLORS[overall.quality]
+            color: QUALITY_COLORS[overall.quality],
           }}
           initial={{ scale: 0.9, opacity: 0 }}
           animate={{ scale: 1, opacity: 1 }}
