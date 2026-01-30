@@ -39,34 +39,34 @@ export function ElectrodeStatus({ status, compact = false }: ElectrodeStatusProp
   const overall = getOverallStatus(status);
   const electrodes = ['tp9', 'af7', 'af8', 'tp10'] as const;
 
+  // Map overall label to shorter version for pill
+  const overallPillLabel = overall.label === 'Strong signal' ? 'Good' : 
+                           overall.label === 'Partial signal' ? 'Partial' : 'Poor';
+
   return (
-    <div className={`electrode-status ${compact ? 'compact' : ''}`}>
-      <div className="electrode-header">
-        <span className="electrode-title">ELECTRODE CONTACT</span>
+    <div className={`electrode-status ${compact ? 'compact' : ''} electrode-status-lovable`}>
+      <div className="electrode-header-lovable">
+        <span className="electrode-title-lovable">ELECTRODE CONTACT</span>
         <motion.span 
-          className={`electrode-badge electrode-badge--${overall.quality}`}
-          style={{ 
-            borderColor: QUALITY_COLORS[overall.quality],
-            color: QUALITY_COLORS[overall.quality],
-          }}
+          className={`electrode-badge-lovable electrode-badge-lovable--${overall.quality}`}
           initial={{ scale: 0.9, opacity: 0 }}
           animate={{ scale: 1, opacity: 1 }}
           key={overall.label}
         >
-          {overall.label}
+          {overallPillLabel}
         </motion.span>
       </div>
       
-      <div className="electrode-grid">
-        {electrodes.map((electrode) => {
+      <div className="electrode-row-lovable">
+        {electrodes.map((electrode, index) => {
           const quality = status[electrode];
           const color = QUALITY_COLORS[quality];
           
           return (
-            <div key={electrode} className="electrode-item">
+            <div key={electrode} className="electrode-item-lovable">
               <motion.div 
                 key={`${electrode}-${quality}`}
-                className="electrode-dot"
+                className="electrode-dot-lovable"
                 style={{ backgroundColor: color }}
                 animate={quality === 'good' ? {
                   boxShadow: [
@@ -77,7 +77,8 @@ export function ElectrodeStatus({ status, compact = false }: ElectrodeStatusProp
                 } : {}}
                 transition={{ repeat: Infinity, duration: 2 }}
               />
-              <span className="electrode-label">{ELECTRODE_LABELS[electrode]}</span>
+              <span className="electrode-label-lovable">{ELECTRODE_LABELS[electrode]}</span>
+              {index < electrodes.length - 1 && <span className="electrode-divider-lovable" />}
             </div>
           );
         })}

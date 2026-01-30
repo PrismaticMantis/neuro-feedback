@@ -1,11 +1,13 @@
-// Active Session Screen Component
+// Active Session Screen Component - Match Lovable "5 - Session" design
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { CoherenceGraph } from './CoherenceGraph';
 import { ElectrodeStatus } from './ElectrodeStatus';
 import { DEBUG_SESSION_TELEMETRY } from '../lib/feature-flags';
 import { museHandler } from '../lib/muse-handler';
+import { getJourneys, getLastJourneyId } from '../lib/session-storage';
+import { useSession } from '../hooks/useSession';
 import type { ElectrodeStatus as ElectrodeStatusType, BrainwaveBands, BrainwaveBandsDb } from '../types';
 
 interface ActiveSessionProps {
@@ -77,6 +79,17 @@ export function ActiveSession({
     return () => clearInterval(interval);
   }, [coherenceHistory.length]);
 
+  // Get journey info
+  const sessionHook = useSession();
+  const journeyId = useMemo(() => {
+    if (sessionHook.currentUser) {
+      return getLastJourneyId(sessionHook.currentUser.id);
+    }
+    return 'creativeFlow';
+  }, [sessionHook.currentUser]);
+  const journeys = getJourneys();
+  const journey = journeys.find(j => j.id === journeyId) || journeys[0];
+
   // Format time display
   const formatTime = (ms: number) => {
     const totalSeconds = Math.floor(ms / 1000);
@@ -85,6 +98,18 @@ export function ActiveSession({
     return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
   };
 
+  // Calculate time remaining based on journey duration
+  const journeyDurations: Record<string, number> = {
+    calm: 15,
+    deepRest: 25,
+    creativeFlow: 20,
+    nightWindDown: 30,
+  };
+  const journeyMinutes = journeyDurations[journeyId] || 20;
+  const journeyDurationMs = journeyMinutes * 60 * 1000;
+  const timeRemaining = Math.max(0, journeyDurationMs - duration);
+  const timeRemainingFormatted = formatTime(timeRemaining);
+
   return (
     <motion.div
       className="screen active-session"
@@ -92,13 +117,13 @@ export function ActiveSession({
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
     >
-      {/* Header */}
-      <header className="session-header">
-        <div className="header-left">
-          <span className="muse-logo">muse</span>
+      {/* Top Bar - Simplified */}
+      <header className="session-header-lovable">
+        <div className="session-header-left">
+          <span className="muse-logo-lovable">muse</span>
           {batteryLevel >= 0 && (
-            <span className={`battery-indicator ${batteryLevel <= 20 ? 'low' : ''}`}>
-              <svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18">
+            <span className={`battery-indicator-lovable ${batteryLevel <= 25 ? 'low' : ''}`}>
+              <svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16">
                 {batteryLevel > 75 ? (
                   <path d="M15.67 4H14V2h-4v2H8.33C7.6 4 7 4.6 7 5.33v15.33C7 21.4 7.6 22 8.33 22h7.33c.74 0 1.34-.6 1.34-1.33V5.33C17 4.6 16.4 4 15.67 4z" />
                 ) : batteryLevel > 50 ? (
@@ -109,19 +134,16 @@ export function ActiveSession({
                   <path d="M15.67 4H14V2h-4v2H8.33C7.6 4 7 4.6 7 5.33v15.33C7 21.4 7.6 22 8.33 22h7.33c.74 0 1.34-.6 1.34-1.33V5.33C17 4.6 16.4 4 15.67 4zM13 18H11V16h2v2z" />
                 )}
               </svg>
-              <span className="battery-text">{batteryLevel}%</span>
+              <span className="battery-text-lovable">{batteryLevel}%</span>
             </span>
           )}
         </div>
-        <div className="header-right">
-          <div className={`status-dot ${museConnected && touching ? 'active' : 'warning'}`} />
-          <svg viewBox="0 0 24 24" fill="currentColor" width="20" height="20" className="icon">
-            <path d="M12 1c-4.97 0-9 4.03-9 9v7c0 1.66 1.34 3 3 3h3v-8H5v-2c0-3.87 3.13-7 7-7s7 3.13 7 7v2h-4v8h3c1.66 0 3-1.34 3-3v-7c0-4.97-4.03-9-9-9z" />
+        <div className="session-header-right">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="18" height="18" className="header-icon">
+            <path d="M3 18v-6a9 9 0 0 1 18 0v6"/>
+            <path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3zM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z"/>
           </svg>
-          <span className="timer">{formatTime(duration)}</span>
-          <svg viewBox="0 0 24 24" fill="currentColor" width="20" height="20" className="icon">
-            <path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67z" />
-          </svg>
+          <div className={`status-dot-lovable ${museConnected && touching ? 'active' : 'warning'}`} />
         </div>
       </header>
 
@@ -144,43 +166,102 @@ export function ActiveSession({
         </div>
       )}
 
-      {/* Electrode Status Bar */}
-      <div className="electrode-bar">
-        <ElectrodeStatus status={electrodeStatus} compact />
-      </div>
-
-      {/* Live Brainwave Bars - showing dB values */}
-      <div className="brainwave-bars">
-        {(['delta', 'theta', 'alpha', 'beta', 'gamma'] as const).map((band) => {
-          const dbVal = bandsDb[band];
-          // Map dB range (50-150 dB) to bar width (0-100%) - matches Mind Monitor range
-          const barWidth = Math.max(0, Math.min(100, ((dbVal - 50) / 100) * 100));
-          const symbol = { delta: 'δ', theta: 'θ', alpha: 'α', beta: 'β', gamma: 'γ' }[band];
+      {/* Top Cards Row - Electrode Contact & Mental State */}
+      <div className="session-top-cards">
+        {/* Electrode Contact Card */}
+        <div className="session-card electrode-contact-card">
+          <ElectrodeStatus status={electrodeStatus} compact />
           
-          return (
-            <div className="band-bar" key={band}>
-              <span className="band-label">{symbol}</span>
-              <motion.div 
-                className={`band-fill ${band}`}
-                animate={{ width: `${barWidth}%` }}
-                transition={{ duration: 0.15 }}
-              />
-              <span className="band-value">{dbVal.toFixed(0)}</span>
+          {/* Band Power / Greeks Row */}
+          <div className="session-greeks-row">
+            {(['delta', 'theta', 'alpha', 'beta', 'gamma'] as const).map((band, index) => {
+              const dbVal = bandsDb[band];
+              const symbol = { delta: 'δ', theta: 'θ', alpha: 'α', beta: 'β', gamma: 'γ' }[band];
+              
+              return (
+                <div key={band} className="session-greek-item">
+                  <span className="session-greek-symbol">{symbol}</span>
+                  <span className="session-greek-value">{dbVal.toFixed(0)}</span>
+                  {index < 4 && <span className="session-greek-divider" />}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Mental State Card */}
+        <div className="session-card mental-state-card">
+          <h3 className="session-card-title">MENTAL STATE</h3>
+          <div className="mental-state-list">
+            <div className={`mental-state-item ${coherenceZone === 'flow' ? 'active' : ''}`}>
+              <svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16">
+                <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z" />
+              </svg>
+              <span>Coherence</span>
             </div>
-          );
-        })}
+            <div className={`mental-state-item ${coherenceZone === 'stabilizing' ? 'active' : ''}`}>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="16" height="16">
+                <path d="M17.66 8L12 2.35 6.34 8C4.78 9.56 4 11.64 4 13.64s.78 4.11 2.34 5.67 3.61 2.35 5.66 2.35 4.1-.79 5.66-2.35S20 15.64 20 13.64 19.22 9.56 17.66 8zM6 14c.01-2 .62-3.27 1.76-4.4L12 5.27l4.24 4.38C17.38 10.77 17.99 12 18 14H6z" />
+              </svg>
+              <span>Settling In</span>
+            </div>
+            <div className={`mental-state-item ${coherenceZone === 'noise' ? 'active' : ''}`}>
+              <svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16">
+                <path d="M7 2v11h3v9l7-12h-4l4-8z" />
+              </svg>
+              <span>Active Mind</span>
+            </div>
+          </div>
+        </div>
       </div>
 
-      {/* Main Content - Coherence Graph */}
-      <main className="session-main">
-        <CoherenceGraph
-          coherenceHistory={coherenceHistory}
-          coherenceZone={coherenceZone}
-          duration={duration}
-        />
+      {/* Current Journey Card */}
+      <div className="session-journey-card">
+        <svg className="journey-card-icon" viewBox="0 0 24 24" fill="currentColor" width="24" height="24">
+          <path d="M12 2l2.5 7.5L22 12l-7.5 2.5L12 22l-2.5-7.5L2 12l7.5-2.5L12 2z" />
+        </svg>
+        <div className="journey-card-content">
+          <h4 className="journey-card-title">{journey.name}</h4>
+          <p className="journey-card-subtitle">{journey.description}</p>
+        </div>
+        <div className="journey-card-duration">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="16" height="16">
+            <circle cx="12" cy="12" r="10"/>
+            <path d="M12 6v6l4 2"/>
+          </svg>
+          <span>{journeyMinutes} min</span>
+        </div>
+      </div>
 
-        {/* Coherence Indicator - REMOVED per user request */}
-        {/* Coherence State Indicator - REMOVED per user request */}
+      {/* Session Timer - Central */}
+      <div className="session-timer-central">
+        <div className="session-timer-circle">
+          <motion.span 
+            className="session-timer-elapsed"
+            key={formatTime(duration)}
+            initial={{ scale: 1.05 }}
+            animate={{ scale: 1 }}
+            transition={{ duration: 0.3 }}
+          >
+            {formatTime(duration)}
+          </motion.span>
+          <span className="session-timer-label">elapsed</span>
+        </div>
+        <div className="session-timer-remaining">
+          <span className="session-timer-remaining-label">Time Remaining</span>
+          <span className="session-timer-remaining-value">{timeRemainingFormatted}</span>
+        </div>
+      </div>
+
+      {/* Main Content - Coherence Graph Card */}
+      <main className="session-main-lovable">
+        <div className="session-chart-card">
+          <CoherenceGraph
+            coherenceHistory={coherenceHistory}
+            coherenceZone={coherenceZone}
+            duration={duration}
+          />
+        </div>
 
         {/* Connection Warning */}
         {(!museConnected || !touching) && (
@@ -197,10 +278,10 @@ export function ActiveSession({
         )}
       </main>
 
-      {/* Footer */}
-      <footer className="session-footer">
+      {/* Footer - CTA Buttons */}
+      <footer className="session-footer-lovable">
         <motion.button
-          className="btn btn-primary btn-large"
+          className="btn btn-primary btn-large session-end-btn"
           onClick={onEndSession}
           whileHover={{ scale: 1.02 }}
           whileTap={{ scale: 0.98 }}
@@ -209,7 +290,7 @@ export function ActiveSession({
         </motion.button>
 
         <button
-          className={`btn btn-icon guidance-toggle ${entrainmentEnabled ? 'active' : ''}`}
+          className={`session-guidance-btn ${entrainmentEnabled ? 'active' : ''}`}
           onClick={onEntrainmentToggle}
           title="Toggle Guidance Audio"
         >
@@ -220,7 +301,6 @@ export function ActiveSession({
               <path d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51C20.63 14.91 21 13.5 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06c1.38-.31 2.63-.95 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z" />
             )}
           </svg>
-          <span className="btn-label">Guidance Audio</span>
         </button>
       </footer>
     </motion.div>
