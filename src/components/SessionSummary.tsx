@@ -368,7 +368,7 @@ export function SessionSummary({
                 cy="100"
                 r="85"
                 fill="none"
-                strokeWidth="12"
+                strokeWidth="10"
               />
               <motion.circle
                 className="coherence-ring-fill"
@@ -376,7 +376,7 @@ export function SessionSummary({
                 cy="100"
                 r="85"
                 fill="none"
-                strokeWidth="12"
+                strokeWidth="10"
                 strokeLinecap="round"
                 strokeDasharray={534.07}
                 initial={{ strokeDashoffset: 534.07 }}

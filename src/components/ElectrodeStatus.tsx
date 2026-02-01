@@ -62,11 +62,11 @@ export function ElectrodeStatus({ status, compact = false }: ElectrodeStatusProp
           const quality = status[electrode];
           const color = QUALITY_COLORS[quality];
           
-          return (
+              return (
             <div key={electrode} className="electrode-item-lovable">
               <motion.div 
                 key={`${electrode}-${quality}`}
-                className="electrode-dot-lovable"
+                className={`electrode-dot-lovable electrode-dot-lovable--${quality}`}
                 style={{ backgroundColor: color }}
                 animate={quality === 'good' ? {
                   boxShadow: [

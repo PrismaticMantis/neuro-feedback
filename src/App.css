@@ -9,10 +9,10 @@
   --bg-subtle: #211f24; /* hsl(270 7% 13%) */
   --bg-muted: #2a272d; /* hsl(270 7% 16%) */
   
-  /* Text Colors */
-  --text-primary: #f7f4ed; /* hsl(45 30% 95%) */
-  --text-muted: #9a949f; /* hsl(270 8% 60%) - Lovable spec */
-  --text-subtle: #6d686f; /* hsl(270 6% 42%) - Lovable spec */
+  /* Text Colors (docs/lovable-spec.md) */
+  --text-primary: #f8f6f0; /* hsl(45 30% 95%) - foreground */
+  --text-muted: #9a939f; /* hsl(270 8% 60%) - foreground-muted */
+  --text-subtle: #6e6972; /* hsl(270 6% 42%) - foreground-subtle */
   
   /* Legacy text aliases for compatibility */
   --text-secondary: var(--text-muted);
@@ -43,10 +43,10 @@
   --border-default: #302c33; /* hsl(270 8% 18%) */
   --border-subtle: #3a363d; /* hsl(270 6% 22%) */
   
-  /* Semantic Colors */
+  /* Semantic Colors (docs/lovable-spec.md) */
   --success: #3fa87a; /* hsl(160 45% 45%) */
-  --warning: #d9b635; /* hsl(45 70% 55%) */
-  --error: #c73c3c; /* hsl(0 55% 50%) */
+  --warning: #d4a836; /* hsl(45 70% 55%) */
+  --error: #c74040; /* hsl(0 55% 50%) */
   --destructive: var(--error);
   
   /* Zone Colors (coherence graph) - using champagne instead of teal */
@@ -83,13 +83,13 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* Typography - SoundBed Design System (exact spec values, no fallbacks) */
+/* Typography - docs/lovable-spec.md exact values */
 .text-display {
   font-family: 'Space Grotesk', sans-serif;
   font-size: 48px;
   font-weight: 600;
+  letter-spacing: -0.025em;
   line-height: 1.1;
-  letter-spacing: -0.02em;
   color: var(--text-primary);
 }
 
@@ -97,8 +97,8 @@ body {
   font-family: 'Space Grotesk', sans-serif;
   font-size: 30px;
   font-weight: 600;
+  letter-spacing: -0.025em;
   line-height: 1.2;
-  letter-spacing: -0.02em;
   color: var(--text-primary);
 }
 
@@ -106,8 +106,8 @@ body {
   font-family: 'Space Grotesk', sans-serif;
   font-size: 24px;
   font-weight: 500;
-  line-height: 1.25;
-  letter-spacing: -0.01em;
+  letter-spacing: -0.025em;
+  line-height: 1.3;
   color: var(--text-primary);
 }
 
@@ -115,7 +115,8 @@ body {
   font-family: 'Space Grotesk', sans-serif;
   font-size: 20px;
   font-weight: 500;
-  line-height: 1.3;
+  letter-spacing: 0;
+  line-height: 1.4;
   color: var(--text-primary);
 }
 
@@ -123,7 +124,7 @@ body {
   font-family: 'Inter', sans-serif;
   font-size: 16px;
   font-weight: 400;
-  line-height: 1.6;
+  line-height: 1.625;
   color: var(--text-primary);
 }
 
@@ -131,7 +132,7 @@ body {
   font-family: 'Inter', sans-serif;
   font-size: 18px;
   font-weight: 400;
-  line-height: 1.6;
+  line-height: 1.625;
   color: var(--text-primary);
 }
 
@@ -139,26 +140,26 @@ body {
   font-family: 'Inter', sans-serif;
   font-size: 14px;
   font-weight: 400;
+  color: hsl(270 8% 60%);
   line-height: 1.5;
-  color: var(--text-muted);
 }
 
 .text-small {
   font-family: 'Inter', sans-serif;
   font-size: 12px;
   font-weight: 400;
+  color: hsl(270 6% 42%);
   line-height: 1.4;
-  color: var(--text-muted);
 }
 
 .text-label {
   font-family: 'Inter', sans-serif;
   font-size: 12px;
   font-weight: 500;
-  line-height: 1.4;
-  letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: var(--text-muted);
+  letter-spacing: 0.1em;
+  color: hsl(270 6% 42%);
+  line-height: 1.4;
 }
 
 h1, h2, h3, h4, h5, h6 {
@@ -208,16 +209,16 @@ h3 {
   flex: 1;
   display: flex;
   flex-direction: column;
-  padding: 24px 32px; /* 32px horizontal padding per spec */
-  max-width: 1152px; /* 6xl max-width per spec */
+  padding: 24px 32px 96px; /* docs/lovable-spec.md: px 32px, padding-bottom 96px for nav */
+  max-width: 1152px; /* 72rem per spec */
   margin: 0 auto;
   width: 100%;
-  min-height: calc(100vh - 80px); /* Account for bottom nav */
+  min-height: calc(100vh - 80px);
 }
 
 @media (min-width: 768px) {
   .screen {
-    padding: 32px; /* More padding on iPad */
+    padding: 32px 32px 96px;
   }
 }
 
@@ -346,14 +347,15 @@ h3 {
 
 /* ============ Connection Status ============ */
 
+/* device-card / card-glass - docs/lovable-spec.md Session Setup */
 .connection-status {
-  background: linear-gradient(165deg, hsl(270 7% 14% / 0.7), hsl(270 10% 8% / 0.8)); /* Glass Card */
+  background: linear-gradient(165deg, hsl(270 7% 14% / 0.7), hsl(270 10% 8% / 0.8));
   border: 1px solid hsl(275 20% 25% / 0.35);
-  border-radius: var(--radius-lg);
-  padding: 24px; /* Standard card padding */
-  margin-bottom: 24px; /* Card gap */
+  border-radius: 16px;
+  padding: 24px;
+  margin-bottom: 24px;
   backdrop-filter: blur(20px);
-  box-shadow: 0 4px 20px hsl(270 20% 2% / 0.6);
+  box-shadow: 0 4px 20px hsl(270 20% 2% / 0.6), inset 0 1px 0 hsl(275 15% 35% / 0.08);
 }
 
 .status-bar {
@@ -429,18 +431,19 @@ h3 {
   white-space: nowrap;
 }
 
+/* slider-track - docs/lovable-spec.md */
 .quality-track {
   flex: 1;
-  height: 4px;
-  background: var(--bg-primary);
-  border-radius: 2px;
+  height: 8px;
+  background: hsl(270 7% 16%); /* muted */
+  border-radius: 4px;
   overflow: hidden;
 }
 
 .quality-fill {
   height: 100%;
-  background: var(--accent-primary); /* Champagne instead of teal */
-  border-radius: 2px;
+  background: linear-gradient(90deg, hsl(45 55% 70%), hsl(40 50% 62%));
+  border-radius: 4px;
 }
 
 .connection-buttons {
@@ -471,14 +474,15 @@ h3 {
   overflow-y: auto;
 }
 
+/* electrode-card / card-glass - docs/lovable-spec.md Session Setup */
 .setup-section {
-  background: linear-gradient(165deg, hsl(270 7% 14% / 0.7), hsl(270 10% 8% / 0.8)); /* Glass Card */
+  background: linear-gradient(165deg, hsl(270 7% 14% / 0.7), hsl(270 10% 8% / 0.8));
   border: 1px solid hsl(275 20% 25% / 0.35);
-  border-radius: var(--radius-lg);
-  padding: 24px; /* Standard card padding */
-  margin-bottom: 24px; /* Card gap */
+  border-radius: 16px;
+  padding: 24px;
+  margin-bottom: 24px;
   backdrop-filter: blur(20px);
-  box-shadow: 0 4px 20px hsl(270 20% 2% / 0.6);
+  box-shadow: 0 4px 20px hsl(270 20% 2% / 0.6), inset 0 1px 0 hsl(275 15% 35% / 0.08);
 }
 
 .setup-section h2 {
@@ -717,20 +721,32 @@ h3 {
 
 /* ============ Active Session ============ */
 
+/* docs/lovable-spec.md Active Session: max-w-7xl 1280px, px 24 (mobile) / 40 (desktop), py 24 */
 .active-session {
-  padding: 0;
+  padding: 24px 24px 24px;
+  max-width: 1280px;
+  margin-left: auto;
+  margin-right: auto;
   background: var(--bg-primary);
   display: flex;
   flex-direction: column;
   min-height: 100vh;
 }
 
+@media (min-width: 768px) {
+  .active-session {
+    padding: 24px 40px 24px;
+  }
+}
+
 /* ============ Lovable Session Header ============ */
+/* active-header - docs/lovable-spec.md */
 .session-header-lovable {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 16px 20px;
+  padding: 0;
+  margin-bottom: 32px;
   background: transparent;
 }
 
@@ -740,37 +756,42 @@ h3 {
   gap: 12px;
 }
 
+/* muse-logo - docs/lovable-spec.md Active Session */
 .muse-logo-lovable {
   font-family: 'Space Grotesk', sans-serif;
-  font-size: 18px;
-  font-weight: 600;
-  color: var(--text-primary);
-  letter-spacing: -0.5px;
+  font-size: 24px;
+  font-weight: 300;
+  letter-spacing: 0.05em;
+  text-transform: lowercase;
+  color: hsl(45 30% 95%);
 }
 
+/* battery-badge - docs/lovable-spec.md Active Session */
 .battery-indicator-lovable {
   display: flex;
   align-items: center;
-  gap: 4px;
-  color: var(--text-primary);
+  gap: 8px;
+  padding: 6px 12px;
+  border-radius: 9999px;
+  background: hsl(270 7% 13% / 0.5);
+  color: hsl(45 30% 95%);
 }
 
 .battery-indicator-lovable svg {
-  color: var(--success);
+  width: 16px;
+  height: 16px;
+  color: hsl(45 70% 55%); /* amber */
 }
 
-.battery-indicator-lovable.low svg {
-  color: var(--warning);
-}
-
+.battery-indicator-lovable.low svg,
 .battery-indicator-lovable.low .battery-text-lovable {
   color: var(--warning);
 }
 
 .battery-text-lovable {
-  font-size: 13px;
+  font-size: 12px;
   font-family: 'Inter', sans-serif;
-  color: var(--text-primary);
+  color: hsl(270 8% 60%);
 }
 
 .session-header-right {
@@ -840,25 +861,28 @@ h3 {
   color: var(--text-secondary);
 }
 
+/* battery-row - docs/lovable-spec.md Session Setup */
 .battery-display {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 12px;
   margin-top: 12px;
-  padding: 8px 12px;
-  background: var(--bg-elevated);
-  border-radius: var(--radius-sm);
-  color: var(--text-secondary);
+  padding: 12px;
+  background: hsl(270 7% 13%); /* background-subtle */
+  border-radius: 8px;
+  color: hsl(270 8% 60%);
 }
 
 .battery-display svg {
-  color: var(--success);
+  width: 20px;
+  height: 20px;
+  color: hsl(45 70% 55%); /* warning - spec */
   flex-shrink: 0;
 }
 
 .battery-display.low svg,
 .battery-display.low .battery-text {
-  color: var(--error);
+  color: var(--destructive);
 }
 
 .battery-display .battery-text {
@@ -1125,7 +1149,7 @@ h3 {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 16px 20px;
+  padding: 16px 32px; /* Page container 32px horizontal */
   border-bottom: 1px solid hsl(275 20% 25% / 0.35);
 }
 
@@ -1180,27 +1204,31 @@ h3 {
   flex-shrink: 0;
 }
 
+/* docs/lovable-spec.md Session Summary: max-width 72rem, padding-x 32px */
 .summary-content {
   flex: 1;
   display: flex;
   flex-direction: column;
   gap: 32px;
-  max-width: 600px;
+  max-width: 1152px;
   margin: 0 auto;
   width: 100%;
-  padding: 32px 20px 24px;
+  padding: 32px;
 }
 
-/* Hero Section - Circular Coherence Ring */
+/* completion-hero / card-glass - docs/lovable-spec.md: padding 40px */
 .summary-hero {
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 16px;
-  background: var(--bg-card);
-  border-radius: var(--radius-lg);
-  padding: 32px 24px;
+  background: linear-gradient(165deg, hsl(270 7% 14% / 0.7), hsl(270 10% 8% / 0.8));
   border: 1px solid hsl(275 20% 25% / 0.35);
+  border-radius: 16px;
+  padding: 40px;
+  margin-top: 16px;
+  backdrop-filter: blur(20px);
+  box-shadow: 0 4px 20px hsl(270 20% 2% / 0.6), inset 0 1px 0 hsl(275 15% 35% / 0.08);
 }
 
 .summary-complete-label {
@@ -1212,12 +1240,12 @@ h3 {
   text-align: center;
 }
 
+/* Heading 2 per docs/lovable-spec.md */
 .summary-journey-name {
   font-family: 'Space Grotesk', sans-serif;
-  font-size: 24px;
-  font-weight: 600;
-  line-height: 1.2;
-  letter-spacing: -0.02em;
+  font-size: 24px; /* 1.5rem */
+  font-weight: 500; /* Heading 2 spec */
+  line-height: 1.25;
   color: var(--text-primary);
   margin: 0;
   text-align: center;
@@ -1239,23 +1267,15 @@ h3 {
   transform: rotate(-90deg);
 }
 
+/* coherence-ring - docs/lovable-spec.md: 200px, stroke-width 10px */
 .coherence-ring-bg {
-  stroke: var(--bg-card);
-  opacity: 0.3;
+  stroke: hsl(270 8% 18%);
+  opacity: 0.5;
 }
 
 .coherence-ring-fill {
-  stroke: url(#coherenceGradient);
+  stroke: var(--accent-primary);
   filter: drop-shadow(0 0 8px hsl(45 55% 70% / 0.5));
-}
-
-/* Gold gradient for ring stroke */
-.coherence-ring-svg defs {
-  display: none;
-}
-
-.coherence-ring-fill {
-  stroke: var(--accent-primary); /* Champagne gold */
 }
 
 .coherence-ring-center {
@@ -1268,27 +1288,30 @@ h3 {
   gap: 4px;
 }
 
+/* coherence-value - docs/lovable-spec.md: font-size 48px */
 .coherence-percentage {
   font-family: 'Space Grotesk', sans-serif;
-  font-size: 56px;
+  font-size: 48px;
   font-weight: 600;
   line-height: 1.1;
-  letter-spacing: -0.02em;
-  color: var(--accent-primary);
+  color: hsl(45 30% 95%);
 }
 
+/* coherence-label - docs/lovable-spec.md: font-size 14px */
 .coherence-label {
   font-family: 'Inter', sans-serif;
   font-size: 14px;
   font-weight: 400;
-  color: var(--text-muted);
+  color: hsl(270 8% 60%);
+  margin-top: 4px;
 }
 
+/* Body per docs/lovable-spec.md */
 .summary-interpretation {
   font-family: 'Inter', sans-serif;
-  font-size: 16px;
+  font-size: 16px; /* Body */
   font-weight: 400;
-  line-height: 1.5;
+  line-height: 1.6;
   color: var(--text-muted);
   text-align: center;
   margin: 0;
@@ -1300,52 +1323,64 @@ h3 {
   flex-direction: column;
   gap: 16px;
   width: 100%;
+  margin-top: 0;
 }
 
+/* Heading 3 per docs/lovable-spec.md */
 .summary-section-title {
   font-family: 'Space Grotesk', sans-serif;
-  font-size: 20px;
-  font-weight: 600;
+  font-size: 20px; /* 1.25rem */
+  font-weight: 500; /* Heading 3 spec */
   line-height: 1.3;
-  letter-spacing: -0.01em;
   color: var(--text-primary);
   margin: 0;
 }
 
-/* Metrics Cards Grid */
+/* Metrics Grid - docs/lovable-spec.md: repeat(4, 1fr), gap 16px, margin-top 32px */
+/* docs/lovable-spec.md: margin-top 32px */
 .summary-metrics-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(4, 1fr);
   gap: 16px;
   width: 100%;
+  margin-top: 32px;
 }
 
+@media (max-width: 768px) {
+  .summary-metrics-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+/* metric-card - docs/lovable-spec.md */
 .summary-metric-card {
-  background: var(--bg-card);
-  border: 1px solid hsl(275 20% 25% / 0.35);
-  border-radius: var(--radius-md);
   padding: 20px;
+  border-radius: 12px;
+  background: hsl(270 10% 8% / 0.8);
+  border: 1px solid hsl(270 10% 22% / 0.4);
   text-align: center;
   display: flex;
   flex-direction: column;
   gap: 8px;
 }
 
+/* Caption per docs/lovable-spec.md */
 .summary-metric-label {
   font-family: 'Inter', sans-serif;
-  font-size: 13px;
+  font-size: 14px; /* Caption */
   font-weight: 400;
   color: var(--text-muted);
-  line-height: 1.4;
+  line-height: 1.5;
 }
 
+/* metric-value - docs/lovable-spec.md: font-size 30px */
 .summary-metric-value {
   font-family: 'Space Grotesk', sans-serif;
-  font-size: 24px;
+  font-size: 30px;
   font-weight: 600;
   line-height: 1.2;
-  letter-spacing: -0.01em;
-  color: var(--text-primary);
+  color: hsl(45 30% 95%);
+  letter-spacing: -0.025em;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1364,12 +1399,13 @@ h3 {
   margin-top: -4px;
 }
 
-/* Coherence Timeline Section */
+/* Coherence Timeline - docs/lovable-spec.md: margin-top 40px, height 180px */
 .summary-timeline-section {
   display: flex;
   flex-direction: column;
   gap: 16px;
   width: 100%;
+  margin-top: 40px;
 }
 
 .summary-timeline-chart {
@@ -1388,14 +1424,16 @@ h3 {
   display: block;
 }
 
-/* Footer - CTA Buttons */
+/* Action Buttons - docs/lovable-spec.md: margin-top 40px, margin-bottom 32px, gap 16px */
 .summary-footer {
   display: flex;
   flex-direction: row;
-  gap: 12px;
-  margin-top: 32px;
-  padding: 24px 20px;
-  border-top: 1px solid hsl(275 20% 25% / 0.35);
+  justify-content: center;
+  gap: 16px;
+  margin-top: 40px;
+  margin-bottom: 32px;
+  padding: 0 32px;
+  border-top: none;
 }
 
 .summary-footer .btn {
@@ -1584,18 +1622,21 @@ h3 {
 }
 
 /* ============ Lovable Session Cards ============ */
+/* Top Section Two Cards - docs/lovable-spec.md: gap 16px, margin-bottom 16px */
 .session-top-cards {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 16px;
-  padding: 0 20px 16px;
+  padding: 0;
+  margin-bottom: 16px;
 }
 
+/* status-card / card-glass - docs/lovable-spec.md Active Session */
 .session-card {
-  background: var(--bg-card);
+  background: linear-gradient(165deg, hsl(270 7% 14% / 0.7), hsl(270 10% 8% / 0.8));
   border: 1px solid hsl(275 20% 25% / 0.35);
-  border-radius: var(--radius-lg);
-  padding: 20px;
+  border-radius: 16px;
+  padding: 16px; /* status-card spec */
   backdrop-filter: blur(20px);
   box-shadow: 0 4px 20px hsl(270 20% 2% / 0.6);
 }
@@ -1619,11 +1660,12 @@ h3 {
   justify-content: space-between;
 }
 
+/* Label per docs/lovable-spec.md */
 .electrode-title-lovable {
   font-family: 'Inter', sans-serif;
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.5px;
+  font-size: 12px; /* Label */
+  font-weight: 500;
+  letter-spacing: 0.1em;
   color: var(--text-muted);
   text-transform: uppercase;
 }
@@ -1673,18 +1715,40 @@ h3 {
   position: relative;
 }
 
+/* electrode-dot - docs/lovable-spec.md: 24px Session Setup, 16px Active Session */
+/* electrode-dot - docs/lovable-spec.md: 24px Session Setup, 16px Active Session */
+.electrode-status:not(.compact) .electrode-dot-lovable {
+  width: 24px;
+  height: 24px;
+}
+.electrode-status:not(.compact) .electrode-dot-lovable--good {
+  box-shadow: 0 0 8px hsl(160 45% 45% / 0.5); /* electrode-dot--good */
+}
+.electrode-status.compact .electrode-dot-lovable {
+  width: 16px;
+  height: 16px;
+}
+.electrode-status.compact .electrode-dot-lovable--good {
+  box-shadow: 0 0 12px hsl(160 45% 45% / 0.6); /* electrode-dot-sm--good */
+}
+.electrode-status.compact .electrode-dot-lovable--medium {
+  box-shadow: 0 0 12px hsl(45 95% 55% / 0.5); /* electrode-dot-sm--warning */
+}
 .electrode-dot-lovable {
-  width: 12px;
-  height: 12px;
   border-radius: 50%;
   transition: background-color 0.2s ease, box-shadow 0.2s ease;
   opacity: 1;
 }
+.electrode-status.compact .electrode-dot-lovable[style*="hsl(160"] {
+  box-shadow: 0 0 12px hsl(160 45% 45% / 0.6); /* electrode-dot-sm--good */
+}
 
+/* electrode-label - docs/lovable-spec.md */
 .electrode-label-lovable {
   font-family: 'Inter', sans-serif;
-  font-size: 11px;
-  color: var(--text-primary);
+  font-size: 12px;
+  color: hsl(270 8% 60%);
+  margin-top: 8px;
   font-weight: 400;
 }
 
@@ -1748,14 +1812,16 @@ h3 {
   gap: 16px;
 }
 
+/* Label per docs/lovable-spec.md */
 .session-card-title {
   font-family: 'Inter', sans-serif;
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.5px;
+  font-size: 12px; /* Label */
+  font-weight: 500;
+  letter-spacing: 0.1em;
   color: var(--text-muted);
   text-transform: uppercase;
   margin: 0;
+  line-height: 1.4;
 }
 
 .mental-state-list {
@@ -1795,11 +1861,11 @@ h3 {
   display: flex;
   align-items: center;
   gap: 16px;
-  padding: 20px 24px;
-  margin: 0 20px 24px;
+  padding: 24px;
+  margin-bottom: 16px;
   background: var(--accent-primary);
-  border-radius: var(--radius-lg);
-  box-shadow: 0 4px 20px hsl(45 55% 70% / 0.3);
+  border-radius: 16px;
+  box-shadow: var(--shadow-md), 0 0 30px hsl(45 55% 70% / 0.2);
 }
 
 .journey-card-icon {
@@ -1913,58 +1979,70 @@ h3 {
   flex: 1;
   display: flex;
   flex-direction: column;
-  padding: 0 20px 20px;
+  padding: 0;
+  margin-bottom: 16px;
   position: relative;
 }
 
+/* waveform-card / card-premium - docs/lovable-spec.md: padding 20px, min-height 160px */
 .session-chart-card {
   flex: 1;
-  background: var(--bg-card);
-  border: 1px solid hsl(275 20% 25% / 0.35);
-  border-radius: var(--radius-lg);
+  background: linear-gradient(165deg, hsl(270 7% 15% / 0.6), hsl(270 10% 6% / 0.7));
+  border: 1px solid hsl(275 15% 28% / 0.3);
+  border-radius: 24px;
   padding: 20px;
-  backdrop-filter: blur(20px);
-  box-shadow: 0 8px 40px hsl(270 20% 2% / 0.8);
+  min-height: 160px;
+  backdrop-filter: blur(30px);
+  box-shadow: 0 8px 40px hsl(270 20% 2% / 0.7);
   overflow: hidden;
   position: relative;
 }
 
 /* Footer */
+/* session-controls - docs/lovable-spec.md: gap 16px, margin-top 20px */
 .session-footer-lovable {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 16px 20px;
+  justify-content: center;
+  gap: 16px;
+  margin-top: 20px;
+  padding: 0;
   background: transparent;
 }
 
+/* btn-end-session - docs/lovable-spec.md: padding 12px 40px, rounded-full */
 .session-end-btn {
   flex: 1;
+  padding: 12px 40px;
+  border-radius: 9999px;
 }
 
+/* btn-audio-toggle - docs/lovable-spec.md: border-radius 9999px */
 .session-guidance-btn {
   width: 56px;
   height: 56px;
-  border-radius: var(--radius-md);
-  background: var(--bg-card);
-  border: 1px solid hsl(275 20% 25% / 0.35);
+  border-radius: 9999px;
+  background: hsl(270 7% 14% / 0.8);
+  border: 1px solid hsl(275 15% 28% / 0.4);
   display: flex;
   align-items: center;
   justify-content: center;
-  color: var(--text-primary);
+  color: hsl(270 8% 60%);
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: all 300ms;
 }
 
 .session-guidance-btn:hover {
-  background: var(--bg-elevated);
-  border-color: hsl(275 20% 30% / 0.5);
+  background: hsl(270 7% 16% / 0.9);
+  border-color: hsl(275 15% 32% / 0.6);
 }
 
+/* btn-audio-toggle.enabled - docs/lovable-spec.md */
 .session-guidance-btn.active {
-  background: var(--accent-primary);
-  border-color: var(--accent-primary);
-  color: var(--bg-primary);
+  border-color: hsl(45 55% 70% / 0.3);
+  box-shadow: 0 0 50px hsl(45 55% 70% / 0.2);
+  background: linear-gradient(135deg, hsl(45 55% 70%), hsl(40 50% 62%));
+  color: hsl(270 12% 8%);
 }
 
 .session-guidance-btn svg {
@@ -2058,23 +2136,25 @@ h3 {
   font-weight: 500;
 }
 
+/* slider-track - docs/lovable-spec.md */
 .setting-slider {
   width: 100%;
   appearance: none;
-  height: 6px;
-  background: var(--bg-primary);
-  border-radius: 3px;
+  height: 8px;
+  background: hsl(270 7% 16%); /* muted */
+  border-radius: 4px;
   cursor: pointer;
 }
 
+/* slider-thumb - docs/lovable-spec.md */
 .setting-slider::-webkit-slider-thumb {
   appearance: none;
-  width: 18px;
-  height: 18px;
-  background: var(--accent-primary);
+  width: 20px;
+  height: 20px;
+  background: hsl(45 55% 70%);
   border-radius: 50%;
   cursor: pointer;
-  box-shadow: 0 0 8px hsl(45 55% 70% / 0.4); /* accent.primary glow */
+  box-shadow: 0 2px 8px hsl(270 20% 2% / 0.5);
 }
 
 .setting-hint {
