@@ -281,9 +281,9 @@ h3 {
 
 .btn-ghost {
   background: transparent;
-  color: var(--text-primary);
-  padding: 12px;
-  border-radius: 12px;
+  color: var(--text);
+  padding: calc(var(--space-1) + 4px);
+  border-radius: var(--radius-md);
   border: none;
   cursor: pointer;
   display: inline-flex;
@@ -3072,7 +3072,7 @@ h3 {
 
 .journey-select-subtitle {
   font-family: var(--font-sans);
-  font-size: var(--text-base);
+  font-size: var(--text-sm);
   font-weight: var(--weight-regular);
   color: var(--text-muted);
   margin: 0;
@@ -3084,15 +3084,15 @@ h3 {
   bottom: 80px;
   left: 50%;
   transform: translateX(-50%);
-  padding: 12px 24px;
-  background: var(--bg-elevated);
-  border: 1px solid var(--border-subtle);
+  padding: calc(var(--space-1) + 4px) var(--space-3);
+  background: var(--surface);
+  border: 1px solid var(--border);
   border-radius: var(--radius-lg);
-  font-family: 'Inter', sans-serif;
-  font-size: 14px;
+  font-family: var(--font-sans);
+  font-size: var(--text-sm);
   color: var(--text-muted);
   z-index: 100;
-  box-shadow: var(--shadow-md);
+  box-shadow: var(--shadow-card);
   animation: fade-in-up 0.3s ease;
 }
 
@@ -3109,7 +3109,7 @@ h3 {
   align-items: flex-start;
   text-align: left;
   padding: var(--space-3);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-lg);
   cursor: pointer;
   transition: all 0.3s ease;
   position: relative;
@@ -3156,7 +3156,7 @@ h3 {
 .journey-card-icon svg {
   width: 24px;
   height: 24px;
-  color: #fff;
+  color: var(--text);
 }
 
 .journey-name {
@@ -3176,7 +3176,7 @@ h3 {
   font-weight: var(--weight-regular);
   color: var(--text-muted);
   line-height: var(--leading-relaxed);
-  margin-bottom: calc(var(--space-1) + 4px);
+  margin-bottom: var(--space-2);
   position: relative;
   z-index: 1;
   flex: 1;
@@ -3185,7 +3185,7 @@ h3 {
 .journey-duration {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--space-1);
   font-family: var(--font-sans);
   font-size: var(--text-sm);
   color: var(--text-muted);
@@ -3205,8 +3205,8 @@ h3 {
 }
 
 .journey-play-btn {
-  width: 44px;
-  height: 44px;
+  width: 32px;
+  height: 32px;
   border-radius: var(--radius-xl);
   display: flex;
   align-items: center;
@@ -3214,13 +3214,19 @@ h3 {
   border: none;
   cursor: pointer;
   flex-shrink: 0;
+  color: var(--text);
+}
+
+.journey-play-btn svg {
+  width: 16px;
+  height: 16px;
 }
 
 .about-journeys-card {
   padding: var(--space-3);
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-lg);
   backdrop-filter: blur(20px);
   box-shadow: var(--shadow-card);
 }

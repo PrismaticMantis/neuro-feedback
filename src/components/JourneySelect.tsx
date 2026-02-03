@@ -127,8 +127,8 @@ export function JourneySelect({ currentUser }: JourneySelectProps) {
               </span>
               <div className="journey-card-footer">
                 <span />
-                <span className="journey-play-btn" style={{ background: display.iconColor, color: '#fff' }} aria-hidden>
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+                <span className="journey-play-btn" style={{ background: display.iconColor }} aria-hidden>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
                 </span>
               </div>
             </motion.button>
