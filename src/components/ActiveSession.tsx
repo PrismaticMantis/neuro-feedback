@@ -1,4 +1,4 @@
-// Active Session Screen Component - Match Lovable "5 - Session" design
+// UI reference: design/targets/5 - Session.png
 
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { motion } from 'framer-motion';

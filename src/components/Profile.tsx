@@ -1,4 +1,4 @@
-// Profile – User card, Total Sessions/Time, Your Sessions (Lovable layout)
+// UI reference: design/targets/7 - Profile.png
 
 import { useState } from 'react';
 import { Link } from 'react-router-dom';

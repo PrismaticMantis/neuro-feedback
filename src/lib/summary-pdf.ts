@@ -1,5 +1,6 @@
 /**
  * Session Summary PDF generation for Share and Email.
+ * Content and metric hierarchy align with design/targets/6 - Summary.png.
  * Produces a single-page PDF artifact with session data.
  */
 

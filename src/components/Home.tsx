@@ -1,4 +1,4 @@
-// Home – Lovable-style landing screen
+// UI reference: design/targets/1 - Start Session.png
 
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';

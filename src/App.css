@@ -1231,10 +1231,13 @@ h3 {
   box-shadow: 0 4px 20px hsl(270 20% 2% / 0.6), inset 0 1px 0 hsl(275 15% 35% / 0.08);
 }
 
+/* Target: 6 - Summary.png – small uppercase label */
 .summary-complete-label {
-  font-family: 'Inter', sans-serif;
-  font-size: 13px;
-  font-weight: 400;
+  font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
   color: var(--text-muted);
   margin: 0;
   text-align: center;
@@ -1336,12 +1339,11 @@ h3 {
   margin: 0;
 }
 
-/* Metrics Grid - docs/lovable-spec.md: repeat(4, 1fr), gap 16px, margin-top 32px */
-/* docs/lovable-spec.md: margin-top 32px */
+/* Target: 6 - Summary.png – four metric cards, gap 24px */
 .summary-metrics-grid {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  gap: 16px;
+  gap: 24px;
   width: 100%;
   margin-top: 32px;
 }
@@ -1373,14 +1375,13 @@ h3 {
   line-height: 1.5;
 }
 
-/* metric-value - docs/lovable-spec.md: font-size 30px */
+/* Target: 6 - Summary.png – metric value 24px, weight 500 */
 .summary-metric-value {
   font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
-  font-size: 30px;
-  font-weight: 600;
-  line-height: 1.2;
+  font-size: 24px;
+  font-weight: 500;
+  line-height: 1.25;
   color: hsl(45 30% 95%);
-  letter-spacing: -0.025em;
   display: flex;
   align-items: center;
   justify-content: center;

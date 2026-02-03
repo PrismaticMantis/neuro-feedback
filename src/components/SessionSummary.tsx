@@ -1,4 +1,4 @@
-// Session Summary – Match Lovable "6 - Summary" design
+// UI reference: design/targets/6 - Summary.png
 
 import { useMemo, useState, useCallback } from 'react';
 import { motion } from 'framer-motion';

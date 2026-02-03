@@ -1,5 +1,4 @@
-// Journey Selection – Choose Journey (Lovable layout)
-// Only Creative Flow is wired; other cards show "Coming soon".
+// UI reference: design/targets/2 - Choose Journey.png
 
 import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';

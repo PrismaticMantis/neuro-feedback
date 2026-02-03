@@ -1,4 +1,4 @@
-// Session Setup Screen Component (Lovable header layout)
+// UI reference: design/targets/3 - Session Setup.png, design/targets/4 - Session Setup (Muse Connected).png
 
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
