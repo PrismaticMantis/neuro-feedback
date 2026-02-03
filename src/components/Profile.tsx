@@ -6,6 +6,7 @@ import { motion } from 'framer-motion';
 import { getUserSessionRecords, getJourneys } from '../lib/session-storage';
 import type { SessionRecord } from '../lib/session-storage';
 import { ProfileUserList } from '../lib/get-profile-user';
+import { BUILD_STAMP } from '../lib/build-stamp';
 import type { User } from '../types';
 
 function getJourneyName(journeyId: string): string {
@@ -169,6 +170,11 @@ export function Profile({
           ))}
         </ul>
       )}
+
+      {/* Build stamp footer - confirms UI updates are deployed */}
+      <footer className="profile-build-stamp">
+        <span className="profile-build-stamp-text">{BUILD_STAMP}</span>
+      </footer>
     </motion.div>
   );
 }
