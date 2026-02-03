@@ -1,77 +1,282 @@
 /**
- * Lovable Design Tokens
- * Extracted from design/targets/2 - Choose Journey.png (canonical reference)
- * Single source of truth for typography, spacing, radii, shadows, and colors.
+ * SoundBed Design Tokens
+ * Exact values from docs/design-specification.md
+ * Single source of truth - no approximations or inferred values
  */
 
 :root {
   /* ============================================
-     TYPOGRAPHY
+     FONT FAMILY
      ============================================ */
   
-  /* Font Stack */
   --font-sans: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
   
-  /* Font Sizes (from Choose Journey screenshot) */
-  --text-xs: 12px;   /* Small labels, tertiary text */
-  --text-sm: 14px;   /* Captions, nav labels, duration */
-  --text-base: 16px; /* Body text, descriptions */
-  --text-lg: 20px;   /* Card titles, section headings (H3) */
-  --text-xl: 30px;   /* Page titles (H1) */
+  /* ============================================
+     TYPOGRAPHY - Type Scale (exact from spec)
+     ============================================ */
   
-  /* Line Heights */
-  --leading-tight: 1.2;   /* Headings (H1) */
-  --leading-normal: 1.3;   /* Subheadings (H3) */
-  --leading-relaxed: 1.6; /* Body text */
+  /* Display */
+  --font-display-size: 48px;
+  --font-display-weight: 600;
+  --font-display-line-height: 1.1;
   
-  /* Font Weights */
+  /* Heading 1 */
+  --font-heading-1-size: 30px;
+  --font-heading-1-weight: 600;
+  --font-heading-1-line-height: 1.2;
+  
+  /* Heading 2 */
+  --font-heading-2-size: 24px;
+  --font-heading-2-weight: 500;
+  --font-heading-2-line-height: 1.25;
+  
+  /* Heading 3 */
+  --font-heading-3-size: 20px;
+  --font-heading-3-weight: 500;
+  --font-heading-3-line-height: 1.3;
+  
+  /* Body Large */
+  --font-body-large-size: 18px;
+  --font-body-large-weight: 400;
+  --font-body-large-line-height: 1.6;
+  
+  /* Body */
+  --font-body-size: 16px;
+  --font-body-weight: 400;
+  --font-body-line-height: 1.6;
+  
+  /* Caption */
+  --font-caption-size: 14px;
+  --font-caption-weight: 400;
+  --font-caption-line-height: 1.5;
+  
+  /* Small */
+  --font-small-size: 12px;
+  --font-small-weight: 400;
+  --font-small-line-height: 1.4;
+  
+  /* Label */
+  --font-label-size: 12px;
+  --font-label-weight: 500;
+  --font-label-line-height: 1.4;
+  --font-label-tracking: 0.1em;
+  --font-label-transform: uppercase;
+  
+  /* Font Weights (for convenience) */
   --weight-regular: 400;
   --weight-medium: 500;
   --weight-semibold: 600;
   
   /* ============================================
-     SPACING (8px grid)
+     SPACING (8px grid - exact from spec)
      ============================================ */
   
-  --space-1: 8px;   /* Tight spacing, small gaps */
-  --space-2: 16px;  /* Standard element gaps */
-  --space-3: 24px;  /* Card padding, grid gaps */
-  --space-4: 32px;  /* Section spacing, screen padding */
-  --space-5: 40px;  /* Large section spacing */
-  --space-6: 48px;  /* Extra large spacing */
+  --space-tight: 8px;              /* Tight spacing */
+  --space-inner: 16px;             /* Inner element gap */
+  --space-card: 24px;               /* Card padding (standard) */
+  --space-card-hero: 48px;          /* Card padding (hero) */
+  --space-page-x: 32px;             /* Page container horizontal */
+  --space-section-y: 48px;          /* Section gap vertical */
+  --space-card-gap: 24px;           /* Card gap */
   
   /* ============================================
-     BORDER RADII
+     CONTAINER
      ============================================ */
   
-  --radius-sm: 8px;   /* Small buttons, nested elements */
-  --radius-md: 12px;   /* Cards, prominent rounded corners */
-  --radius-lg: 16px;   /* Large cards, hero sections */
-  --radius-xl: 50%;    /* Circular elements (icons, play buttons) */
+  --container-max-width: 1152px;    /* 6xl - max width */
   
   /* ============================================
-     SHADOWS
+     COLORS - Backgrounds (exact HSL/Hex from spec)
      ============================================ */
   
-  /* Card shadow - matches elevation from Choose Journey screenshot */
-  --shadow-card: 0 4px 20px hsl(270 20% 2% / 0.6);
+  --color-bg-primary: hsl(270 12% 5%);      /* #0c0a0e */
+  --color-bg-elevated: hsl(270 10% 8%);     /* #141117 */
+  --color-bg-card: hsl(270 8% 11%);          /* #1c1a1f */
+  --color-bg-subtle: hsl(270 7% 13%);        /* #211f24 */
+  --color-bg-muted: hsl(270 7% 16%);         /* #2a272d */
   
   /* ============================================
-     COLORS (from Choose Journey screenshot)
+     COLORS - Text (exact HSL/Hex from spec)
      ============================================ */
   
-  /* Backgrounds */
-  --bg: #0c0a0e;              /* hsl(270 12% 5%) - page background */
-  --surface: #1e1c20;          /* hsl(270 12% 10%) - card background (About Sound Journeys) */
-  --surface-2: hsl(270 8% 11%); /* Secondary surface (journey cards - grey variant) */
+  --color-text-primary: hsl(45 30% 95%);     /* #f7f4ec */
+  --color-text-muted: hsl(270 8% 60%);       /* #9e95a3 */
+  --color-text-subtle: hsl(270 6% 42%);      /* #6e6872 */
   
-  /* Text */
-  --text: #f7f4ed;             /* hsl(45 30% 95%) - primary text */
-  --text-muted: #9e95a3;       /* hsl(270 8% 60%) - secondary/muted text */
+  /* ============================================
+     COLORS - Accents (exact HSL/Hex from spec)
+     ============================================ */
   
-  /* Accent */
-  --accent: #dfc58b;           /* hsl(45 55% 70%) - golden yellow (active nav, highlights) */
+  --color-accent-primary: hsl(45 55% 70%);      /* #dfc58b - Champagne */
+  --color-accent-secondary: hsl(275 45% 55%);    /* #9e59b8 - Amethyst */
+  --color-accent-rose: hsl(330 40% 60%);         /* #c77a99 - Rose quartz */
   
-  /* Border (subtle, for card edges) */
-  --border: hsl(275 20% 25% / 0.35); /* Subtle border for cards */
+  /* ============================================
+     COLORS - Borders (exact HSL/Hex from spec)
+     ============================================ */
+  
+  --color-border-default: hsl(270 8% 18%);      /* #302c33 */
+  --color-border-subtle: hsl(270 6% 22%);        /* #3a363d */
+  
+  /* ============================================
+     COLORS - Semantic (exact HSL/Hex from spec)
+     ============================================ */
+  
+  --color-success: hsl(160 45% 45%);              /* #3fa87a */
+  --color-warning: hsl(45 70% 55%);               /* #d9b635 */
+  --color-destructive: hsl(0 55% 50%);             /* #c73c3c */
+  
+  /* ============================================
+     COLORS - Journey (exact HSL/Hex from spec)
+     ============================================ */
+  
+  --color-journey-calm: hsl(200 40% 50%);         /* #4d99b3 */
+  --color-journey-deep-rest: hsl(275 45% 50%);    /* #8f4db3 */
+  --color-journey-creative: hsl(45 55% 65%);      /* #d9c478 */
+  --color-journey-night: hsl(260 35% 45%);         /* #6b4d9e */
+  
+  /* ============================================
+     BORDER STYLES (exact from spec)
+     ============================================ */
+  
+  /* Card (Glass) border */
+  --border-card-glass: 1px solid hsl(275 20% 25% / 0.35);
+  
+  /* Card (Premium) border */
+  --border-card-premium: 1px solid hsl(275 15% 28% / 0.3);
+  
+  /* Secondary Button border */
+  --border-button-secondary: 1px solid hsl(275 15% 28% / 0.4);
+  
+  /* Metric Card border */
+  --border-metric-card: 1px solid hsl(270 10% 22% / 0.4);
+  
+  /* Journey Card border */
+  --border-journey-card: 1px solid hsl(275 15% 25% / 0.3);
+  
+  /* ============================================
+     BORDER RADII (exact from spec)
+     ============================================ */
+  
+  --radius-card-glass: 16px;        /* rounded-2xl - Card (Glass) */
+  --radius-card-premium: 24px;      /* rounded-3xl - Card (Premium) */
+  --radius-button-primary: 12px;    /* rounded-xl - Primary Button */
+  --radius-button-secondary: 12px;  /* Secondary Button */
+  --radius-button-ghost: 12px;      /* Ghost Button */
+  --radius-metric-card: 12px;       /* Metric Card */
+  --radius-journey-card: 16px;      /* Journey Card */
+  --radius-progress-bar: 9999px;    /* full - Progress Bar */
+  
+  /* ============================================
+     SHADOWS (exact from spec)
+     ============================================ */
+  
+  --shadow-sm: 0 2px 8px hsl(270 20% 2% / 0.5);
+  --shadow-md: 0 4px 20px hsl(270 20% 2% / 0.6);
+  --shadow-lg: 0 8px 40px hsl(270 20% 2% / 0.7);
+  --shadow-glow: 0 0 50px hsl(275 45% 55% / 0.15);
+  --shadow-glow-accent: 0 0 50px hsl(45 55% 70% / 0.12);
+  
+  /* Card shadows (from component specs) */
+  --shadow-card-glass: 0 4px 20px hsl(270 20% 2% / 0.6);
+  --shadow-card-premium: 0 8px 40px hsl(270 20% 2% / 0.7);
+  --shadow-button-primary: 0 4px 20px hsl(270 20% 2% / 0.6), 0 0 30px hsl(45 55% 70% / 0.2);
+  
+  /* ============================================
+     BACKGROUNDS - Card (Glass) (exact from spec)
+     ============================================ */
+  
+  --bg-card-glass: linear-gradient(165deg, hsl(270 7% 14% / 0.7), hsl(270 10% 8% / 0.8));
+  --bg-card-glass-backdrop: blur(20px);
+  
+  /* ============================================
+     BACKGROUNDS - Card (Premium) (exact from spec)
+     ============================================ */
+  
+  --bg-card-premium: linear-gradient(165deg, hsl(270 7% 15% / 0.6), hsl(270 10% 6% / 0.7));
+  --bg-card-premium-backdrop: blur(30px);
+  
+  /* ============================================
+     BACKGROUNDS - Buttons (exact from spec)
+     ============================================ */
+  
+  --bg-button-primary: linear-gradient(135deg, hsl(45 55% 70%), hsl(40 50% 62%));
+  --bg-button-secondary: hsl(270 7% 14% / 0.8);
+  --bg-button-ghost: transparent;
+  --bg-button-ghost-hover: hsl(270 7% 14% / 0.6);
+  
+  /* ============================================
+     BACKGROUNDS - Progress Bar (exact from spec)
+     ============================================ */
+  
+  --bg-progress-track: hsl(270 7% 16%);        /* bg.muted */
+  --bg-progress-fill: hsl(45 55% 70%);         /* accent.primary */
+  --height-progress-bar: 8px;
+  
+  /* ============================================
+     BACKGROUNDS - Metric Card (exact from spec)
+     ============================================ */
+  
+  --bg-metric-card: hsl(270 10% 8% / 0.8);
+  
+  /* ============================================
+     BACKGROUNDS - Journey Card (exact from spec)
+     ============================================ */
+  
+  --bg-journey-card: linear-gradient(165deg, hsl(270 7% 14% / 0.7), hsl(270 10% 8% / 0.8));
+  --bg-journey-card-overlay-opacity: 0.15;     /* Gradient overlay at 15% */
+  --bg-journey-card-overlay-opacity-hover: 0.3; /* Gradient overlay at 30% on hover */
+  
+  /* ============================================
+     TEXT COLORS - Buttons (exact from spec)
+     ============================================ */
+  
+  --color-button-primary-text: hsl(270 12% 8%);    /* dark on light */
+  --color-button-secondary-text: hsl(45 30% 95%);
+  --color-button-ghost-text: hsl(270 8% 60%);
+  
+  /* ============================================
+     PADDING - Buttons (exact from spec)
+     ============================================ */
+  
+  --padding-button-primary: 16px 32px;
+  --padding-button-secondary: 12px 24px;
+  --padding-button-ghost: 8px 16px;
+  
+  /* ============================================
+     PADDING - Cards (exact from spec)
+     ============================================ */
+  
+  --padding-card-glass: 24px;
+  --padding-card-hero: 48px;
+  --padding-metric-card: 20px;
+  --padding-journey-card: 24px;
+  
+  /* ============================================
+     TRANSFORMS - Hover (exact from spec)
+     ============================================ */
+  
+  --transform-button-primary-hover: translateY(-2px);
+  --transform-journey-card-hover: translateY(-3px);
+  
+  /* ============================================
+     TRANSITIONS (exact from spec)
+     ============================================ */
+  
+  --transition-default: 200ms;
+  --transition-card: 300ms;                    /* Cards: 300-400ms (using 300ms) */
+  --transition-card-long: 400ms;               /* Cards: 300-400ms (using 400ms) */
+  
+  /* ============================================
+     ANIMATIONS (exact from spec)
+     ============================================ */
+  
+  --animation-fade-in-up-duration: 500ms;
+  --animation-fade-in-up-easing: cubic-bezier(0.4, 0, 0.2, 1);
+  --animation-float-duration: 6s;
+  --animation-float-easing: ease-in-out;
+  --animation-pulse-glow-duration: 3s;
+  --animation-pulse-glow-easing: ease-in-out;
+  --animation-breathe-duration: 4s;
+  --animation-breathe-easing: ease-in-out;
 }
