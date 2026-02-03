@@ -195,7 +195,7 @@ export function Home({ currentUser, users, onCreateUser, onSelectUser }: HomePro
             </svg>
           </div>
 
-          {/* Heading - text-display (48px, 600, Space Grotesk) */}
+          {/* Heading - text-display (48px, 600, Inter) */}
           <h1 className="hero-title text-display">Ready to begin?</h1>
 
           {/* Description (Lovable copy) - text-body */}

@@ -2,6 +2,7 @@
 
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { storage, calculateSessionStats } from '../lib/storage';
+import { buildSessionRecord, saveSessionRecord, getLastJourneyId } from '../lib/session-storage';
 import type { User, Session, SessionStats, AppScreen } from '../types';
 
 export interface UseSessionReturn {
@@ -180,10 +181,33 @@ export function useSession(): UseSessionReturn {
       coherenceHistory,
     });
 
+    const stats = calculateSessionStats(session);
     setLastSession(session);
-    setLastSessionStats(calculateSessionStats(session));
+    setLastSessionStats(stats);
     setIsSessionActive(false);
     setScreen('summary');
+
+    // Auto-persist session to user profile (session history) so it is not lost
+    const journeyId = getLastJourneyId(currentUser.id);
+    const coherencePercent = duration > 0 ? (finalCoherenceTime / duration) * 100 : 0;
+    const record = buildSessionRecord({
+      id: session.id,
+      userId: currentUser.id,
+      journeyId,
+      startTime: session.startTime,
+      endTime: session.endTime,
+      durationMs: duration,
+      coherenceMs: finalCoherenceTime,
+      coherencePercent,
+      coherenceEntries: 0,
+      longestStreakMs: finalLongestStreak,
+      avgCoherence,
+      achievementScore: stats.achievementScore,
+      coherenceHistory,
+    });
+    Promise.resolve(saveSessionRecord(record)).catch((e) => {
+      console.warn('Failed to save session record', e);
+    });
 
     return session;
   }, [

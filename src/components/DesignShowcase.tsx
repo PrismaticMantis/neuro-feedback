@@ -36,10 +36,10 @@ const COLORS = {
 };
 
 const TYPOGRAPHY = [
-  { style: 'Display', size: '48px / 3rem', weight: 600, font: 'Space Grotesk' },
-  { style: 'Heading 1', size: '30px / 1.875rem', weight: 600, font: 'Space Grotesk' },
-  { style: 'Heading 2', size: '24px / 1.5rem', weight: 500, font: 'Space Grotesk' },
-  { style: 'Heading 3', size: '20px / 1.25rem', weight: 500, font: 'Space Grotesk' },
+  { style: 'Display', size: '48px / 3rem', weight: 600, font: 'Inter' },
+  { style: 'Heading 1', size: '30px / 1.875rem', weight: 600, font: 'Inter' },
+  { style: 'Heading 2', size: '24px / 1.5rem', weight: 500, font: 'Inter' },
+  { style: 'Heading 3', size: '20px / 1.25rem', weight: 500, font: 'Inter' },
   { style: 'Body Large', size: '18px / 1.125rem', weight: 400, font: 'Inter' },
   { style: 'Body', size: '16px / 1rem', weight: 400, font: 'Inter' },
   { style: 'Caption', size: '14px / 0.875rem', weight: 400, font: 'Inter' },
@@ -62,13 +62,13 @@ export function DesignShowcase() {
       background: 'hsl(270 12% 5%)', 
       color: '#f7f4ec',
       padding: '48px 32px',
-      fontFamily: 'Inter, sans-serif',
+      fontFamily: "'Inter', system-ui, -apple-system, BlinkMacSystemFont, sans-serif",
     }}>
       <div style={{ maxWidth: '1152px', margin: '0 auto' }}>
         <h1 style={{ 
           fontSize: '48px', 
           fontWeight: 600, 
-          fontFamily: 'Space Grotesk, sans-serif',
+          fontFamily: "'Inter', system-ui, -apple-system, BlinkMacSystemFont, sans-serif",
           marginBottom: '8px',
         }}>
           SoundBed Design Showcase
@@ -79,7 +79,7 @@ export function DesignShowcase() {
 
         {/* Color Tokens */}
         <section style={{ marginBottom: '64px' }}>
-          <h2 style={{ fontSize: '30px', fontWeight: 600, fontFamily: 'Space Grotesk', marginBottom: '32px' }}>
+          <h2 style={{ fontSize: '30px', fontWeight: 600, fontFamily: "'Inter', system-ui, -apple-system, BlinkMacSystemFont, sans-serif", marginBottom: '32px' }}>
             Color Tokens
           </h2>
           
@@ -88,7 +88,7 @@ export function DesignShowcase() {
               <h3 style={{ 
                 fontSize: '20px', 
                 fontWeight: 500, 
-                fontFamily: 'Space Grotesk',
+                fontFamily: "'Inter', system-ui, -apple-system, BlinkMacSystemFont, sans-serif",
                 textTransform: 'capitalize',
                 marginBottom: '20px',
                 color: '#dfc58b',
@@ -155,7 +155,7 @@ export function DesignShowcase() {
 
         {/* Typography */}
         <section style={{ marginBottom: '64px' }}>
-          <h2 style={{ fontSize: '30px', fontWeight: 600, fontFamily: 'Space Grotesk', marginBottom: '32px' }}>
+          <h2 style={{ fontSize: '30px', fontWeight: 600, fontFamily: "'Inter', system-ui, -apple-system, BlinkMacSystemFont, sans-serif", marginBottom: '32px' }}>
             Typography System
           </h2>
           <div style={{
@@ -170,7 +170,7 @@ export function DesignShowcase() {
                 <div style={{ 
                   fontSize: type.size.split(' / ')[0],
                   fontWeight: type.weight,
-                  fontFamily: type.font.includes('Space') ? 'Space Grotesk, sans-serif' : 'Inter, sans-serif',
+                  fontFamily: "'Inter', system-ui, -apple-system, BlinkMacSystemFont, sans-serif",
                   textTransform: type.style === 'Label' ? 'uppercase' : 'none',
                   letterSpacing: type.style === 'Label' ? '0.1em' : 'normal',
                   marginBottom: '8px',
@@ -187,13 +187,13 @@ export function DesignShowcase() {
 
         {/* Component Examples */}
         <section style={{ marginBottom: '64px' }}>
-          <h2 style={{ fontSize: '30px', fontWeight: 600, fontFamily: 'Space Grotesk', marginBottom: '32px' }}>
+          <h2 style={{ fontSize: '30px', fontWeight: 600, fontFamily: "'Inter', system-ui, -apple-system, BlinkMacSystemFont, sans-serif", marginBottom: '32px' }}>
             Component Examples
           </h2>
 
           {/* Buttons */}
           <div style={{ marginBottom: '40px' }}>
-            <h3 style={{ fontSize: '20px', fontWeight: 500, fontFamily: 'Space Grotesk', marginBottom: '20px', color: '#dfc58b' }}>
+            <h3 style={{ fontSize: '20px', fontWeight: 500, fontFamily: "'Inter', system-ui, -apple-system, BlinkMacSystemFont, sans-serif", marginBottom: '20px', color: '#dfc58b' }}>
               Buttons
             </h3>
             <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
@@ -251,7 +251,7 @@ export function DesignShowcase() {
 
           {/* Cards */}
           <div style={{ marginBottom: '40px' }}>
-            <h3 style={{ fontSize: '20px', fontWeight: 500, fontFamily: 'Space Grotesk', marginBottom: '20px', color: '#dfc58b' }}>
+            <h3 style={{ fontSize: '20px', fontWeight: 500, fontFamily: "'Inter', system-ui, -apple-system, BlinkMacSystemFont, sans-serif", marginBottom: '20px', color: '#dfc58b' }}>
               Cards
             </h3>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '24px' }}>
@@ -263,7 +263,7 @@ export function DesignShowcase() {
                 backdropFilter: 'blur(20px)',
                 boxShadow: '0 4px 20px hsl(270 20% 2% / 0.6)',
               }}>
-                <h4 style={{ fontSize: '20px', fontWeight: 500, fontFamily: 'Space Grotesk', marginBottom: '12px' }}>
+                <h4 style={{ fontSize: '20px', fontWeight: 500, fontFamily: "'Inter', system-ui, -apple-system, BlinkMacSystemFont, sans-serif", marginBottom: '12px' }}>
                   Glass Card
                 </h4>
                 <p style={{ fontSize: '16px', color: '#9e95a3', lineHeight: 1.6 }}>
@@ -278,7 +278,7 @@ export function DesignShowcase() {
                 backdropFilter: 'blur(30px)',
                 boxShadow: '0 8px 40px hsl(270 20% 2% / 0.7)',
               }}>
-                <h4 style={{ fontSize: '20px', fontWeight: 500, fontFamily: 'Space Grotesk', marginBottom: '12px' }}>
+                <h4 style={{ fontSize: '20px', fontWeight: 500, fontFamily: "'Inter', system-ui, -apple-system, BlinkMacSystemFont, sans-serif", marginBottom: '12px' }}>
                   Premium Card
                 </h4>
                 <p style={{ fontSize: '16px', color: '#9e95a3', lineHeight: 1.6 }}>
@@ -291,7 +291,7 @@ export function DesignShowcase() {
                 borderRadius: '12px',
                 padding: '20px',
               }}>
-                <h4 style={{ fontSize: '20px', fontWeight: 500, fontFamily: 'Space Grotesk', marginBottom: '12px' }}>
+                <h4 style={{ fontSize: '20px', fontWeight: 500, fontFamily: "'Inter', system-ui, -apple-system, BlinkMacSystemFont, sans-serif", marginBottom: '12px' }}>
                   Metric Card
                 </h4>
                 <div style={{ fontSize: '32px', fontWeight: 600, color: '#dfc58b', marginBottom: '4px' }}>
@@ -306,7 +306,7 @@ export function DesignShowcase() {
 
           {/* Journey Cards */}
           <div style={{ marginBottom: '40px' }}>
-            <h3 style={{ fontSize: '20px', fontWeight: 500, fontFamily: 'Space Grotesk', marginBottom: '20px', color: '#dfc58b' }}>
+            <h3 style={{ fontSize: '20px', fontWeight: 500, fontFamily: "'Inter', system-ui, -apple-system, BlinkMacSystemFont, sans-serif", marginBottom: '20px', color: '#dfc58b' }}>
               Journey Cards
             </h3>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '16px' }}>
@@ -343,7 +343,7 @@ export function DesignShowcase() {
 
           {/* Progress Bar */}
           <div style={{ marginBottom: '40px' }}>
-            <h3 style={{ fontSize: '20px', fontWeight: 500, fontFamily: 'Space Grotesk', marginBottom: '20px', color: '#dfc58b' }}>
+            <h3 style={{ fontSize: '20px', fontWeight: 500, fontFamily: "'Inter', system-ui, -apple-system, BlinkMacSystemFont, sans-serif", marginBottom: '20px', color: '#dfc58b' }}>
               Progress Bar
             </h3>
             <div style={{
@@ -369,7 +369,7 @@ export function DesignShowcase() {
 
         {/* Spacing Examples */}
         <section style={{ marginBottom: '64px' }}>
-          <h2 style={{ fontSize: '30px', fontWeight: 600, fontFamily: 'Space Grotesk', marginBottom: '32px' }}>
+          <h2 style={{ fontSize: '30px', fontWeight: 600, fontFamily: "'Inter', system-ui, -apple-system, BlinkMacSystemFont, sans-serif", marginBottom: '32px' }}>
             Spacing System (8px grid)
           </h2>
           <div style={{

@@ -37,17 +37,16 @@
 ## 2. Typography System
 
 ### Font Families
-- **Display/Headings:** Space Grotesk
-- **Body/UI:** Inter
+- **Primary (all UI):** Inter (Lovable UI targets)
 
 ### Type Scale
 
 | Style | Size | Weight | Line Height | Font |
 |-------|------|--------|-------------|------|
-| Display | 48px / 3rem | 600 | 1.1 | Space Grotesk |
-| Heading 1 | 30px / 1.875rem | 600 | 1.2 | Space Grotesk |
-| Heading 2 | 24px / 1.5rem | 500 | 1.25 | Space Grotesk |
-| Heading 3 | 20px / 1.25rem | 500 | 1.3 | Space Grotesk |
+| Display | 48px / 3rem | 600 | 1.1 | Inter |
+| Heading 1 | 30px / 1.875rem | 600 | 1.2 | Inter |
+| Heading 2 | 24px / 1.5rem | 500 | 1.25 | Inter |
+| Heading 3 | 20px / 1.25rem | 500 | 1.3 | Inter |
 | Body Large | 18px / 1.125rem | 400 | 1.6 | Inter |
 | Body | 16px / 1rem | 400 | 1.6 | Inter |
 | Caption | 14px / 0.875rem | 400 | 1.5 | Inter |

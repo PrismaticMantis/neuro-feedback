@@ -75,7 +75,7 @@
 }
 
 body {
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
   background: var(--bg-primary);
   color: var(--text-primary);
   line-height: 1.6; /* Body line height from spec */
@@ -85,7 +85,7 @@ body {
 
 /* Typography - docs/lovable-spec.md exact values */
 .text-display {
-  font-family: 'Space Grotesk', sans-serif;
+  font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
   font-size: 48px;
   font-weight: 600;
   letter-spacing: -0.025em;
@@ -94,7 +94,7 @@ body {
 }
 
 .text-heading-1 {
-  font-family: 'Space Grotesk', sans-serif;
+  font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
   font-size: 30px;
   font-weight: 600;
   letter-spacing: -0.025em;
@@ -103,7 +103,7 @@ body {
 }
 
 .text-heading-2 {
-  font-family: 'Space Grotesk', sans-serif;
+  font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
   font-size: 24px;
   font-weight: 500;
   letter-spacing: -0.025em;
@@ -112,7 +112,7 @@ body {
 }
 
 .text-heading-3 {
-  font-family: 'Space Grotesk', sans-serif;
+  font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
   font-size: 20px;
   font-weight: 500;
   letter-spacing: 0;
@@ -163,7 +163,7 @@ body {
 }
 
 h1, h2, h3, h4, h5, h6 {
-  font-family: 'Space Grotesk', sans-serif;
+  font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
   color: var(--text-primary);
 }
 
@@ -230,7 +230,7 @@ h3 {
 .screen-header h1 {
   font-size: 30px; /* Heading 1 from spec */
   font-weight: 600;
-  font-family: 'Space Grotesk', sans-serif;
+  font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
   color: var(--text-primary);
   line-height: 1.2;
 }
@@ -488,7 +488,7 @@ h3 {
 .setup-section h2 {
   font-size: 20px; /* Heading 3 */
   font-weight: 500;
-  font-family: 'Space Grotesk', sans-serif;
+  font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
   line-height: 1.3;
   margin-bottom: 16px; /* Inner element gap */
   color: var(--text-primary);
@@ -758,7 +758,7 @@ h3 {
 
 /* muse-logo - docs/lovable-spec.md Active Session */
 .muse-logo-lovable {
-  font-family: 'Space Grotesk', sans-serif;
+  font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
   font-size: 24px;
   font-weight: 300;
   letter-spacing: 0.05em;
@@ -1242,7 +1242,7 @@ h3 {
 
 /* Heading 2 per docs/lovable-spec.md */
 .summary-journey-name {
-  font-family: 'Space Grotesk', sans-serif;
+  font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
   font-size: 24px; /* 1.5rem */
   font-weight: 500; /* Heading 2 spec */
   line-height: 1.25;
@@ -1290,7 +1290,7 @@ h3 {
 
 /* coherence-value - docs/lovable-spec.md: font-size 48px */
 .coherence-percentage {
-  font-family: 'Space Grotesk', sans-serif;
+  font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
   font-size: 48px;
   font-weight: 600;
   line-height: 1.1;
@@ -1328,7 +1328,7 @@ h3 {
 
 /* Heading 3 per docs/lovable-spec.md */
 .summary-section-title {
-  font-family: 'Space Grotesk', sans-serif;
+  font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
   font-size: 20px; /* 1.25rem */
   font-weight: 500; /* Heading 3 spec */
   line-height: 1.3;
@@ -1375,7 +1375,7 @@ h3 {
 
 /* metric-value - docs/lovable-spec.md: font-size 30px */
 .summary-metric-value {
-  font-family: 'Space Grotesk', sans-serif;
+  font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
   font-size: 30px;
   font-weight: 600;
   line-height: 1.2;
@@ -1484,7 +1484,7 @@ h3 {
 }
 
 .summary-body-rhythm-value {
-  font-family: 'Space Grotesk', sans-serif;
+  font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
   font-size: 20px;
   font-weight: 600;
   line-height: 1.2;
@@ -1881,7 +1881,7 @@ h3 {
 }
 
 .journey-card-title {
-  font-family: 'Space Grotesk', sans-serif;
+  font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
   font-size: 18px;
   font-weight: 600;
   color: var(--bg-primary);
@@ -1936,7 +1936,7 @@ h3 {
 }
 
 .session-timer-elapsed {
-  font-family: 'Space Grotesk', sans-serif;
+  font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
   font-size: 48px;
   font-weight: 600;
   line-height: 1;
@@ -1967,7 +1967,7 @@ h3 {
 }
 
 .session-timer-remaining-value {
-  font-family: 'Space Grotesk', sans-serif;
+  font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
   font-size: 20px;
   font-weight: 600;
   color: var(--accent-secondary);
@@ -2846,7 +2846,7 @@ h3 {
   font-size: 30px;
   font-weight: 600;
   color: var(--text-primary);
-  font-family: 'Space Grotesk', sans-serif;
+  font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
   margin: 0;
   line-height: 1.2;
 }
@@ -2892,7 +2892,7 @@ h3 {
 .hero-title {
   font-size: 48px; /* Display from spec */
   font-weight: 600;
-  font-family: 'Space Grotesk', sans-serif;
+  font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
   color: var(--text-primary);
   margin: 0 0 8px 0;
   line-height: 1.1;
@@ -2951,7 +2951,7 @@ h3 {
 .create-user-card h2 {
   font-size: 24px; /* Heading 2 */
   font-weight: 500;
-  font-family: 'Space Grotesk', sans-serif;
+  font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
   color: var(--text-primary);
   margin: 0 0 8px 0;
 }
@@ -3060,7 +3060,7 @@ h3 {
 }
 
 .journey-select-title {
-  font-family: 'Space Grotesk', sans-serif;
+  font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
   font-size: 30px;
   font-weight: 600;
   line-height: 1.2;
@@ -3159,7 +3159,7 @@ h3 {
 }
 
 .journey-name {
-  font-family: 'Space Grotesk', sans-serif;
+  font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
   font-size: 20px;
   font-weight: 500;
   line-height: 1.3;
@@ -3225,7 +3225,7 @@ h3 {
 }
 
 .about-journeys-card h3 {
-  font-family: 'Space Grotesk', sans-serif;
+  font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
   font-size: 20px;
   font-weight: 500;
   color: var(--text-primary);
@@ -3327,7 +3327,7 @@ h3 {
   display: block;
   font-size: 48px; /* Display size */
   font-weight: 600;
-  font-family: 'Space Grotesk', sans-serif;
+  font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
   color: var(--accent-primary);
   line-height: 1.1;
 }
@@ -3476,7 +3476,7 @@ h3 {
 }
 
 .profile-header h1 {
-  font-family: 'Space Grotesk', sans-serif;
+  font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
   font-size: 30px;
   font-weight: 600;
   color: var(--text-primary);
@@ -3520,7 +3520,7 @@ h3 {
 }
 
 .profile-user-name {
-  font-family: 'Space Grotesk', sans-serif;
+  font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
   font-size: 20px;
   font-weight: 500;
   color: var(--text-primary);
@@ -3566,7 +3566,7 @@ h3 {
 }
 
 .profile-summary-value {
-  font-family: 'Space Grotesk', sans-serif;
+  font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
   font-size: 20px;
   font-weight: 500;
   color: var(--text-primary);
@@ -3575,7 +3575,7 @@ h3 {
 }
 
 .profile-sessions-title {
-  font-family: 'Space Grotesk', sans-serif;
+  font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
   font-size: 20px;
   font-weight: 500;
   color: var(--text-primary);
@@ -3682,7 +3682,7 @@ h3 {
 }
 
 .setup-header-title {
-  font-family: 'Space Grotesk', sans-serif;
+  font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
   font-size: 30px;
   font-weight: 600;
   color: var(--text-primary);

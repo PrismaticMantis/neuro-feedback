@@ -6,6 +6,7 @@ import { useNavigate, Link } from 'react-router-dom';
 import type { Session, SessionStats, User } from '../types';
 import { getJourneys, getLastJourneyId } from '../lib/session-storage';
 import { formatTime } from '../lib/storage';
+import { generateSummaryPdfBlob } from '../lib/summary-pdf';
 
 interface SessionSummaryProps {
   session: Session;
@@ -77,15 +78,42 @@ export function SessionSummary({
     }
   }, [onSaveSession]);
 
+  /** Generate PDF and return blob for share/email */
+  const getPdfBlob = useCallback(async (): Promise<Blob> => {
+    return generateSummaryPdfBlob({
+      session,
+      stats,
+      user,
+      journeyName,
+      peakCoherence,
+      stability,
+      avgHeartRate: null,
+      avgHRV: null,
+    });
+  }, [session, stats, user, journeyName, peakCoherence, stability]);
+
   const handleShare = useCallback(async () => {
     setIsSharing(true);
-    const text = `Session Report – ${user.name}\n${new Date(session.startTime).toLocaleString()}\nDuration: ${formatTime(stats.totalLength)} min\nTime in Coherence: ${Math.round(stats.coherencePercent)}%\nPeak Coherence: ${Math.round(peakCoherence * 100)}%\nStability: ${stability}`;
-
     try {
-      if (navigator.share) {
-        await navigator.share({ title: 'Session Report', text });
+      const pdfBlob = await getPdfBlob();
+      const file = new File(
+        [pdfBlob],
+        `SoundBed-Session-${new Date(session.startTime).toISOString().slice(0, 10)}.pdf`,
+        { type: 'application/pdf' }
+      );
+      const text = `Session Report – ${user.name}\n${new Date(session.startTime).toLocaleString()}\nDuration: ${formatTime(stats.totalLength)} min\nCoherence: ${Math.round(stats.coherencePercent)}%\nPeak: ${Math.round(peakCoherence * 100)}%\nStability: ${stability}`;
+      if (navigator.share && navigator.canShare?.({ files: [file] })) {
+        await navigator.share({ title: 'SoundBed Session Summary', text, files: [file] });
+      } else if (navigator.share) {
+        await navigator.share({ title: 'SoundBed Session Summary', text });
       } else {
         await navigator.clipboard.writeText(text);
+        const url = URL.createObjectURL(pdfBlob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = file.name;
+        a.click();
+        URL.revokeObjectURL(url);
       }
     } catch (e) {
       if ((e as Error)?.name !== 'AbortError') {
@@ -94,7 +122,35 @@ export function SessionSummary({
     } finally {
       setIsSharing(false);
     }
-  }, [session, stats, user, peakCoherence, stability]);
+  }, [session, stats, user, peakCoherence, stability, getPdfBlob]);
+
+  /** Email: exact SoundBed copy + open mailto; trigger PDF download so user can attach */
+  const handleEmail = useCallback(async () => {
+    setIsSharing(true);
+    try {
+      const pdfBlob = await getPdfBlob();
+      const fileName = `SoundBed-Session-${new Date(session.startTime).toISOString().slice(0, 10)}.pdf`;
+      const url = URL.createObjectURL(pdfBlob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
+      const firstName = user.name.trim().split(/\s+/)[0] || user.name;
+      const subject = encodeURIComponent('Your Nervous System Just Learned Something');
+      const body = encodeURIComponent(
+        `Hi ${firstName}, this is a snapshot of your most recent SoundBed session. Take a moment to feel into it. Your body remembers. Small shifts compound. Keep training.\n\n(Attach the downloaded PDF: ${fileName})`
+      );
+      window.location.href = `mailto:?subject=${subject}&body=${body}`;
+    } catch (e) {
+      console.error('Email/PDF failed:', e);
+    } finally {
+      setIsSharing(false);
+    }
+  }, [session, user, getPdfBlob]);
 
   // Draw timeline graph with gradient and axis labels
   const drawTimelineGraph = (canvas: HTMLCanvasElement, history: number[]) => {
@@ -351,6 +407,18 @@ export function SessionSummary({
               <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
             </svg>
             <span>Share</span>
+          </button>
+          <button
+            className="summary-action-btn"
+            onClick={handleEmail}
+            disabled={isSharing}
+            title="Email summary (opens mail app; PDF downloads for attachment)"
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/>
+              <polyline points="22,6 12,13 2,6"/>
+            </svg>
+            <span>Email</span>
           </button>
         </div>
       </header>
