@@ -92,6 +92,7 @@ export function JourneySelect({ currentUser }: JourneySelectProps) {
         padding: `0 var(--space-page-x) 80px`,
         maxWidth: 'var(--container-max-width)',
         margin: '0 auto',
+        outline: '4px solid red',
       }}
     >
       <header 
