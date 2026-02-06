@@ -16,8 +16,37 @@ export const ENABLE_PPG_MODULATION = true;
 // To disable: set DEBUG_PPG = false
 export const DEBUG_PPG = false;
 
+// Debug flag for connection health logging
+// Set to true to enable detailed connection health diagnostics
+// To disable: set DEBUG_CONNECTION_HEALTH = false
+export const DEBUG_CONNECTION_HEALTH = true;
+
 type ConnectionMode = 'bluetooth' | 'osc' | null;
 type BrainState = 'disconnected' | 'deep' | 'meditative' | 'relaxed' | 'focused' | 'neutral';
+
+/**
+ * Connection Health State
+ * 
+ * CRITICAL: Separates BLE transport state from data health to prevent false disconnections.
+ * 
+ * States:
+ * - 'healthy': BLE connected AND receiving data at expected cadence
+ * - 'stalled': BLE connected but data stream temporarily stalled (brief pause, <10s)
+ * - 'reconnecting': BLE connected but data stalled for longer period, attempting recovery (10-30s)
+ * - 'disconnected': GATT disconnect event fired OR recovery failed after 30s
+ * 
+ * Thresholds:
+ * - DATA_STALL_MS (5000): After 5s of no data, enter 'stalled' state
+ * - RECONNECT_ATTEMPT_MS (10000): After 10s, start recovery attempts ('reconnecting')
+ * - DISCONNECT_CONFIRM_MS (30000): After 30s of failed recovery, declare 'disconnected'
+ * 
+ * Test Plan (add to regression tests):
+ * - iPhone Safari/Bluefy/Chrome iOS: Test with brief stalls, screen lock/unlock
+ * - iPad Safari: Same tests, plus split screen mode
+ * - Background tab: Tab should maintain connection, resume data on focus
+ * - Walking/moving: Brief stalls from movement should NOT trigger disconnect
+ */
+export type ConnectionHealthState = 'healthy' | 'stalled' | 'reconnecting' | 'disconnected';
 
 export interface MuseEventCallbacks {
   onConnect?: () => void;
@@ -82,10 +111,26 @@ export class MuseHandler {
   private _connectionMode: ConnectionMode = null;
   private _deviceName: string | null = null;
   
-  // Disconnect debouncing (prevent false positives)
+  // BLE transport state (separate from data health)
+  // This is true as long as GATT connection is established, regardless of data flow
+  private _bleTransportConnected = false;
+  
+  // Connection health tracking (prevents false disconnections)
+  // CRITICAL: Do NOT equate "no packets for X ms" with "device disconnected" immediately
+  private _healthState: ConnectionHealthState = 'disconnected';
   private _signalPausedSince: number | null = null; // Timestamp when signal pause started
-  private _disconnectDebounceMs = 4000; // Require 4 seconds of no data before marking disconnected
   private _lastDisconnectReason: string | null = null; // Debug: why disconnect was triggered
+  private _reconnectAttempts = 0;
+  private _lastReconnectAttempt = 0;
+  private _lastHealthLog = 0;
+  
+  // Connection health thresholds (all in milliseconds)
+  // These are tuned to prevent false positives from brief stalls while still detecting real disconnects
+  private static readonly DATA_STALL_MS = 5000;        // 5s: Enter 'stalled' state (data pause, not disconnect)
+  private static readonly RECONNECT_ATTEMPT_MS = 10000; // 10s: Start recovery attempts ('reconnecting')
+  private static readonly DISCONNECT_CONFIRM_MS = 30000; // 30s: Declare 'disconnected' (confirmed lost)
+  private static readonly RECONNECT_INTERVAL_MS = 3000;  // 3s: Time between reconnect attempts
+  private static readonly MAX_RECONNECT_ATTEMPTS = 5;    // Max attempts before giving up
   
   // Electrode quality (horseshoe indicator): [TP9, AF7, AF8, TP10]
   // Values: 1 = good, 2 = medium, 3 = poor, 4 = off
@@ -229,18 +274,33 @@ export class MuseHandler {
       }
 
       this._connected = true;
+      this._bleTransportConnected = true; // BLE transport is now connected
+      this._healthState = 'healthy';
       this._connectionMode = 'bluetooth';
       this._touching = true;
       this._connectionQuality = 1;
       this.isInitialized = true;
       this._lastUpdate = Date.now();
+      this._signalPausedSince = null;
+      this._reconnectAttempts = 0;
+      this._lastDisconnectReason = null;
+
+      if (DEBUG_CONNECTION_HEALTH) {
+        console.log('[Muse] 🟢 Connection established', {
+          deviceName: this._deviceName,
+          healthState: this._healthState,
+          bleTransportConnected: this._bleTransportConnected,
+        });
+      }
 
       this.callbacks.onConnect?.();
 
-      // Handle disconnection
+      // Handle disconnection (GATT disconnect event - this is the authoritative disconnect signal)
       this.connectionStatusSubscription = this.museClient.connectionStatus.subscribe(
         (status: boolean) => {
           if (!status) {
+            // GATT disconnect event fired - this is a real disconnect
+            this._bleTransportConnected = false;
             this.handleBluetoothDisconnect();
           }
         }
@@ -421,20 +481,25 @@ export class MuseHandler {
 
   /**
    * Handle Bluetooth disconnection (transport-level, from connectionStatus subscription)
+   * This is called when the GATT disconnect event fires - this is a REAL disconnect.
    */
   private handleBluetoothDisconnect(): void {
     const now = Date.now();
     const timeSinceLastUpdate = now - this._lastUpdate;
     
-    console.warn('[Muse] 🔴 Bluetooth transport disconnected', {
+    console.warn('[Muse] 🔴 GATT disconnect event - Bluetooth transport disconnected', {
       timeSinceLastUpdate,
       batteryLevel: this._batteryLevel,
       electrodeQuality: this._electrodeQuality,
       connectionQuality: this._connectionQuality,
-      lastDisconnectReason: this._lastDisconnectReason || 'Transport-level disconnect',
+      previousHealthState: this._healthState,
+      reconnectAttempts: this._reconnectAttempts,
+      lastDisconnectReason: this._lastDisconnectReason || 'GATT disconnect event',
     });
     
-    this._lastDisconnectReason = 'Bluetooth transport disconnected';
+    this._lastDisconnectReason = 'GATT disconnect event - Bluetooth transport disconnected';
+    this._healthState = 'disconnected';
+    this._bleTransportConnected = false;
 
     this.eegSubscription?.unsubscribe();
     this.telemetrySubscription?.unsubscribe();
@@ -470,8 +535,158 @@ export class MuseHandler {
       this.ppgLastPeakTime = 0;
     }
     this._signalPausedSince = null;
+    this._reconnectAttempts = 0;
 
     this.callbacks.onDisconnect?.();
+  }
+
+  /**
+   * Attempt to restart EEG notifications (first recovery step).
+   * Called when data stalls but BLE transport is still connected.
+   */
+  private async attemptNotificationRestart(): Promise<boolean> {
+    if (!this.museClient || !this._bleTransportConnected) {
+      if (DEBUG_CONNECTION_HEALTH) {
+        console.log('[Muse] ⚠️ Cannot restart notifications - no client or BLE disconnected');
+      }
+      return false;
+    }
+
+    this._reconnectAttempts++;
+    this._lastReconnectAttempt = Date.now();
+    
+    if (DEBUG_CONNECTION_HEALTH) {
+      console.log(`[Muse] 🔄 Attempting notification restart (attempt ${this._reconnectAttempts}/${MuseHandler.MAX_RECONNECT_ATTEMPTS})`);
+    }
+
+    try {
+      // Try to restart EEG subscription
+      if (this.eegSubscription) {
+        this.eegSubscription.unsubscribe();
+        this.eegSubscription = null;
+      }
+      
+      // Re-subscribe to EEG readings
+      this.eegSubscription = this.museClient.eegReadings.subscribe(
+        (reading: { electrode: number; samples: number[]; timestamp: number }) => {
+          this.handleBluetoothEEG(reading);
+        }
+      );
+      
+      if (DEBUG_CONNECTION_HEALTH) {
+        console.log('[Muse] ✅ EEG subscription restarted successfully');
+      }
+      
+      return true;
+    } catch (error) {
+      console.warn('[Muse] ❌ Failed to restart notifications:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Update connection health state based on data flow.
+   * Called periodically to check health and trigger recovery if needed.
+   * 
+   * CRITICAL: This is the core logic that prevents false disconnections.
+   * Only declare 'disconnected' if:
+   * 1. GATT disconnect event fired, OR
+   * 2. Recovery attempts failed for DISCONNECT_CONFIRM_MS (30s)
+   */
+  updateConnectionHealth(): ConnectionHealthState {
+    const now = Date.now();
+    const timeSinceLastUpdate = now - this._lastUpdate;
+    
+    // If not connected at all, return disconnected
+    if (!this._bleTransportConnected) {
+      this._healthState = 'disconnected';
+      return this._healthState;
+    }
+    
+    // If receiving data, we're healthy
+    if (timeSinceLastUpdate < MuseHandler.DATA_STALL_MS) {
+      // Data is flowing - healthy
+      if (this._healthState !== 'healthy') {
+        if (DEBUG_CONNECTION_HEALTH) {
+          console.log('[Muse] 🟢 Data flow resumed - connection healthy', {
+            timeSinceLastUpdate,
+            previousState: this._healthState,
+            reconnectAttempts: this._reconnectAttempts,
+          });
+        }
+        this._reconnectAttempts = 0;
+        this._signalPausedSince = null;
+      }
+      this._healthState = 'healthy';
+      return this._healthState;
+    }
+    
+    // Track when signal pause started
+    if (this._signalPausedSince === null) {
+      this._signalPausedSince = now - timeSinceLastUpdate;
+    }
+    
+    const pauseDuration = now - this._signalPausedSince;
+    
+    // Log health state periodically (throttled)
+    if (DEBUG_CONNECTION_HEALTH && now - this._lastHealthLog > 2000) {
+      this._lastHealthLog = now;
+      console.log('[Muse] 📊 Connection health check', {
+        healthState: this._healthState,
+        timeSinceLastUpdate,
+        pauseDuration,
+        bleTransportConnected: this._bleTransportConnected,
+        reconnectAttempts: this._reconnectAttempts,
+        thresholds: {
+          stall: MuseHandler.DATA_STALL_MS,
+          reconnect: MuseHandler.RECONNECT_ATTEMPT_MS,
+          disconnect: MuseHandler.DISCONNECT_CONFIRM_MS,
+        },
+      });
+    }
+    
+    // Determine health state based on pause duration
+    if (pauseDuration >= MuseHandler.DISCONNECT_CONFIRM_MS) {
+      // 30+ seconds of no data with BLE still "connected" - declare disconnected
+      // This could indicate a zombie connection that didn't fire GATT disconnect
+      if (this._healthState !== 'disconnected') {
+        this._lastDisconnectReason = `Data stall exceeded ${MuseHandler.DISCONNECT_CONFIRM_MS}ms with ${this._reconnectAttempts} failed recovery attempts`;
+        console.warn('[Muse] 🔴 Connection declared disconnected (prolonged data stall)', {
+          pauseDuration,
+          reconnectAttempts: this._reconnectAttempts,
+          reason: this._lastDisconnectReason,
+        });
+        // Note: We don't call handleBluetoothDisconnect() here because BLE might still be connected
+        // The UI should show "Disconnected" but we keep trying until GATT actually disconnects
+      }
+      this._healthState = 'disconnected';
+    } else if (pauseDuration >= MuseHandler.RECONNECT_ATTEMPT_MS) {
+      // 10-30 seconds - actively trying to recover
+      this._healthState = 'reconnecting';
+      
+      // Attempt recovery if we haven't recently and haven't exceeded max attempts
+      const timeSinceLastAttempt = now - this._lastReconnectAttempt;
+      if (timeSinceLastAttempt >= MuseHandler.RECONNECT_INTERVAL_MS && 
+          this._reconnectAttempts < MuseHandler.MAX_RECONNECT_ATTEMPTS) {
+        // Fire and forget - don't await
+        this.attemptNotificationRestart().catch(err => {
+          console.warn('[Muse] Recovery attempt failed:', err);
+        });
+      }
+    } else if (pauseDuration >= MuseHandler.DATA_STALL_MS) {
+      // 5-10 seconds - data stalled but not yet trying recovery
+      if (this._healthState !== 'stalled') {
+        if (DEBUG_CONNECTION_HEALTH) {
+          console.log('[Muse] ⏸️ Data stall detected (waiting before recovery)', {
+            pauseDuration,
+            threshold: MuseHandler.RECONNECT_ATTEMPT_MS,
+          });
+        }
+      }
+      this._healthState = 'stalled';
+    }
+    
+    return this._healthState;
   }
 
   /**
@@ -876,6 +1091,8 @@ export class MuseHandler {
     }
 
     this._connected = false;
+    this._bleTransportConnected = false;
+    this._healthState = 'disconnected';
     this._connectionMode = null;
     this._deviceName = null;
     this.isInitialized = false;
@@ -886,6 +1103,8 @@ export class MuseHandler {
     this._batteryLevel = -1;
     this._signalPausedSince = null;
     this._lastDisconnectReason = null;
+    this._reconnectAttempts = 0;
+    this._lastReconnectAttempt = 0;
   }
 
   /**
@@ -909,51 +1128,26 @@ export class MuseHandler {
   }
 
   /**
-   * Check if still receiving data (with debouncing)
-   * Uses debouncing to prevent false disconnections from brief gaps
+   * Check if still receiving data.
+   * DEPRECATED: Use getHealthState() or updateConnectionHealth() instead.
+   * This method is kept for backward compatibility but now uses the health state system.
    */
   isReceivingData(): boolean {
-    const now = Date.now();
-    const timeSinceLastUpdate = now - this._lastUpdate;
-    
-    // If we're receiving data, reset pause tracking
-    if (timeSinceLastUpdate < 2000) {
-      if (this._signalPausedSince !== null) {
-        // Signal resumed - log if pause was significant
-        const pauseDuration = now - this._signalPausedSince;
-        if (pauseDuration > 1000) {
-          console.log(`[Muse] Signal resumed after ${pauseDuration}ms pause`);
-        }
-        this._signalPausedSince = null;
-      }
-      return true;
-    }
-    
-    // Signal appears paused - start or continue tracking
-    if (this._signalPausedSince === null) {
-      this._signalPausedSince = now;
-      console.log(`[Muse] Signal pause detected (last update ${timeSinceLastUpdate}ms ago)`);
-    }
-    
-    // Only mark as "not receiving data" if pause exceeds debounce threshold
-    const pauseDuration = now - this._signalPausedSince;
-    if (pauseDuration >= this._disconnectDebounceMs) {
-      // Sustained pause - mark as not receiving data
-      if (!this._lastDisconnectReason) {
-        this._lastDisconnectReason = `No data for ${pauseDuration}ms (threshold: ${this._disconnectDebounceMs}ms)`;
-        console.warn(`[Muse] ⚠️ Sustained signal pause: ${this._lastDisconnectReason}`, {
-          timeSinceLastUpdate,
-          pauseDuration,
-          batteryLevel: this._batteryLevel,
-          electrodeQuality: this._electrodeQuality,
-          connectionQuality: this._connectionQuality,
-        });
-      }
-      return false;
-    }
-    
-    // Still within debounce window - consider it as receiving data (signal paused but not disconnected)
-    return true;
+    // Update health state and return true if healthy or stalled (still "connected" from UI perspective)
+    const health = this.updateConnectionHealth();
+    return health === 'healthy' || health === 'stalled';
+  }
+  
+  /**
+   * Get the current connection health state.
+   * Use this to determine what to show in the UI:
+   * - 'healthy': Normal operation, show connected state
+   * - 'stalled': Brief pause, show connected but may want to show subtle indicator
+   * - 'reconnecting': Show "Reconnecting..." message, keep session running
+   * - 'disconnected': Show "Disconnected" message
+   */
+  getHealthState(): ConnectionHealthState {
+    return this.updateConnectionHealth();
   }
 
   /**
@@ -995,44 +1189,32 @@ export class MuseHandler {
 
   // Getters
   get connected(): boolean {
-    // Base connection state (transport-level)
-    if (!this._connected) {
-      // Reset pause tracking when not connected
-      this._signalPausedSince = null;
-      this._lastDisconnectReason = null;
-      return false;
-    }
+    // Use health state system for connection status
+    // This prevents false "disconnected" states from brief data stalls
+    const health = this.updateConnectionHealth();
     
-    // For Bluetooth, check if we're still receiving data (with debouncing)
-    // This prevents false disconnections from brief signal gaps
-    if (this._connectionMode === 'bluetooth') {
-      const isReceiving = this.isReceivingData();
-      
-      // If we're not receiving data but still within debounce window, 
-      // return true (signal paused, not disconnected)
-      if (!isReceiving && this._signalPausedSince !== null) {
-        const pauseDuration = Date.now() - this._signalPausedSince;
-        if (pauseDuration < this._disconnectDebounceMs) {
-          // Still in debounce window - consider connected but signal paused
-          return true;
-        }
-      }
-      
-      return isReceiving;
-    }
-    
-    // For OSC, trust the connection status more (OSC handles its own reconnection)
-    return this._connected;
+    // Consider connected if health is healthy, stalled, or reconnecting
+    // Only return false if health is 'disconnected'
+    // This ensures session continues through brief stalls and recovery attempts
+    return health !== 'disconnected';
   }
   
   /**
-   * Get connection state detail (for debugging)
+   * Get connection state detail (for debugging and UI)
+   * 
+   * IMPORTANT: UI should use healthState to determine what message to show:
+   * - 'healthy': Normal connected state
+   * - 'stalled': Show connected (brief pause, likely to recover)
+   * - 'reconnecting': Show "Reconnecting..." - keep session running!
+   * - 'disconnected': Show "Disconnected" - session may need to end
    */
   getConnectionStateDetail(): {
     connected: boolean;
-    signalPaused: boolean;
+    healthState: ConnectionHealthState;
+    bleTransportConnected: boolean;
     timeSinceLastUpdate: number;
     pauseDuration: number | null;
+    reconnectAttempts: number;
     lastDisconnectReason: string | null;
   } {
     const now = Date.now();
@@ -1041,11 +1223,28 @@ export class MuseHandler {
     
     return {
       connected: this.connected,
-      signalPaused: this._signalPausedSince !== null && (pauseDuration === null || pauseDuration < this._disconnectDebounceMs),
+      healthState: this._healthState,
+      bleTransportConnected: this._bleTransportConnected,
       timeSinceLastUpdate,
       pauseDuration,
+      reconnectAttempts: this._reconnectAttempts,
       lastDisconnectReason: this._lastDisconnectReason,
     };
+  }
+  
+  /**
+   * Get raw BLE transport connection state.
+   * This is true if GATT connection is established, regardless of data flow.
+   */
+  get bleTransportConnected(): boolean {
+    return this._bleTransportConnected;
+  }
+  
+  /**
+   * Get current health state (use this for UI display logic)
+   */
+  get healthState(): ConnectionHealthState {
+    return this._healthState;
   }
   get connectionMode(): ConnectionMode {
     return this._connectionMode;

@@ -1,4 +1,8 @@
 // UI reference: design/targets/5 - Session.png
+// Design tokens: docs/design-specification.md
+// - Card (Glass): background linear-gradient with blur, 12px border-radius
+// - Typography: Inter font family, various weights
+// - Colors: #D9C478 (accent gold), various HSL backgrounds
 
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { motion } from 'framer-motion';
@@ -8,7 +12,15 @@ import { DEBUG_SESSION_TELEMETRY } from '../lib/feature-flags';
 import { museHandler } from '../lib/muse-handler';
 import { getJourneys, getLastJourneyId } from '../lib/session-storage';
 import { useSession } from '../hooks/useSession';
-import type { ElectrodeStatus as ElectrodeStatusType, BrainwaveBands, BrainwaveBandsDb } from '../types';
+import type { ElectrodeStatus as ElectrodeStatusType, BrainwaveBands, BrainwaveBandsDb, ConnectionHealthState } from '../types';
+
+// Journey icon colors per journey type
+const JOURNEY_ICONS: Record<string, { iconBg: string; iconColor: string }> = {
+  calm: { iconBg: '#5B8DEF', iconColor: '#ffffff' },
+  deepRest: { iconBg: '#9B6BC8', iconColor: '#ffffff' },
+  creativeFlow: { iconBg: '#D9C478', iconColor: '#0c0a0e' },
+  nightWindDown: { iconBg: '#9B6BC8', iconColor: '#ffffff' },
+};
 
 interface ActiveSessionProps {
   // Session data
@@ -23,6 +35,7 @@ interface ActiveSessionProps {
   bands: BrainwaveBands;
   bandsDb: BrainwaveBandsDb;
   batteryLevel: number;
+  connectionHealthState?: ConnectionHealthState; // Connection health for UI display
 
   // Audio
   entrainmentEnabled: boolean;
@@ -42,6 +55,7 @@ export function ActiveSession({
   bands: _bands, // Keep for potential future use
   bandsDb,
   batteryLevel,
+  connectionHealthState = 'healthy', // Default to healthy for backward compat
   entrainmentEnabled,
   onEntrainmentToggle,
   onEndSession,
@@ -110,49 +124,116 @@ export function ActiveSession({
   const timeRemaining = Math.max(0, journeyDurationMs - duration);
   const timeRemainingFormatted = formatTime(timeRemaining);
 
+  // Get journey icon styling
+  const journeyIconStyle = JOURNEY_ICONS[journeyId] || JOURNEY_ICONS.creativeFlow;
+
   return (
     <motion.div
       className="screen active-session"
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
+      style={{
+        padding: '0 24px 24px',
+        maxWidth: '900px',
+        margin: '0 auto',
+        position: 'relative',
+      }}
     >
-      {/* Top Bar - Simplified */}
-      <header className="session-header-lovable">
-        <div className="session-header-left">
-          <span className="muse-logo-lovable">muse</span>
+      {/* Ambient Background Glow - Design Spec: "enhanced glow" for active session */}
+      <div className="ambient-glow ambient-glow--enhanced" />
+      
+      {/* Top Bar - Target 5: muse logo + battery left, headphone icon + status right */}
+      <header 
+        className="session-header-lovable"
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          padding: '16px 0 20px',
+        }}
+      >
+        <div 
+          className="session-header-left"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '12px',
+          }}
+        >
+          <span 
+            className="muse-logo-lovable"
+            style={{
+              fontFamily: 'var(--font-sans)',
+              fontSize: '18px',
+              fontWeight: 600,
+              color: 'var(--text-primary)',
+              letterSpacing: '-0.01em',
+            }}
+          >
+            muse
+          </span>
           {batteryLevel >= 0 && (
-            <span className={`battery-indicator-lovable ${batteryLevel <= 25 ? 'low' : ''}`}>
-              <svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16">
-                {batteryLevel > 75 ? (
-                  <path d="M15.67 4H14V2h-4v2H8.33C7.6 4 7 4.6 7 5.33v15.33C7 21.4 7.6 22 8.33 22h7.33c.74 0 1.34-.6 1.34-1.33V5.33C17 4.6 16.4 4 15.67 4z" />
-                ) : batteryLevel > 50 ? (
-                  <path d="M15.67 4H14V2h-4v2H8.33C7.6 4 7 4.6 7 5.33v15.33C7 21.4 7.6 22 8.33 22h7.33c.74 0 1.34-.6 1.34-1.33V5.33C17 4.6 16.4 4 15.67 4zM13 18H11V9h2v9z" />
-                ) : batteryLevel > 25 ? (
-                  <path d="M15.67 4H14V2h-4v2H8.33C7.6 4 7 4.6 7 5.33v15.33C7 21.4 7.6 22 8.33 22h7.33c.74 0 1.34-.6 1.34-1.33V5.33C17 4.6 16.4 4 15.67 4zM13 18H11V13h2v5z" />
-                ) : (
-                  <path d="M15.67 4H14V2h-4v2H8.33C7.6 4 7 4.6 7 5.33v15.33C7 21.4 7.6 22 8.33 22h7.33c.74 0 1.34-.6 1.34-1.33V5.33C17 4.6 16.4 4 15.67 4zM13 18H11V16h2v2z" />
-                )}
+            <span 
+              className={`battery-indicator-lovable ${batteryLevel <= 25 ? 'low' : ''}`}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '4px',
+                padding: '4px 8px',
+                background: 'hsl(270 10% 18% / 0.6)',
+                borderRadius: '12px',
+              }}
+            >
+              <svg viewBox="0 0 24 24" fill="currentColor" width="14" height="14" style={{ color: batteryLevel <= 25 ? '#ef4444' : '#22c55e' }}>
+                <rect x="6" y="7" width="12" height="10" rx="1" stroke="currentColor" fill="none" strokeWidth="1.5" />
+                <rect x="18" y="10" width="2" height="4" fill="currentColor" />
+                <rect x="7.5" y="8.5" width={`${Math.min(batteryLevel / 100 * 9, 9)}`} height="7" fill="currentColor" rx="0.5" />
               </svg>
-              <span className="battery-text-lovable">{batteryLevel}%</span>
+              <span style={{
+                fontFamily: 'var(--font-sans)',
+                fontSize: '12px',
+                fontWeight: 500,
+                color: 'var(--text-muted)',
+              }}>{batteryLevel}%</span>
             </span>
           )}
         </div>
-        <div className="session-header-right">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="18" height="18" className="header-icon">
+        <div 
+          className="session-header-right"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '10px',
+          }}
+        >
+          <div 
+            className={`status-dot-lovable ${museConnected && touching ? 'active' : 'warning'}`}
+            style={{
+              width: '8px',
+              height: '8px',
+              borderRadius: '50%',
+              background: museConnected && touching ? '#22c55e' : '#f59e0b',
+              boxShadow: museConnected && touching ? '0 0 8px #22c55e' : '0 0 8px #f59e0b',
+            }}
+          />
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="18" height="18" style={{ color: 'var(--text-muted)' }}>
             <path d="M3 18v-6a9 9 0 0 1 18 0v6"/>
             <path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3zM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z"/>
           </svg>
-          <div className={`status-dot-lovable ${museConnected && touching ? 'active' : 'warning'}`} />
         </div>
       </header>
 
       {/* Debug Overlay (when enabled) */}
       {DEBUG_SESSION_TELEMETRY && (
-        <div className="debug-overlay" style={{ position: 'fixed', top: 80, right: 20, zIndex: 1000, maxWidth: '300px' }}>
+        <div className="debug-overlay" style={{ position: 'fixed', top: 80, right: 20, zIndex: 1000, maxWidth: '320px' }}>
           <h3 style={{ color: 'var(--accent-primary)', marginBottom: 12, fontSize: '14px' }}>🔍 Session Debug</h3>
           <div style={{ fontFamily: 'monospace', fontSize: '11px', lineHeight: 1.6 }}>
+            <div style={{ fontWeight: 'bold', color: connectionHealthState === 'healthy' ? '#22c55e' : connectionHealthState === 'reconnecting' ? '#3b82f6' : connectionHealthState === 'stalled' ? '#facc15' : '#ef4444' }}>
+              healthState: {connectionHealthState}
+            </div>
             <div>museConnected: {String(museConnected)}</div>
+            <div>bleTransport: {String(museHandler.bleTransportConnected)}</div>
             <div>touching: {String(touching)}</div>
             <div>lastUpdate: {debugInfo.lastUpdate}ms ago</div>
             <div>raw horseshoe: [{museHandler.getElectrodeQuality().join(', ')}]</div>
@@ -167,95 +248,442 @@ export function ActiveSession({
       )}
 
       {/* Top Cards Row - Electrode Contact & Mental State */}
-      <div className="session-top-cards">
-        {/* Electrode Contact Card */}
-        <div className="session-card electrode-contact-card">
+      <div 
+        className="session-top-cards"
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(2, 1fr)',
+          gap: '16px',
+          marginBottom: '16px',
+        }}
+      >
+        {/* Electrode Contact Card - Target 5: Shows electrode status + band powers */}
+        <div 
+          className="session-card electrode-contact-card"
+          style={{
+            background: 'linear-gradient(135deg, hsl(270 10% 15% / 0.6), hsl(270 10% 12% / 0.4))',
+            border: '1px solid hsl(270 10% 25% / 0.3)',
+            borderRadius: '12px',
+            padding: '16px',
+            backdropFilter: 'blur(20px)',
+          }}
+        >
           <ElectrodeStatus status={electrodeStatus} compact />
           
           {/* Band Power / Greeks Row */}
-          <div className="session-greeks-row">
-            {(['delta', 'theta', 'alpha', 'beta', 'gamma'] as const).map((band, index) => {
+          <div 
+            className="session-greeks-row"
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              paddingTop: '12px',
+              marginTop: '12px',
+              borderTop: '1px solid hsl(270 10% 25% / 0.3)',
+            }}
+          >
+            {(['delta', 'theta', 'alpha', 'beta', 'gamma'] as const).map((band) => {
               const dbVal = bandsDb[band];
               const symbol = { delta: 'δ', theta: 'θ', alpha: 'α', beta: 'β', gamma: 'γ' }[band];
               
               return (
-                <div key={band} className="session-greek-item">
-                  <span className="session-greek-symbol">{symbol}</span>
-                  <span className="session-greek-value">{dbVal.toFixed(0)}</span>
-                  {index < 4 && <span className="session-greek-divider" />}
+                <div 
+                  key={band} 
+                  className="session-greek-item"
+                  style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    gap: '4px',
+                  }}
+                >
+                  <span 
+                    className="session-greek-symbol"
+                    style={{
+                      fontFamily: 'var(--font-sans)',
+                      fontSize: '14px',
+                      fontWeight: 400,
+                      color: 'var(--text-muted)',
+                    }}
+                  >{symbol}</span>
+                  <span 
+                    className="session-greek-value"
+                    style={{
+                      fontFamily: 'var(--font-sans)',
+                      fontSize: '14px',
+                      fontWeight: 500,
+                      color: 'var(--text-primary)',
+                    }}
+                  >{dbVal.toFixed(0)}</span>
                 </div>
               );
             })}
           </div>
         </div>
 
-        {/* Mental State Card */}
-        <div className="session-card mental-state-card">
-          <h3 className="session-card-title">MENTAL STATE</h3>
-          <div className="mental-state-list">
-            <div className={`mental-state-item ${coherenceZone === 'flow' ? 'active' : ''}`}>
-              <svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16">
-                <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z" />
+        {/* Mental State Card - Target 5: Coherence, Settling In, Active Mind tabs */}
+        <div 
+          className="session-card mental-state-card"
+          style={{
+            background: 'linear-gradient(135deg, hsl(270 10% 15% / 0.6), hsl(270 10% 12% / 0.4))',
+            border: '1px solid hsl(270 10% 25% / 0.3)',
+            borderRadius: '12px',
+            padding: '16px',
+            backdropFilter: 'blur(20px)',
+          }}
+        >
+          <h3 
+            className="session-card-title"
+            style={{
+              fontFamily: 'var(--font-sans)',
+              fontSize: '11px',
+              fontWeight: 500,
+              color: 'var(--text-muted)',
+              letterSpacing: '0.05em',
+              textTransform: 'uppercase',
+              margin: '0 0 12px',
+            }}
+          >MENTAL STATE</h3>
+          <div 
+            className="mental-state-list"
+            style={{
+              display: 'flex',
+              gap: '8px',
+            }}
+          >
+            {/* Coherence Button */}
+            <button 
+              className={`mental-state-item ${coherenceZone === 'flow' ? 'active' : ''}`}
+              style={{
+                flex: 1,
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                gap: '6px',
+                padding: '12px 8px',
+                background: coherenceZone === 'flow' 
+                  ? 'linear-gradient(135deg, hsl(45 55% 65% / 0.3), hsl(45 55% 55% / 0.2))'
+                  : 'transparent',
+                border: coherenceZone === 'flow' 
+                  ? '1px solid hsl(45 55% 65% / 0.4)'
+                  : '1px solid transparent',
+                borderRadius: '8px',
+                cursor: 'default',
+              }}
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="18" height="18" style={{ color: coherenceZone === 'flow' ? '#D9C478' : 'var(--text-muted)' }}>
+                <circle cx="12" cy="12" r="10" />
+                <path d="M12 6v6l4 2" />
               </svg>
-              <span>Coherence</span>
-            </div>
-            <div className={`mental-state-item ${coherenceZone === 'stabilizing' ? 'active' : ''}`}>
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="16" height="16">
-                <path d="M17.66 8L12 2.35 6.34 8C4.78 9.56 4 11.64 4 13.64s.78 4.11 2.34 5.67 3.61 2.35 5.66 2.35 4.1-.79 5.66-2.35S20 15.64 20 13.64 19.22 9.56 17.66 8zM6 14c.01-2 .62-3.27 1.76-4.4L12 5.27l4.24 4.38C17.38 10.77 17.99 12 18 14H6z" />
+              <span style={{
+                fontFamily: 'var(--font-sans)',
+                fontSize: '11px',
+                fontWeight: 500,
+                color: coherenceZone === 'flow' ? '#D9C478' : 'var(--text-muted)',
+              }}>Coherence</span>
+            </button>
+            
+            {/* Settling In Button */}
+            <button 
+              className={`mental-state-item ${coherenceZone === 'stabilizing' ? 'active' : ''}`}
+              style={{
+                flex: 1,
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                gap: '6px',
+                padding: '12px 8px',
+                background: coherenceZone === 'stabilizing' 
+                  ? 'linear-gradient(135deg, hsl(45 55% 65% / 0.3), hsl(45 55% 55% / 0.2))'
+                  : 'transparent',
+                border: coherenceZone === 'stabilizing' 
+                  ? '1px solid hsl(45 55% 65% / 0.4)'
+                  : '1px solid transparent',
+                borderRadius: '8px',
+                cursor: 'default',
+              }}
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="18" height="18" style={{ color: coherenceZone === 'stabilizing' ? '#D9C478' : 'var(--text-muted)' }}>
+                <path d="M12 2L2 7l10 5 10-5-10-5z" />
+                <path d="M2 17l10 5 10-5" />
+                <path d="M2 12l10 5 10-5" />
               </svg>
-              <span>Settling In</span>
-            </div>
-            <div className={`mental-state-item ${coherenceZone === 'noise' ? 'active' : ''}`}>
-              <svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16">
-                <path d="M7 2v11h3v9l7-12h-4l4-8z" />
+              <span style={{
+                fontFamily: 'var(--font-sans)',
+                fontSize: '11px',
+                fontWeight: 500,
+                color: coherenceZone === 'stabilizing' ? '#D9C478' : 'var(--text-muted)',
+              }}>Settling In</span>
+            </button>
+            
+            {/* Active Mind Button */}
+            <button 
+              className={`mental-state-item ${coherenceZone === 'noise' ? 'active' : ''}`}
+              style={{
+                flex: 1,
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                gap: '6px',
+                padding: '12px 8px',
+                background: coherenceZone === 'noise' 
+                  ? 'linear-gradient(135deg, hsl(45 55% 65% / 0.3), hsl(45 55% 55% / 0.2))'
+                  : 'transparent',
+                border: coherenceZone === 'noise' 
+                  ? '1px solid hsl(45 55% 65% / 0.4)'
+                  : '1px solid transparent',
+                borderRadius: '8px',
+                cursor: 'default',
+              }}
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="18" height="18" style={{ color: coherenceZone === 'noise' ? '#D9C478' : 'var(--text-muted)' }}>
+                <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />
               </svg>
-              <span>Active Mind</span>
-            </div>
+              <span style={{
+                fontFamily: 'var(--font-sans)',
+                fontSize: '11px',
+                fontWeight: 500,
+                color: coherenceZone === 'noise' ? '#D9C478' : 'var(--text-muted)',
+              }}>Active Mind</span>
+            </button>
           </div>
         </div>
       </div>
 
-      {/* Current Journey Card */}
-      <div className="session-journey-card">
-        <svg className="journey-card-icon" viewBox="0 0 24 24" fill="currentColor" width="24" height="24">
-          <path d="M12 2l2.5 7.5L22 12l-7.5 2.5L12 22l-2.5-7.5L2 12l7.5-2.5L12 2z" />
-        </svg>
-        <div className="journey-card-content">
-          <h4 className="journey-card-title">{journey.name}</h4>
-          <p className="journey-card-subtitle">{journey.description}</p>
+      {/* Current Journey Card - Target 5: Gold-tinted banner with journey info */}
+      <div 
+        className="session-journey-card"
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '14px',
+          padding: '16px 20px',
+          background: 'linear-gradient(135deg, hsl(45 55% 65% / 0.15), hsl(45 55% 55% / 0.08))',
+          border: '1px solid hsl(45 55% 65% / 0.25)',
+          borderRadius: '12px',
+          marginBottom: '20px',
+        }}
+      >
+        {/* Journey Icon Circle */}
+        <div
+          style={{
+            width: '44px',
+            height: '44px',
+            borderRadius: '50%',
+            background: journeyIconStyle.iconBg,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            flexShrink: 0,
+          }}
+        >
+          <svg viewBox="0 0 24 24" fill="currentColor" width="22" height="22" style={{ color: journeyIconStyle.iconColor }}>
+            <path d="M12 2l2.5 7.5L22 12l-7.5 2.5L12 22l-2.5-7.5L2 12l7.5-2.5L12 2z" />
+          </svg>
         </div>
-        <div className="journey-card-duration">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="16" height="16">
+        
+        <div className="journey-card-content" style={{ flex: 1 }}>
+          <h4 
+            className="journey-card-title"
+            style={{
+              fontFamily: 'var(--font-sans)',
+              fontSize: '16px',
+              fontWeight: 600,
+              color: 'var(--text-primary)',
+              margin: 0,
+              lineHeight: 1.3,
+            }}
+          >{journey.name}</h4>
+          <p 
+            className="journey-card-subtitle"
+            style={{
+              fontFamily: 'var(--font-sans)',
+              fontSize: '13px',
+              fontWeight: 400,
+              color: 'var(--text-muted)',
+              margin: '2px 0 0',
+              lineHeight: 1.4,
+            }}
+          >{journey.description}</p>
+        </div>
+        
+        <div 
+          className="journey-card-duration"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
+            color: 'var(--text-muted)',
+          }}
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="14" height="14">
             <circle cx="12" cy="12" r="10"/>
             <path d="M12 6v6l4 2"/>
           </svg>
-          <span>{journeyMinutes} min</span>
+          <span style={{
+            fontFamily: 'var(--font-sans)',
+            fontSize: '13px',
+            fontWeight: 500,
+          }}>{journeyMinutes} min</span>
         </div>
       </div>
 
-      {/* Session Timer - Central */}
-      <div className="session-timer-central">
-        <div className="session-timer-circle">
+      {/* Session Timer - Central - Target 5: Circular timer with progress ring */}
+      <div 
+        className="session-timer-central"
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          margin: '8px 0 20px',
+        }}
+      >
+        {/* Circular Timer with Progress Ring - with breathing glow effect */}
+        <motion.div 
+          className="session-timer-circle breathe-element"
+          style={{
+            position: 'relative',
+            width: '120px',
+            height: '120px',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+          animate={{
+            boxShadow: [
+              '0 0 20px hsl(270 15% 35% / 0.2)',
+              '0 0 35px hsl(270 15% 35% / 0.35)',
+              '0 0 20px hsl(270 15% 35% / 0.2)',
+            ],
+          }}
+          transition={{ duration: 4, repeat: Infinity, ease: 'easeInOut' }}
+        >
+          {/* SVG Progress Ring */}
+          <svg
+            style={{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              width: '100%',
+              height: '100%',
+              transform: 'rotate(-90deg)',
+            }}
+            viewBox="0 0 120 120"
+          >
+            {/* Background circle */}
+            <circle
+              cx="60"
+              cy="60"
+              r="54"
+              fill="none"
+              stroke="hsl(270 10% 20%)"
+              strokeWidth="4"
+            />
+            {/* Progress circle with glow filter */}
+            <defs>
+              <filter id="progress-glow" x="-50%" y="-50%" width="200%" height="200%">
+                <feGaussianBlur stdDeviation="2" result="blur" />
+                <feMerge>
+                  <feMergeNode in="blur" />
+                  <feMergeNode in="SourceGraphic" />
+                </feMerge>
+              </filter>
+            </defs>
+            <circle
+              cx="60"
+              cy="60"
+              r="54"
+              fill="none"
+              stroke="hsl(270 15% 45%)"
+              strokeWidth="4"
+              strokeLinecap="round"
+              strokeDasharray={`${(duration / journeyDurationMs) * 339.3} 339.3`}
+              filter="url(#progress-glow)"
+            />
+          </svg>
+          
+          {/* Timer Text */}
           <motion.span 
             className="session-timer-elapsed"
             key={formatTime(duration)}
-            initial={{ scale: 1.05 }}
+            initial={{ scale: 1.02 }}
             animate={{ scale: 1 }}
-            transition={{ duration: 0.3 }}
+            transition={{ duration: 0.2 }}
+            style={{
+              fontFamily: 'var(--font-sans)',
+              fontSize: '28px',
+              fontWeight: 600,
+              color: 'var(--text-primary)',
+              letterSpacing: '0.02em',
+              zIndex: 1,
+            }}
           >
             {formatTime(duration)}
           </motion.span>
-          <span className="session-timer-label">elapsed</span>
-        </div>
-        <div className="session-timer-remaining">
-          <span className="session-timer-remaining-label">Time Remaining</span>
-          <span className="session-timer-remaining-value">{timeRemainingFormatted}</span>
+          <span 
+            className="session-timer-label"
+            style={{
+              fontFamily: 'var(--font-sans)',
+              fontSize: '12px',
+              fontWeight: 400,
+              color: 'var(--text-muted)',
+              zIndex: 1,
+              marginTop: '2px',
+            }}
+          >elapsed</span>
+        </motion.div>
+        
+        {/* Time Remaining Text */}
+        <div 
+          className="session-timer-remaining"
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            marginTop: '12px',
+          }}
+        >
+          <span 
+            className="session-timer-remaining-label"
+            style={{
+              fontFamily: 'var(--font-sans)',
+              fontSize: '12px',
+              fontWeight: 400,
+              color: 'var(--text-muted)',
+            }}
+          >Time Remaining</span>
+          <span 
+            className="session-timer-remaining-value"
+            style={{
+              fontFamily: 'var(--font-sans)',
+              fontSize: '18px',
+              fontWeight: 600,
+              color: '#D9C478',
+              marginTop: '2px',
+            }}
+          >{timeRemainingFormatted}</span>
         </div>
       </div>
 
-      {/* Main Content - Coherence Graph Card */}
-      <main className="session-main-lovable">
-        <div className="session-chart-card">
+      {/* Main Content - Coherence Graph Card - Target 5: Large glass card with graph */}
+      <main 
+        className="session-main-lovable"
+        style={{
+          marginBottom: '24px',
+        }}
+      >
+        <div 
+          className="session-chart-card"
+          style={{
+            background: 'linear-gradient(135deg, hsl(270 10% 15% / 0.6), hsl(270 10% 12% / 0.4))',
+            border: '1px solid hsl(270 10% 25% / 0.3)',
+            borderRadius: '12px',
+            padding: '20px',
+            backdropFilter: 'blur(20px)',
+            minHeight: '300px',
+          }}
+        >
           <CoherenceGraph
             coherenceHistory={coherenceHistory}
             coherenceZone={coherenceZone}
@@ -263,28 +691,146 @@ export function ActiveSession({
           />
         </div>
 
-        {/* Connection Warning */}
-        {(!museConnected || !touching) && (
-          <div className="connection-warning">
-            <svg viewBox="0 0 24 24" fill="currentColor" width="24" height="24">
+        {/* Connection Status Banners - shows different states based on connection health */}
+        {/* CRITICAL: Don't show "disconnected" for brief stalls - only for confirmed disconnection */}
+        {connectionHealthState === 'reconnecting' && (
+          <motion.div 
+            className="connection-warning reconnecting"
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '10px',
+              padding: '12px 16px',
+              background: 'hsl(220 80% 50% / 0.15)',
+              border: '1px solid hsl(220 80% 50% / 0.3)',
+              borderRadius: '8px',
+              marginTop: '12px',
+              color: '#3b82f6',
+              fontFamily: 'var(--font-sans)',
+              fontSize: '14px',
+              fontWeight: 500,
+            }}
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="20" height="20" className="spin">
+              <path d="M21 12a9 9 0 1 1-6.219-8.56" />
+            </svg>
+            <span>Reconnecting... Session continues</span>
+          </motion.div>
+        )}
+        {connectionHealthState === 'stalled' && (
+          <motion.div 
+            className="connection-warning stalled"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '10px',
+              padding: '12px 16px',
+              background: 'hsl(45 100% 50% / 0.15)',
+              border: '1px solid hsl(45 100% 50% / 0.3)',
+              borderRadius: '8px',
+              marginTop: '12px',
+              color: '#facc15',
+              fontFamily: 'var(--font-sans)',
+              fontSize: '14px',
+              fontWeight: 500,
+            }}
+          >
+            <svg viewBox="0 0 24 24" fill="currentColor" width="20" height="20">
+              <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z" />
+            </svg>
+            <span>Signal paused... Waiting</span>
+          </motion.div>
+        )}
+        {connectionHealthState === 'disconnected' && !museConnected && (
+          <motion.div 
+            className="connection-warning disconnected"
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '10px',
+              padding: '12px 16px',
+              background: 'hsl(0 80% 50% / 0.15)',
+              border: '1px solid hsl(0 80% 50% / 0.3)',
+              borderRadius: '8px',
+              marginTop: '12px',
+              color: '#ef4444',
+              fontFamily: 'var(--font-sans)',
+              fontSize: '14px',
+              fontWeight: 500,
+            }}
+          >
+            <svg viewBox="0 0 24 24" fill="currentColor" width="20" height="20">
               <path d="M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z" />
             </svg>
-            <span>
-              {!museConnected
-                ? 'Connection lost - reconnect Muse'
-                : 'Adjust headband position'}
-            </span>
+            <span>Connection lost - reconnect Muse</span>
+          </motion.div>
+        )}
+        {/* Headband position warning (only when connected but not touching) */}
+        {museConnected && !touching && connectionHealthState === 'healthy' && (
+          <div 
+            className="connection-warning headband"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '10px',
+              padding: '12px 16px',
+              background: 'hsl(35 100% 50% / 0.15)',
+              border: '1px solid hsl(35 100% 50% / 0.3)',
+              borderRadius: '8px',
+              marginTop: '12px',
+              color: '#f59e0b',
+              fontFamily: 'var(--font-sans)',
+              fontSize: '14px',
+              fontWeight: 500,
+            }}
+          >
+            <svg viewBox="0 0 24 24" fill="currentColor" width="20" height="20">
+              <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z" />
+            </svg>
+            <span>Adjust headband position</span>
           </div>
         )}
       </main>
 
-      {/* Footer - CTA Buttons */}
-      <footer className="session-footer-lovable">
+      {/* Footer - CTA Buttons - Target 5: Centered gold End Session + audio toggle */}
+      <footer 
+        className="session-footer-lovable"
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: '16px',
+          paddingBottom: '24px',
+        }}
+      >
         <motion.button
           className="btn btn-primary btn-large session-end-btn"
           onClick={onEndSession}
-          whileHover={{ scale: 1.02 }}
+          whileHover={{ scale: 1.02, y: -2 }}
           whileTap={{ scale: 0.98 }}
+          style={{
+            padding: '14px 40px',
+            background: 'linear-gradient(135deg, #D9C478, #C9B468)',
+            color: '#0c0a0e',
+            border: 'none',
+            borderRadius: '999px',
+            fontFamily: 'var(--font-sans)',
+            fontSize: '15px',
+            fontWeight: 500,
+            cursor: 'pointer',
+            boxShadow: '0 4px 20px hsl(45 55% 70% / 0.3)',
+            transition: 'all 0.2s ease',
+          }}
         >
           End Session
         </motion.button>
@@ -293,8 +839,23 @@ export function ActiveSession({
           className={`session-guidance-btn ${entrainmentEnabled ? 'active' : ''}`}
           onClick={onEntrainmentToggle}
           title="Toggle Guidance Audio"
+          style={{
+            width: '44px',
+            height: '44px',
+            borderRadius: '50%',
+            background: entrainmentEnabled 
+              ? 'hsl(270 10% 25%)'
+              : 'hsl(270 10% 18%)',
+            border: '1px solid hsl(270 10% 30%)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            cursor: 'pointer',
+            transition: 'all 0.2s ease',
+            color: entrainmentEnabled ? 'var(--text-primary)' : 'var(--text-muted)',
+          }}
         >
-          <svg viewBox="0 0 24 24" fill="currentColor" width="24" height="24">
+          <svg viewBox="0 0 24 24" fill="currentColor" width="20" height="20">
             {entrainmentEnabled ? (
               <path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z" />
             ) : (

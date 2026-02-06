@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { museHandler, MuseHandler } from '../lib/muse-handler';
 import { CoherenceDetector, calculateCoherence, getCoherenceZone } from '../lib/flow-state';
 import { DEBUG_ELECTRODES } from '../lib/feature-flags';
-import type { MuseState, CoherenceStatus, ElectrodeStatus, ElectrodeQuality } from '../types';
+import type { MuseState, CoherenceStatus, ElectrodeStatus, ElectrodeQuality, ConnectionHealthState } from '../types';
 
 export interface UseMuseReturn {
   state: MuseState;
@@ -14,6 +14,7 @@ export interface UseMuseReturn {
   coherenceHistory: number[];
   electrodeStatus: ElectrodeStatus;
   ppg: { bpm: number | null; confidence: number; lastBeatMs: number | null }; // PPG heart rate metrics
+  connectionHealthState: ConnectionHealthState; // Connection health for UI display
   isBluetoothAvailable: boolean;
   connectBluetooth: () => Promise<void>;
   connectOSC: (url?: string) => Promise<void>;
@@ -84,6 +85,7 @@ export function useMuse(): UseMuseReturn {
     confidence: 0,
     lastBeatMs: null,
   });
+  const [connectionHealthState, setConnectionHealthState] = useState<ConnectionHealthState>('disconnected');
   const [error, setError] = useState<string | null>(null);
 
   const coherenceDetector = useRef(new CoherenceDetector({}));
@@ -135,10 +137,15 @@ export function useMuse(): UseMuseReturn {
         // CRITICAL: Always update state when connected to ensure live telemetry
         if (tNow - lastStateUpdate.current >= STATE_UPDATE_MS) {
           lastStateUpdate.current = tNow;
+          // Get current health state from handler
+          const healthState = museHandler.getHealthState();
+          setConnectionHealthState(healthState);
+          
           // Always create fresh objects to force React re-render (no memoization blocking)
           setState({ 
             ...museState, 
             connectionQuality: connectionQualityFromElectrodes,
+            healthState,
             bands: { ...museState.bands },
             bandsSmooth: { ...museState.bandsSmooth },
             bandsDb: { ...museState.bandsDb },
@@ -183,6 +190,7 @@ export function useMuse(): UseMuseReturn {
         if (wasConnectedRef.current) {
           wasConnectedRef.current = false;
           setElectrodeStatus(INITIAL_ELECTRODE_STATUS);
+          setConnectionHealthState('disconnected');
           if (DEBUG_ELECTRODES) {
             console.log(`[DEBUG_ELECTRODES] ${new Date().toISOString()} disconnected`, INITIAL_ELECTRODE_STATUS);
           }
@@ -272,6 +280,7 @@ export function useMuse(): UseMuseReturn {
     coherenceHistory,
     electrodeStatus,
     ppg,
+    connectionHealthState,
     isBluetoothAvailable: MuseHandler.isBluetoothAvailable(),
     connectBluetooth,
     connectOSC,

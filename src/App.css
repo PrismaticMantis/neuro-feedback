@@ -1149,7 +1149,7 @@ h3 {
   }
 }
 
-/* Connection Warning */
+/* Connection Warning - Base styles */
 .connection-warning {
   position: absolute;
   bottom: 20px;
@@ -1164,6 +1164,46 @@ h3 {
   border-radius: var(--radius-md);
   color: var(--warning);
   font-size: 13px;
+  z-index: 100;
+}
+
+/* Connection Warning - Reconnecting state (animated, calm message) */
+.connection-warning.reconnecting {
+  background: rgba(59, 130, 246, 0.15);
+  border-color: #3b82f6;
+  color: #60a5fa;
+}
+
+.connection-warning.reconnecting .spin {
+  animation: spin 1.5s linear infinite;
+}
+
+/* Connection Warning - Stalled state (subtle, waiting) */
+.connection-warning.stalled {
+  background: rgba(251, 191, 36, 0.1);
+  border-color: var(--warning);
+  color: var(--warning);
+  opacity: 0.8;
+}
+
+/* Connection Warning - Disconnected state (urgent) */
+.connection-warning.disconnected {
+  background: rgba(239, 68, 68, 0.15);
+  border-color: var(--destructive);
+  color: var(--destructive);
+}
+
+/* Connection Warning - Headband position warning */
+.connection-warning.headband {
+  background: rgba(251, 191, 36, 0.15);
+  border-color: var(--warning);
+  color: var(--warning);
+}
+
+/* Spin animation for reconnecting icon */
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
 }
 
 /* ============ Session Summary ============ */
@@ -1566,6 +1606,150 @@ h3 {
   50% {
     box-shadow: 0 0 20px var(--accent-glow-strong);
   }
+}
+
+/* ============ Lovable Design Spec Animations ============ */
+/* Reference: docs/design-specification.md Section 6 */
+
+/* pulse-glow: 3s, ease-in-out, infinite - for icon circles and highlights */
+@keyframes pulse-glow {
+  0%, 100% {
+    box-shadow: 0 0 20px hsl(45 55% 70% / 0.15);
+    transform: scale(1);
+  }
+  50% {
+    box-shadow: 0 0 40px hsl(45 55% 70% / 0.3);
+    transform: scale(1.02);
+  }
+}
+
+/* pulse-glow-amethyst: for secondary accent elements */
+@keyframes pulse-glow-amethyst {
+  0%, 100% {
+    box-shadow: 0 0 20px hsl(275 45% 55% / 0.15);
+  }
+  50% {
+    box-shadow: 0 0 40px hsl(275 45% 55% / 0.25);
+  }
+}
+
+/* float: 6s, ease-in-out, infinite - for ambient elements */
+@keyframes float {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-10px);
+  }
+}
+
+/* breathe: 4s, ease-in-out, infinite - for progress rings and coherence indicators */
+@keyframes breathe {
+  0%, 100% {
+    opacity: 1;
+    filter: brightness(1);
+  }
+  50% {
+    opacity: 0.85;
+    filter: brightness(1.1);
+  }
+}
+
+/* fade-in-up: 500ms - for entry animations */
+@keyframes lovable-fade-in-up {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Utility classes for glow effects */
+.glow-icon {
+  animation: pulse-glow 3s ease-in-out infinite;
+}
+
+.glow-icon-amethyst {
+  animation: pulse-glow-amethyst 3s ease-in-out infinite;
+}
+
+.float-element {
+  animation: float 6s ease-in-out infinite;
+}
+
+.breathe-element {
+  animation: breathe 4s ease-in-out infinite;
+}
+
+/* ============ Ambient Background Glow ============ */
+/* For Active Session screen - "enhanced glow" per spec */
+
+.ambient-glow {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  pointer-events: none;
+  z-index: 0;
+  overflow: hidden;
+}
+
+.ambient-glow::before {
+  content: '';
+  position: absolute;
+  top: -50%;
+  left: -50%;
+  width: 200%;
+  height: 200%;
+  background: radial-gradient(
+    ellipse at 30% 20%,
+    hsl(275 45% 55% / 0.08) 0%,
+    transparent 50%
+  ),
+  radial-gradient(
+    ellipse at 70% 80%,
+    hsl(45 55% 70% / 0.06) 0%,
+    transparent 50%
+  );
+  animation: ambient-shift 20s ease-in-out infinite;
+}
+
+@keyframes ambient-shift {
+  0%, 100% {
+    transform: translate(0, 0) rotate(0deg);
+  }
+  25% {
+    transform: translate(2%, 1%) rotate(1deg);
+  }
+  50% {
+    transform: translate(0, 2%) rotate(0deg);
+  }
+  75% {
+    transform: translate(-2%, 1%) rotate(-1deg);
+  }
+}
+
+/* Enhanced glow for active session */
+.ambient-glow--enhanced::before {
+  background: radial-gradient(
+    ellipse at 30% 20%,
+    hsl(275 45% 55% / 0.12) 0%,
+    transparent 45%
+  ),
+  radial-gradient(
+    ellipse at 70% 80%,
+    hsl(45 55% 70% / 0.1) 0%,
+    transparent 45%
+  ),
+  radial-gradient(
+    ellipse at 50% 50%,
+    hsl(45 55% 70% / 0.05) 0%,
+    transparent 60%
+  );
 }
 
 /* ============ Electrode Status ============ */

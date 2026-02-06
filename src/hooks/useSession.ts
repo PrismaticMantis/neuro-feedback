@@ -109,7 +109,16 @@ export function useSession(): UseSessionReturn {
 
   // Session controls
   const startSession = useCallback(() => {
-    const now = Date.now();
+    // CRITICAL: Persist startTime immediately so it's not lost if app crashes
+    // The in-progress session is stored in localStorage right away
+    const journeyId = currentUser ? getLastJourneyId(currentUser.id) : undefined;
+    const inProgress = storage.startInProgressSession(
+      currentUser?.id || 'anonymous',
+      journeyId || undefined
+    );
+    
+    // Use the persisted startTime for local state
+    const now = new Date(inProgress.startTime).getTime();
     setSessionStartTime(now);
     setSessionDuration(0);
     setCoherenceTime(0);
@@ -122,16 +131,45 @@ export function useSession(): UseSessionReturn {
     longestStreakRef.current = 0;
     lastCoherenceTimeRef.current = now;
     setScreen('session');
-  }, []);
+    
+    console.log('[useSession] Session started with persisted startTime:', inProgress.startTime);
+  }, [currentUser]);
 
   const endSession = useCallback((audioCoherenceTimeMs?: number) => {
-    if (!isSessionActive || !sessionStartTime || !currentUser) {
+    if (!isSessionActive || !currentUser) {
       setIsSessionActive(false);
+      // Clean up any orphaned in-progress session
+      storage.clearInProgressSession();
       return null;
     }
 
     const endTime = Date.now();
-    const duration = endTime - sessionStartTime;
+    
+    // CRITICAL: Get startTime from persisted in-progress session (authoritative source)
+    // This ensures we use the ACTUAL start time, not a potentially stale memory value
+    const inProgressSession = storage.getInProgressSession();
+    let actualStartTime: number;
+    let startTimeIso: string;
+    
+    if (inProgressSession) {
+      // Use the persisted start time (correct behavior)
+      actualStartTime = new Date(inProgressSession.startTime).getTime();
+      startTimeIso = inProgressSession.startTime;
+      console.log('[useSession] Using persisted startTime:', startTimeIso);
+    } else if (sessionStartTime) {
+      // Fallback to memory (legacy - in case session started before this update)
+      actualStartTime = sessionStartTime;
+      startTimeIso = new Date(sessionStartTime).toISOString();
+      console.warn('[useSession] No persisted startTime found, using memory value:', startTimeIso);
+    } else {
+      // No start time available - cannot save session
+      console.error('[useSession] No start time available, cannot save session');
+      setIsSessionActive(false);
+      storage.clearInProgressSession();
+      return null;
+    }
+    
+    const duration = endTime - actualStartTime;
 
     // PART 2: Use audio-based coherence time if provided, otherwise fall back to meter-based
     let finalCoherenceTime: number;
@@ -172,7 +210,7 @@ export function useSession(): UseSessionReturn {
 
     const session = storage.saveSession({
       userId: currentUser.id,
-      startTime: new Date(sessionStartTime).toISOString(),
+      startTime: startTimeIso, // Use the authoritative start time
       endTime: new Date(endTime).toISOString(),
       duration,
       coherenceTime: finalCoherenceTime,
@@ -180,6 +218,9 @@ export function useSession(): UseSessionReturn {
       avgCoherence,
       coherenceHistory,
     });
+    
+    // Clear the in-progress session now that it's been saved
+    storage.clearInProgressSession();
 
     const stats = calculateSessionStats(session);
     setLastSession(session);

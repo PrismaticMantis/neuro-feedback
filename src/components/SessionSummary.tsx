@@ -1,4 +1,8 @@
 // UI reference: design/targets/6 - Summary.png
+// Design tokens: docs/design-specification.md
+// - Card (Glass): background linear-gradient with blur, 12px border-radius
+// - Typography: Inter font family, various weights
+// - Colors: #D9C478 (accent gold), various HSL backgrounds
 
 import { useMemo, useState, useCallback } from 'react';
 import { motion } from 'framer-motion';
@@ -373,33 +377,95 @@ export function SessionSummary({
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: -20 }}
+      style={{
+        padding: '0 24px 100px',
+        maxWidth: '900px',
+        margin: '0 auto',
+      }}
     >
-      {/* Top Navigation Bar */}
-      <header className="summary-header">
-        <Link to="/home" className="summary-back-btn" aria-label="Back">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      {/* Top Navigation Bar - Target 6: Back arrow left, Save/Share buttons right */}
+      <header 
+        className="summary-header"
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          padding: '16px 0 24px',
+        }}
+      >
+        <Link 
+          to="/home" 
+          className="summary-back-btn" 
+          aria-label="Back"
+          style={{
+            padding: '8px',
+            borderRadius: '8px',
+            color: 'var(--text-primary)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+        >
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M19 12H5M12 19l-7-7 7-7"/>
           </svg>
         </Link>
-        <div className="summary-header-actions">
+        <div 
+          className="summary-header-actions"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+          }}
+        >
           <button
             className="summary-action-btn"
             onClick={handleSave}
             disabled={saved}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              padding: '8px 14px',
+              background: 'hsl(270 10% 18% / 0.8)',
+              border: '1px solid hsl(270 10% 25%)',
+              borderRadius: '8px',
+              color: saved ? 'var(--text-muted)' : 'var(--text-primary)',
+              fontFamily: 'var(--font-sans)',
+              fontSize: '13px',
+              fontWeight: 500,
+              cursor: saved ? 'default' : 'pointer',
+              transition: 'all 0.2s ease',
+            }}
           >
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
               <polyline points="17 21 17 13 7 13 7 21"/>
               <polyline points="7 3 7 8 15 8"/>
             </svg>
-            <span>Save</span>
+            <span>{saved ? 'Saved' : 'Save'}</span>
           </button>
           <button
             className="summary-action-btn"
             onClick={handleShare}
             disabled={isSharing}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              padding: '8px 14px',
+              background: 'hsl(270 10% 18% / 0.8)',
+              border: '1px solid hsl(270 10% 25%)',
+              borderRadius: '8px',
+              color: isSharing ? 'var(--text-muted)' : 'var(--text-primary)',
+              fontFamily: 'var(--font-sans)',
+              fontSize: '13px',
+              fontWeight: 500,
+              cursor: isSharing ? 'default' : 'pointer',
+              transition: 'all 0.2s ease',
+            }}
           >
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <circle cx="18" cy="5" r="3"/>
               <circle cx="6" cy="12" r="3"/>
               <circle cx="18" cy="19" r="3"/>
@@ -408,35 +474,92 @@ export function SessionSummary({
             </svg>
             <span>Share</span>
           </button>
-          <button
-            className="summary-action-btn"
-            onClick={handleEmail}
-            disabled={isSharing}
-            title="Email summary (opens mail app; PDF downloads for attachment)"
-          >
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/>
-              <polyline points="22,6 12,13 2,6"/>
-            </svg>
-            <span>Email</span>
-          </button>
         </div>
       </header>
 
       <div className="summary-content">
-        {/* Hero Section - Circular Coherence Ring */}
-        <div className="summary-hero">
-          <p className="summary-complete-label">Session Complete</p>
-          <h2 className="summary-journey-name">{journeyName}</h2>
-          <div className="summary-coherence-ring">
-            <svg className="coherence-ring-svg" viewBox="0 0 200 200">
+        {/* Hero Section - Target 6: Glass card with coherence ring */}
+        <div 
+          className="summary-hero"
+          style={{
+            background: 'linear-gradient(135deg, hsl(270 10% 15% / 0.6), hsl(270 10% 12% / 0.4))',
+            border: '1px solid hsl(270 10% 25% / 0.3)',
+            borderRadius: '12px',
+            padding: '32px 24px',
+            backdropFilter: 'blur(20px)',
+            textAlign: 'center',
+            marginBottom: '24px',
+          }}
+        >
+          <p 
+            className="summary-complete-label"
+            style={{
+              fontFamily: 'var(--font-sans)',
+              fontSize: '12px',
+              fontWeight: 400,
+              color: 'var(--text-muted)',
+              margin: '0 0 8px',
+              letterSpacing: '0.02em',
+            }}
+          >Session Complete</p>
+          <h2 
+            className="summary-journey-name"
+            style={{
+              fontFamily: 'var(--font-sans)',
+              fontSize: '28px',
+              fontWeight: 600,
+              color: 'var(--text-primary)',
+              margin: '0 0 24px',
+              lineHeight: 1.2,
+            }}
+          >{journeyName}</h2>
+          
+          {/* Coherence Ring - Gold stroke with pulsing glow */}
+          <motion.div 
+            className="summary-coherence-ring glow-icon"
+            style={{
+              position: 'relative',
+              width: '160px',
+              height: '160px',
+              margin: '0 auto 24px',
+              borderRadius: '50%',
+            }}
+            animate={{
+              boxShadow: [
+                '0 0 25px hsl(45 55% 70% / 0.15)',
+                '0 0 45px hsl(45 55% 70% / 0.3)',
+                '0 0 25px hsl(45 55% 70% / 0.15)',
+              ],
+            }}
+            transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}
+          >
+            <svg 
+              className="coherence-ring-svg" 
+              viewBox="0 0 200 200"
+              style={{
+                width: '100%',
+                height: '100%',
+                transform: 'rotate(-90deg)',
+              }}
+            >
+              {/* Glow filter for the ring */}
+              <defs>
+                <filter id="ring-glow" x="-50%" y="-50%" width="200%" height="200%">
+                  <feGaussianBlur stdDeviation="3" result="blur" />
+                  <feMerge>
+                    <feMergeNode in="blur" />
+                    <feMergeNode in="SourceGraphic" />
+                  </feMerge>
+                </filter>
+              </defs>
               <circle
                 className="coherence-ring-bg"
                 cx="100"
                 cy="100"
                 r="85"
                 fill="none"
-                strokeWidth="10"
+                stroke="hsl(270 10% 20%)"
+                strokeWidth="8"
               />
               <motion.circle
                 className="coherence-ring-fill"
@@ -444,7 +567,8 @@ export function SessionSummary({
                 cy="100"
                 r="85"
                 fill="none"
-                strokeWidth="10"
+                stroke="#D9C478"
+                strokeWidth="8"
                 strokeLinecap="round"
                 strokeDasharray={534.07}
                 initial={{ strokeDashoffset: 534.07 }}
@@ -452,114 +576,523 @@ export function SessionSummary({
                   strokeDashoffset: 534.07 * (1 - stats.coherencePercent / 100),
                 }}
                 transition={{ duration: 1.5, ease: 'easeOut' }}
+                filter="url(#ring-glow)"
               />
             </svg>
-            <div className="coherence-ring-center">
+            <div 
+              className="coherence-ring-center"
+              style={{
+                position: 'absolute',
+                top: '50%',
+                left: '50%',
+                transform: 'translate(-50%, -50%)',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+              }}
+            >
               <motion.span
                 className="coherence-percentage"
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 transition={{ delay: 0.5 }}
+                style={{
+                  fontFamily: 'var(--font-sans)',
+                  fontSize: '44px',
+                  fontWeight: 600,
+                  color: 'var(--text-primary)',
+                  lineHeight: 1,
+                }}
               >
                 {Math.round(stats.coherencePercent)}
               </motion.span>
-              <span className="coherence-label">Coherence</span>
+              <span 
+                className="coherence-label"
+                style={{
+                  fontFamily: 'var(--font-sans)',
+                  fontSize: '12px',
+                  fontWeight: 400,
+                  color: 'var(--text-muted)',
+                  marginTop: '4px',
+                }}
+              >Coherence</span>
             </div>
-          </div>
-          <p className="summary-interpretation">{sessionInterpretation}</p>
+          </motion.div>
+          <p 
+            className="summary-interpretation"
+            style={{
+              fontFamily: 'var(--font-sans)',
+              fontSize: '14px',
+              fontWeight: 400,
+              color: 'var(--text-muted)',
+              margin: 0,
+              lineHeight: 1.5,
+              maxWidth: '400px',
+              marginLeft: 'auto',
+              marginRight: 'auto',
+            }}
+          >{sessionInterpretation}</p>
         </div>
 
-        {/* Session Metrics Section */}
-        <div className="summary-metrics-section">
-          <h3 className="summary-section-title">Session Metrics</h3>
-          <div className="summary-metrics-grid">
-            <div className="summary-metric-card">
-              <span className="summary-metric-label">Duration</span>
-              <span className="summary-metric-value">{formatTime(stats.totalLength)} min</span>
+        {/* Session Metrics Section - Target 6: 4-card grid */}
+        <div 
+          className="summary-metrics-section"
+          style={{
+            marginBottom: '24px',
+          }}
+        >
+          <h3 
+            className="summary-section-title"
+            style={{
+              fontFamily: 'var(--font-sans)',
+              fontSize: '16px',
+              fontWeight: 600,
+              color: 'var(--text-primary)',
+              margin: '0 0 16px',
+            }}
+          >Session Metrics</h3>
+          <div 
+            className="summary-metrics-grid"
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(4, 1fr)',
+              gap: '12px',
+            }}
+          >
+            {/* Duration Card */}
+            <div 
+              className="summary-metric-card"
+              style={{
+                background: 'linear-gradient(135deg, hsl(270 10% 15% / 0.6), hsl(270 10% 12% / 0.4))',
+                border: '1px solid hsl(270 10% 25% / 0.3)',
+                borderRadius: '12px',
+                padding: '16px',
+                backdropFilter: 'blur(20px)',
+              }}
+            >
+              <span 
+                className="summary-metric-label"
+                style={{
+                  display: 'block',
+                  fontFamily: 'var(--font-sans)',
+                  fontSize: '12px',
+                  fontWeight: 400,
+                  color: 'var(--text-muted)',
+                  marginBottom: '8px',
+                }}
+              >Duration</span>
+              <span 
+                className="summary-metric-value"
+                style={{
+                  fontFamily: 'var(--font-sans)',
+                  fontSize: '24px',
+                  fontWeight: 600,
+                  color: 'var(--text-primary)',
+                }}
+              >
+                {formatTime(stats.totalLength)}
+                <span style={{ fontSize: '14px', fontWeight: 400, marginLeft: '4px' }}>min</span>
+              </span>
             </div>
-            <div className="summary-metric-card">
-              <span className="summary-metric-label">Avg. Coherence</span>
-              <span className="summary-metric-value">
-                {Math.round(stats.avgCoherence * 100)}%
-                <svg className="summary-up-arrow" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--success)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            
+            {/* Avg Coherence Card */}
+            <div 
+              className="summary-metric-card"
+              style={{
+                background: 'linear-gradient(135deg, hsl(270 10% 15% / 0.6), hsl(270 10% 12% / 0.4))',
+                border: '1px solid hsl(270 10% 25% / 0.3)',
+                borderRadius: '12px',
+                padding: '16px',
+                backdropFilter: 'blur(20px)',
+              }}
+            >
+              <span 
+                className="summary-metric-label"
+                style={{
+                  display: 'block',
+                  fontFamily: 'var(--font-sans)',
+                  fontSize: '12px',
+                  fontWeight: 400,
+                  color: 'var(--text-muted)',
+                  marginBottom: '8px',
+                }}
+              >Avg. Coherence</span>
+              <span 
+                className="summary-metric-value"
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  fontFamily: 'var(--font-sans)',
+                  fontSize: '24px',
+                  fontWeight: 600,
+                  color: 'var(--text-primary)',
+                }}
+              >
+                {Math.round(stats.avgCoherence * 100)}
+                <span style={{ fontSize: '14px', fontWeight: 400 }}>%</span>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#22c55e" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
                   <line x1="12" y1="19" x2="12" y2="5"/>
                   <polyline points="5 12 12 5 19 12"/>
                 </svg>
               </span>
             </div>
-            <div className="summary-metric-card">
-              <span className="summary-metric-label">Peak Coherence</span>
-              <span className="summary-metric-value">{Math.round(peakCoherence * 100)} %</span>
+            
+            {/* Peak Coherence Card */}
+            <div 
+              className="summary-metric-card"
+              style={{
+                background: 'linear-gradient(135deg, hsl(270 10% 15% / 0.6), hsl(270 10% 12% / 0.4))',
+                border: '1px solid hsl(270 10% 25% / 0.3)',
+                borderRadius: '12px',
+                padding: '16px',
+                backdropFilter: 'blur(20px)',
+              }}
+            >
+              <span 
+                className="summary-metric-label"
+                style={{
+                  display: 'block',
+                  fontFamily: 'var(--font-sans)',
+                  fontSize: '12px',
+                  fontWeight: 400,
+                  color: 'var(--text-muted)',
+                  marginBottom: '8px',
+                }}
+              >Peak Coherence</span>
+              <span 
+                className="summary-metric-value"
+                style={{
+                  fontFamily: 'var(--font-sans)',
+                  fontSize: '24px',
+                  fontWeight: 600,
+                  color: 'var(--text-primary)',
+                }}
+              >
+                {Math.round(peakCoherence * 100)}
+                <span style={{ fontSize: '14px', fontWeight: 400, marginLeft: '4px' }}>%</span>
+              </span>
             </div>
-            <div className="summary-metric-card">
-              <span className="summary-metric-label">Stability</span>
-              <span className="summary-metric-value">{stability}</span>
-              <span className="summary-metric-subtext">{stabilitySubtext}</span>
+            
+            {/* Stability Card */}
+            <div 
+              className="summary-metric-card"
+              style={{
+                background: 'linear-gradient(135deg, hsl(270 10% 15% / 0.6), hsl(270 10% 12% / 0.4))',
+                border: '1px solid hsl(270 10% 25% / 0.3)',
+                borderRadius: '12px',
+                padding: '16px',
+                backdropFilter: 'blur(20px)',
+              }}
+            >
+              <span 
+                className="summary-metric-label"
+                style={{
+                  display: 'block',
+                  fontFamily: 'var(--font-sans)',
+                  fontSize: '12px',
+                  fontWeight: 400,
+                  color: 'var(--text-muted)',
+                  marginBottom: '8px',
+                }}
+              >Stability</span>
+              <span 
+                className="summary-metric-value"
+                style={{
+                  display: 'block',
+                  fontFamily: 'var(--font-sans)',
+                  fontSize: '24px',
+                  fontWeight: 600,
+                  color: 'var(--text-primary)',
+                }}
+              >{stability}</span>
+              <span 
+                className="summary-metric-subtext"
+                style={{
+                  display: 'block',
+                  fontFamily: 'var(--font-sans)',
+                  fontSize: '11px',
+                  fontWeight: 400,
+                  color: 'var(--text-muted)',
+                  marginTop: '4px',
+                }}
+              >{stabilitySubtext}</span>
             </div>
           </div>
         </div>
 
-        {/* Coherence Timeline */}
-        <div className="summary-timeline-section">
-          <h3 className="summary-section-title">Coherence Timeline</h3>
-          <div className="summary-timeline-chart">
-            <canvas ref={handleGraphRef} className="summary-timeline-canvas" />
+        {/* Coherence Timeline - Target 6: Graph card */}
+        <div 
+          className="summary-timeline-section"
+          style={{
+            marginBottom: '24px',
+          }}
+        >
+          <h3 
+            className="summary-section-title"
+            style={{
+              fontFamily: 'var(--font-sans)',
+              fontSize: '16px',
+              fontWeight: 600,
+              color: 'var(--text-primary)',
+              margin: '0 0 16px',
+            }}
+          >Coherence Timeline</h3>
+          <div 
+            className="summary-timeline-chart"
+            style={{
+              background: 'linear-gradient(135deg, hsl(270 10% 15% / 0.6), hsl(270 10% 12% / 0.4))',
+              border: '1px solid hsl(270 10% 25% / 0.3)',
+              borderRadius: '12px',
+              padding: '16px',
+              backdropFilter: 'blur(20px)',
+              height: '200px',
+            }}
+          >
+            <canvas 
+              ref={handleGraphRef} 
+              className="summary-timeline-canvas"
+              style={{
+                width: '100%',
+                height: '100%',
+              }}
+            />
           </div>
         </div>
 
-        {/* Body Rhythm Section (conditional - only shown if data exists) */}
-        {(session as any).avgHeartRate !== undefined || (session as any).avgHRV !== undefined || (session as any).recoveryPoints !== undefined ? (
-          <div className="summary-body-rhythm-section">
-            <h3 className="summary-section-title">Body Rhythm</h3>
-            <div className="summary-body-rhythm-grid">
+        {/* Body Rhythm Section - Target 6: 3-card grid (conditional - only shown if data exists) */}
+        {((session as any).avgHeartRate !== undefined || (session as any).avgHRV !== undefined || (session as any).recoveryPoints !== undefined) && (
+          <div 
+            className="summary-body-rhythm-section"
+            style={{
+              marginBottom: '24px',
+            }}
+          >
+            <h3 
+              className="summary-section-title"
+              style={{
+                fontFamily: 'var(--font-sans)',
+                fontSize: '16px',
+                fontWeight: 600,
+                color: 'var(--text-primary)',
+                margin: '0 0 16px',
+              }}
+            >Body Rhythm</h3>
+            <div 
+              className="summary-body-rhythm-grid"
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(3, 1fr)',
+                gap: '12px',
+              }}
+            >
+              {/* Heart Rate Card */}
               {(session as any).avgHeartRate !== undefined && (
-                <div className="summary-body-rhythm-card">
-                  <svg className="summary-body-rhythm-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
-                  </svg>
-                  <span className="summary-body-rhythm-label">Heart Rate</span>
-                  <span className="summary-body-rhythm-value">{(session as any).avgHeartRate || 0} bpm</span>
+                <div 
+                  className="summary-body-rhythm-card"
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '12px',
+                    background: 'linear-gradient(135deg, hsl(270 10% 15% / 0.6), hsl(270 10% 12% / 0.4))',
+                    border: '1px solid hsl(270 10% 25% / 0.3)',
+                    borderRadius: '12px',
+                    padding: '16px',
+                    backdropFilter: 'blur(20px)',
+                  }}
+                >
+                  <div
+                    style={{
+                      width: '40px',
+                      height: '40px',
+                      borderRadius: '50%',
+                      background: 'hsl(350 70% 45% / 0.2)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      flexShrink: 0,
+                    }}
+                  >
+                    <svg viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="20" height="20">
+                      <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
+                    </svg>
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column' }}>
+                    <span style={{
+                      fontFamily: 'var(--font-sans)',
+                      fontSize: '12px',
+                      fontWeight: 400,
+                      color: 'var(--text-muted)',
+                    }}>Heart Rate</span>
+                    <span style={{
+                      fontFamily: 'var(--font-sans)',
+                      fontSize: '18px',
+                      fontWeight: 600,
+                      color: 'var(--text-primary)',
+                    }}>
+                      {(session as any).avgHeartRate || 0}
+                      <span style={{ fontSize: '12px', fontWeight: 400, marginLeft: '4px' }}>bpm</span>
+                    </span>
+                  </div>
                 </div>
               )}
+              
+              {/* HRV Card */}
               {(session as any).avgHRV !== undefined && (
-                <div className="summary-body-rhythm-card">
-                  <svg className="summary-body-rhythm-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
-                  </svg>
-                  <span className="summary-body-rhythm-label">HRV</span>
-                  <span className="summary-body-rhythm-value">{(session as any).avgHRV || 0} ms</span>
+                <div 
+                  className="summary-body-rhythm-card"
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '12px',
+                    background: 'linear-gradient(135deg, hsl(270 10% 15% / 0.6), hsl(270 10% 12% / 0.4))',
+                    border: '1px solid hsl(270 10% 25% / 0.3)',
+                    borderRadius: '12px',
+                    padding: '16px',
+                    backdropFilter: 'blur(20px)',
+                  }}
+                >
+                  <div
+                    style={{
+                      width: '40px',
+                      height: '40px',
+                      borderRadius: '50%',
+                      background: 'hsl(45 55% 65% / 0.2)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      flexShrink: 0,
+                    }}
+                  >
+                    <svg viewBox="0 0 24 24" fill="none" stroke="#D9C478" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="20" height="20">
+                      <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+                    </svg>
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column' }}>
+                    <span style={{
+                      fontFamily: 'var(--font-sans)',
+                      fontSize: '12px',
+                      fontWeight: 400,
+                      color: 'var(--text-muted)',
+                    }}>HRV</span>
+                    <span style={{
+                      fontFamily: 'var(--font-sans)',
+                      fontSize: '18px',
+                      fontWeight: 600,
+                      color: 'var(--text-primary)',
+                    }}>
+                      {(session as any).avgHRV || 0}
+                      <span style={{ fontSize: '12px', fontWeight: 400, marginLeft: '4px' }}>ms</span>
+                    </span>
+                  </div>
                 </div>
               )}
+              
+              {/* Recovery Card */}
               {(session as any).recoveryPoints !== undefined && (
-                <div className="summary-body-rhythm-card">
-                  <svg className="summary-body-rhythm-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/>
-                    <polyline points="17 6 23 6 23 12"/>
-                  </svg>
-                  <span className="summary-body-rhythm-label">Recovery</span>
-                  <span className="summary-body-rhythm-value">+{(session as any).recoveryPoints || 0} pts</span>
+                <div 
+                  className="summary-body-rhythm-card"
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '12px',
+                    background: 'linear-gradient(135deg, hsl(270 10% 15% / 0.6), hsl(270 10% 12% / 0.4))',
+                    border: '1px solid hsl(270 10% 25% / 0.3)',
+                    borderRadius: '12px',
+                    padding: '16px',
+                    backdropFilter: 'blur(20px)',
+                  }}
+                >
+                  <div
+                    style={{
+                      width: '40px',
+                      height: '40px',
+                      borderRadius: '50%',
+                      background: 'hsl(270 40% 55% / 0.2)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      flexShrink: 0,
+                    }}
+                  >
+                    <svg viewBox="0 0 24 24" fill="none" stroke="#9e59b8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="20" height="20">
+                      <polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/>
+                      <polyline points="17 6 23 6 23 12"/>
+                    </svg>
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column' }}>
+                    <span style={{
+                      fontFamily: 'var(--font-sans)',
+                      fontSize: '12px',
+                      fontWeight: 400,
+                      color: 'var(--text-muted)',
+                    }}>Recovery</span>
+                    <span style={{
+                      fontFamily: 'var(--font-sans)',
+                      fontSize: '18px',
+                      fontWeight: 600,
+                      color: '#22c55e',
+                    }}>
+                      +{(session as any).recoveryPoints || 0}
+                      <span style={{ fontSize: '12px', fontWeight: 400, marginLeft: '4px', color: 'var(--text-primary)' }}>pts</span>
+                    </span>
+                  </div>
                 </div>
               )}
             </div>
           </div>
-        ) : null}
+        )}
       </div>
 
-      {/* CTA Buttons */}
-      <footer className="summary-footer">
+      {/* CTA Buttons - Target 6: Back to Home secondary, Start Another Journey primary */}
+      <footer 
+        className="summary-footer"
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: '16px',
+          paddingTop: '16px',
+        }}
+      >
         <motion.button
           className="btn btn-secondary btn-large"
           onClick={() => navigate('/home')}
-          whileHover={{ scale: 1.02 }}
+          whileHover={{ scale: 1.02, y: -2 }}
           whileTap={{ scale: 0.98 }}
+          style={{
+            padding: '14px 28px',
+            background: 'hsl(270 10% 18%)',
+            color: 'var(--text-primary)',
+            border: '1px solid hsl(270 10% 30%)',
+            borderRadius: '999px',
+            fontFamily: 'var(--font-sans)',
+            fontSize: '15px',
+            fontWeight: 500,
+            cursor: 'pointer',
+            transition: 'all 0.2s ease',
+          }}
         >
           Back to Home
         </motion.button>
         <motion.button
           className="btn btn-primary btn-large"
           onClick={onNewSession}
-          whileHover={{ scale: 1.02 }}
+          whileHover={{ scale: 1.02, y: -2 }}
           whileTap={{ scale: 0.98 }}
+          style={{
+            padding: '14px 28px',
+            background: 'linear-gradient(135deg, #D9C478, #C9B468)',
+            color: '#0c0a0e',
+            border: 'none',
+            borderRadius: '999px',
+            fontFamily: 'var(--font-sans)',
+            fontSize: '15px',
+            fontWeight: 500,
+            cursor: 'pointer',
+            boxShadow: '0 4px 20px hsl(45 55% 70% / 0.3)',
+            transition: 'all 0.2s ease',
+          }}
         >
           Start Another Journey
         </motion.button>

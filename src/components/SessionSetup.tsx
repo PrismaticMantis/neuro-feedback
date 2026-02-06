@@ -1,4 +1,5 @@
 // UI reference: design/targets/3 - Session Setup.png, design/targets/4 - Session Setup (Muse Connected).png
+// Lovable design tokens applied: two-column layout, card styling, button styling
 
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
@@ -77,7 +78,7 @@ export function SessionSetup({
   onStartSession,
 }: SessionSetupProps) {
   const [newUserName, setNewUserName] = useState('');
-  const [showUserForm, setShowUserForm] = useState(false);
+  // showUserForm state removed - Lovable design doesn't show user switcher inline
 
   const handleCreateUser = () => {
     if (newUserName.trim()) {
@@ -98,20 +99,92 @@ export function SessionSetup({
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: -20 }}
+      style={{
+        padding: '0 24px 100px',
+        maxWidth: '960px',
+        margin: '0 auto',
+      }}
     >
-      <header className="setup-header-row">
-        <Link to="/home" className="setup-header-back" aria-label="Back">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+      {/* Header - Target 3: Back arrow + Title + Subtitle */}
+      <header 
+        className="setup-header-row"
+        style={{
+          display: 'flex',
+          alignItems: 'flex-start',
+          gap: '12px',
+          padding: '24px 0 28px',
+        }}
+      >
+        <Link 
+          to="/home" 
+          className="setup-header-back" 
+          aria-label="Back"
+          style={{
+            padding: '8px',
+            borderRadius: '8px',
+            color: 'var(--text-muted)',
+            textDecoration: 'none',
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            marginTop: '4px',
+          }}
+        >
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M19 12H5M12 19l-7-7 7-7"/>
+          </svg>
         </Link>
-        <div className="setup-header-title-block">
-          <h1 className="setup-header-title">Session Setup</h1>
-          {subtitle && <p className="setup-header-subtitle">{subtitle}</p>}
+        <div className="setup-header-title-block" style={{ flex: 1 }}>
+          <h1 
+            className="setup-header-title"
+            style={{
+              fontFamily: 'var(--font-sans)',
+              fontSize: '24px',
+              fontWeight: 600,
+              color: 'var(--text-primary)',
+              margin: '0 0 4px 0',
+              lineHeight: 1.2,
+            }}
+          >
+            Session Setup
+          </h1>
+          {subtitle && (
+            <p 
+              className="setup-header-subtitle"
+              style={{
+                fontFamily: 'var(--font-sans)',
+                fontSize: '14px',
+                fontWeight: 400,
+                color: 'var(--text-muted)',
+                margin: 0,
+                lineHeight: 1.4,
+              }}
+            >
+              {subtitle}
+            </p>
+          )}
         </div>
       </header>
 
-      <div className="setup-content">
-        {/* Left Column: Device Connection */}
-        <div className="setup-column-left">
+      {/* Two-Column Layout - Target 3/4: Left = Device Connection, Right = Settings */}
+      <div 
+        className="setup-content"
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(2, 1fr)',
+          gap: '20px',
+          alignItems: 'start',
+        }}
+      >
+        {/* Left Column: Device Connection + Electrode Status */}
+        <div 
+          className="setup-column-left"
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '16px',
+          }}
+        >
           <ConnectionStatus
             museConnected={museConnected}
             museDeviceName={museDeviceName}
@@ -125,9 +198,17 @@ export function SessionSetup({
 
           {/* Debug Overlay (when enabled) */}
           {DEBUG_ELECTRODES_OVERLAY && museConnected && (
-            <section className="setup-section debug-overlay">
-              <h3 style={{ color: 'var(--accent-primary)', marginBottom: 12 }}>🔍 Electrode Debug</h3>
-              <div style={{ fontFamily: 'monospace', fontSize: '12px', lineHeight: 1.6 }}>
+            <section 
+              className="setup-section debug-overlay"
+              style={{
+                background: 'hsl(270 10% 12% / 0.9)',
+                border: '2px solid var(--accent-primary)',
+                borderRadius: '12px',
+                padding: '16px',
+              }}
+            >
+              <h3 style={{ color: 'var(--accent-primary)', marginBottom: 12, fontSize: '14px' }}>🔍 Electrode Debug</h3>
+              <div style={{ fontFamily: 'monospace', fontSize: '11px', lineHeight: 1.6, color: 'var(--text-primary)' }}>
                 <div>connected: {String(museConnected)}</div>
                 <div>raw horseshoe: [{museHandler.getElectrodeQuality().join(', ')}]</div>
                 <div>electrodeStatus: {JSON.stringify(electrodeStatus)}</div>
@@ -140,13 +221,33 @@ export function SessionSetup({
             </section>
           )}
 
-          {/* Electrode Status (show when connected) */}
+          {/* Electrode Status Card - Target 4: ELECTRODE CONTACT with dots and battery */}
           {museConnected && (
-            <section className="setup-section">
+            <section 
+              className="setup-section"
+              style={{
+                background: 'linear-gradient(165deg, hsl(270 7% 13% / 0.75), hsl(270 10% 9% / 0.85))',
+                border: '1px solid hsl(270 15% 22% / 0.35)',
+                borderRadius: '12px',
+                padding: '20px',
+                boxShadow: '0 4px 20px hsl(270 20% 2% / 0.5)',
+              }}
+            >
               <ElectrodeStatus status={electrodeStatus} />
               {batteryLevel >= 0 && (
-                <div className={`battery-display ${batteryLevel <= 20 ? 'low' : ''}`}>
-                  <svg viewBox="0 0 24 24" fill="currentColor" width="20" height="20">
+                <div 
+                  className={`battery-display ${batteryLevel <= 20 ? 'low' : ''}`}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    marginTop: '16px',
+                    padding: '8px 12px',
+                    background: 'hsl(270 10% 16% / 0.6)',
+                    borderRadius: '8px',
+                  }}
+                >
+                  <svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18" style={{ color: batteryLevel <= 20 ? '#c73c3c' : '#D9C478' }}>
                     {batteryLevel > 75 ? (
                       <path d="M15.67 4H14V2h-4v2H8.33C7.6 4 7 4.6 7 5.33v15.33C7 21.4 7.6 22 8.33 22h7.33c.74 0 1.34-.6 1.34-1.33V5.33C17 4.6 16.4 4 15.67 4z" />
                     ) : batteryLevel > 50 ? (
@@ -157,7 +258,15 @@ export function SessionSetup({
                       <path d="M15.67 4H14V2h-4v2H8.33C7.6 4 7 4.6 7 5.33v15.33C7 21.4 7.6 22 8.33 22h7.33c.74 0 1.34-.6 1.34-1.33V5.33C17 4.6 16.4 4 15.67 4zM13 18H11V16h2v2z" />
                     )}
                   </svg>
-                  <span className="battery-text">
+                  <span 
+                    className="battery-text"
+                    style={{
+                      fontFamily: 'var(--font-sans)',
+                      fontSize: '13px',
+                      fontWeight: 500,
+                      color: batteryLevel <= 20 ? '#c73c3c' : 'var(--text-muted)',
+                    }}
+                  >
                     {batteryLevel}%
                   </span>
                 </div>
@@ -166,23 +275,55 @@ export function SessionSetup({
           )}
         </div>
 
-        {/* Right Column: Detection Settings, Guidance Audio, User Profile */}
-        <div className="setup-column-right">
-          {/* Detection Settings */}
-          <section className="setup-section">
-            <h2>Detection Settings</h2>
+        {/* Right Column: Detection Settings + Guidance Audio - Target 3/4 */}
+        <div 
+          className="setup-column-right"
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '16px',
+          }}
+        >
+          {/* Detection Settings Card - Target 3: Coherence Sensitivity slider */}
+          <section 
+            className="setup-section"
+            style={{
+              background: 'linear-gradient(165deg, hsl(270 7% 13% / 0.75), hsl(270 10% 9% / 0.85))',
+              border: '1px solid hsl(270 15% 22% / 0.35)',
+              borderRadius: '12px',
+              padding: '20px',
+              boxShadow: '0 4px 20px hsl(270 20% 2% / 0.5)',
+            }}
+          >
+            <h2 
+              style={{
+                fontFamily: 'var(--font-sans)',
+                fontSize: '16px',
+                fontWeight: 600,
+                color: 'var(--text-primary)',
+                margin: '0 0 16px 0',
+                lineHeight: 1.3,
+              }}
+            >
+              Detection Settings
+            </h2>
             <div className="settings-group">
-              <div className="setting-row">
-                <label className="setting-label">
-                  <span>Coherence Sensitivity</span>
-                  <span className="setting-value">
+              <div className="setting-row" style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                {/* Label Row - Target 3: "Coherence Sensitivity" with "Medium" value on right */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontFamily: 'var(--font-sans)', fontSize: '14px', fontWeight: 400, color: 'var(--text-primary)' }}>
+                    Coherence Sensitivity
+                  </span>
+                  <span style={{ fontFamily: 'var(--font-sans)', fontSize: '14px', fontWeight: 500, color: '#9B6BC8' }}>
                     {thresholdSettings.coherenceSensitivity < 0.33 
                       ? 'Easy' 
                       : thresholdSettings.coherenceSensitivity < 0.67 
                       ? 'Medium' 
                       : 'Hard'}
                   </span>
-                </label>
+                </div>
+                
+                {/* Slider - Target 3: Purple/champagne filled slider */}
                 <input
                   type="range"
                   min="0"
@@ -196,161 +337,300 @@ export function SessionSetup({
                     })
                   }
                   className="setting-slider"
+                  style={{
+                    width: '100%',
+                    height: '6px',
+                    borderRadius: '999px',
+                    appearance: 'none',
+                    background: `linear-gradient(to right, #D9C478 0%, #D9C478 ${thresholdSettings.coherenceSensitivity * 100}%, hsl(270 7% 20%) ${thresholdSettings.coherenceSensitivity * 100}%, hsl(270 7% 20%) 100%)`,
+                    cursor: 'pointer',
+                  }}
                 />
-                <div className="setting-hint-group">
-                  <p className="setting-hint">
-                    Controls how easy it is to enter coherence state
+                
+                {/* Hint text - Target 3 */}
+                <p style={{ fontFamily: 'var(--font-sans)', fontSize: '12px', fontWeight: 400, color: 'var(--text-muted)', fontStyle: 'italic', margin: '4px 0 0 0' }}>
+                  Controls how easy it is to enter coherence state
+                </p>
+                
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', marginTop: '8px' }}>
+                  <p style={{ fontFamily: 'var(--font-sans)', fontSize: '12px', fontWeight: 400, color: 'var(--text-subtle)' }}>
+                    Current: Threshold {Math.round((0.2 + thresholdSettings.coherenceSensitivity * 0.7) * 100)}%, Time {Math.round((1 + thresholdSettings.coherenceSensitivity * 9) * 10) / 10}s
                   </p>
-                  <div className="setting-hint-details">
-                    <p className="setting-hint-detail">
-                      Current: Threshold {Math.round((0.2 + thresholdSettings.coherenceSensitivity * 0.7) * 100)}%, Time {Math.round((1 + thresholdSettings.coherenceSensitivity * 9) * 10) / 10}s
-                    </p>
-                    <p className="setting-hint-detail">
-                      <span className="hint-label">Easy (0.0):</span> Threshold 20%, Time 1.0s
-                    </p>
-                    <p className="setting-hint-detail">
-                      <span className="hint-label">Hard (1.0):</span> Threshold 90%, Time 10.0s
-                    </p>
-                  </div>
+                  <p style={{ fontFamily: 'var(--font-sans)', fontSize: '12px', fontWeight: 400, color: 'var(--text-subtle)' }}>
+                    Easy (0.0): Threshold 20%, Time 1.0s
+                  </p>
+                  <p style={{ fontFamily: 'var(--font-sans)', fontSize: '12px', fontWeight: 400, color: 'var(--text-subtle)' }}>
+                    Hard (1.0): Threshold 90%, Time 10.0s
+                  </p>
                 </div>
               </div>
             </div>
           </section>
 
-          {/* Guidance Audio */}
-          <section className="setup-section">
-            <div className="section-header">
-              <h2>Guidance Audio</h2>
-              <span className="section-subtitle">(Optional Entrainment)</span>
-              <label className="toggle">
+          {/* Guidance Audio Card - Target 3: Toggle with helper text */}
+          <section 
+            className="setup-section"
+            style={{
+              background: 'linear-gradient(165deg, hsl(270 7% 13% / 0.75), hsl(270 10% 9% / 0.85))',
+              border: '1px solid hsl(270 15% 22% / 0.35)',
+              borderRadius: '12px',
+              padding: '20px',
+              boxShadow: '0 4px 20px hsl(270 20% 2% / 0.5)',
+            }}
+          >
+            {/* Header with title and toggle - Target 3 */}
+            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '12px' }}>
+              <div>
+                <h2 style={{ fontFamily: 'var(--font-sans)', fontSize: '16px', fontWeight: 600, color: 'var(--text-primary)', margin: '0 0 4px 0', lineHeight: 1.3 }}>
+                  Guidance Audio
+                </h2>
+                <span style={{ fontFamily: 'var(--font-sans)', fontSize: '13px', fontWeight: 400, color: 'var(--text-muted)' }}>
+                  Optional Entrainment
+                </span>
+              </div>
+              <label 
+                className="toggle"
+                style={{
+                  position: 'relative',
+                  width: '44px',
+                  height: '24px',
+                  flexShrink: 0,
+                }}
+              >
                 <input
                   type="checkbox"
                   checked={entrainmentEnabled}
                   onChange={(e) => onEntrainmentEnabledChange(e.target.checked)}
+                  style={{ opacity: 0, width: 0, height: 0 }}
                 />
-                <span className="toggle-slider" />
+                <span 
+                  className="toggle-slider"
+                  style={{
+                    position: 'absolute',
+                    inset: 0,
+                    background: entrainmentEnabled ? '#D9C478' : 'hsl(270 7% 20%)',
+                    borderRadius: '24px',
+                    cursor: 'pointer',
+                    transition: 'background 0.2s ease',
+                  }}
+                >
+                  <span
+                    style={{
+                      position: 'absolute',
+                      width: '18px',
+                      height: '18px',
+                      left: entrainmentEnabled ? '23px' : '3px',
+                      bottom: '3px',
+                      background: entrainmentEnabled ? '#0c0a0e' : 'var(--text-muted)',
+                      borderRadius: '50%',
+                      transition: 'all 0.2s ease',
+                    }}
+                  />
+                </span>
               </label>
             </div>
 
-            <div className={`audio-options ${!entrainmentEnabled ? 'disabled' : ''}`}>
+            <div className={`audio-options ${!entrainmentEnabled ? 'disabled' : ''}`} style={{ opacity: entrainmentEnabled ? 1 : 0.5 }}>
               {/* Binaural Presets (shown when guidance audio is enabled) */}
               {entrainmentEnabled && (
-                <div className="binaural-settings">
-                  <h3 className="subsection-title">Preset</h3>
-                  <div className="preset-grid">
+                <div className="binaural-settings" style={{ marginBottom: '16px', paddingTop: '12px', borderTop: '1px solid hsl(270 15% 22% / 0.3)' }}>
+                  <h3 style={{ fontFamily: 'var(--font-sans)', fontSize: '13px', fontWeight: 500, color: 'var(--text-muted)', marginBottom: '10px' }}>Preset</h3>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '8px' }}>
                     {(['delta', 'theta', 'alpha', 'beta'] as const).map((preset) => (
                       <button
                         key={preset}
                         className={`preset-btn ${binauralPreset === preset ? 'active' : ''}`}
                         onClick={() => onBinauralPresetChange(preset)}
                         disabled={!entrainmentEnabled}
+                        style={{
+                          display: 'flex',
+                          flexDirection: 'column',
+                          alignItems: 'center',
+                          padding: '10px',
+                          background: binauralPreset === preset ? 'hsl(45 55% 70% / 0.15)' : 'hsl(270 10% 14%)',
+                          border: binauralPreset === preset ? '1px solid hsl(45 55% 70% / 0.4)' : '1px solid transparent',
+                          borderRadius: '8px',
+                          cursor: 'pointer',
+                          textAlign: 'center',
+                        }}
                       >
-                        <span className="preset-name">{BINAURAL_PRESETS[preset].label}</span>
-                        <span className="preset-freq">{BINAURAL_PRESETS[preset].beatFrequency} Hz</span>
-                        <span className="preset-desc">{BINAURAL_PRESETS[preset].description}</span>
+                        <span style={{ fontFamily: 'var(--font-sans)', fontSize: '13px', fontWeight: 600, color: 'var(--text-primary)' }}>{BINAURAL_PRESETS[preset].label}</span>
+                        <span style={{ fontFamily: 'monospace', fontSize: '11px', color: '#D9C478' }}>{BINAURAL_PRESETS[preset].beatFrequency} Hz</span>
+                        <span style={{ fontFamily: 'var(--font-sans)', fontSize: '11px', color: 'var(--text-subtle)', marginTop: '2px' }}>{BINAURAL_PRESETS[preset].description}</span>
                       </button>
                     ))}
                   </div>
                 </div>
               )}
 
-              <div className="volume-control">
-                <svg viewBox="0 0 24 24" fill="currentColor" width="20" height="20">
-                  <path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z" />
-                </svg>
-                <input
-                  type="range"
-                  min="0"
-                  max="1"
-                  step="0.05"
-                  value={entrainmentVolume}
-                  onChange={(e) => onEntrainmentVolumeChange(parseFloat(e.target.value))}
-                  disabled={!entrainmentEnabled}
-                />
-              </div>
+              {entrainmentEnabled && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px' }}>
+                  <svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18" style={{ color: 'var(--text-muted)', flexShrink: 0 }}>
+                    <path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z" />
+                  </svg>
+                  <input
+                    type="range"
+                    min="0"
+                    max="1"
+                    step="0.05"
+                    value={entrainmentVolume}
+                    onChange={(e) => onEntrainmentVolumeChange(parseFloat(e.target.value))}
+                    disabled={!entrainmentEnabled}
+                    style={{
+                      flex: 1,
+                      height: '4px',
+                      borderRadius: '2px',
+                      appearance: 'none',
+                      background: `linear-gradient(to right, #D9C478 0%, #D9C478 ${entrainmentVolume * 100}%, hsl(270 7% 20%) ${entrainmentVolume * 100}%, hsl(270 7% 20%) 100%)`,
+                      cursor: 'pointer',
+                    }}
+                  />
+                </div>
+              )}
 
-              <p className="audio-hint">
+              <p style={{ fontFamily: 'var(--font-sans)', fontSize: '12px', fontWeight: 400, color: 'var(--text-muted)', fontStyle: 'italic', margin: 0 }}>
                 These sounds gently guide your nervous system. They do not indicate success.
               </p>
             </div>
           </section>
 
-          {/* User Selection */}
-          <section className="setup-section">
-            <h2>User Profile</h2>
-            {currentUser ? (
-              <div className="current-user">
-                <span className="user-name">{currentUser.name}</span>
+          {/* User Selection - Hidden in Lovable target, keeping minimal version */}
+          {!currentUser && (
+            <section 
+              className="setup-section"
+              style={{
+                background: 'linear-gradient(165deg, hsl(270 7% 13% / 0.75), hsl(270 10% 9% / 0.85))',
+                border: '1px solid hsl(270 15% 22% / 0.35)',
+                borderRadius: '12px',
+                padding: '20px',
+                boxShadow: '0 4px 20px hsl(270 20% 2% / 0.5)',
+              }}
+            >
+              <h2 style={{ fontFamily: 'var(--font-sans)', fontSize: '16px', fontWeight: 600, color: 'var(--text-primary)', margin: '0 0 12px 0', lineHeight: 1.3 }}>
+                User Profile
+              </h2>
+              <p style={{ fontFamily: 'var(--font-sans)', fontSize: '13px', fontWeight: 400, color: 'var(--text-muted)', marginBottom: '12px' }}>
+                Select or create a user to track your sessions
+              </p>
+              {users.length > 0 && (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '12px' }}>
+                  {users.map((user) => (
+                    <button
+                      key={user.id}
+                      onClick={() => onSelectUser(user.id)}
+                      style={{
+                        padding: '8px 14px',
+                        background: 'hsl(270 10% 14%)',
+                        border: '1px solid transparent',
+                        borderRadius: '8px',
+                        color: 'var(--text-muted)',
+                        fontFamily: 'var(--font-sans)',
+                        fontSize: '13px',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      {user.name}
+                    </button>
+                  ))}
+                </div>
+              )}
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <input
+                  type="text"
+                  placeholder="Enter name..."
+                  value={newUserName}
+                  onChange={(e) => setNewUserName(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && handleCreateUser()}
+                  style={{
+                    flex: 1,
+                    padding: '10px 14px',
+                    background: 'hsl(270 10% 14%)',
+                    border: '1px solid hsl(270 15% 22% / 0.3)',
+                    borderRadius: '8px',
+                    color: 'var(--text-primary)',
+                    fontFamily: 'var(--font-sans)',
+                    fontSize: '14px',
+                  }}
+                />
                 <button
-                  className="btn btn-text"
-                  onClick={() => setShowUserForm(!showUserForm)}
+                  onClick={handleCreateUser}
+                  disabled={!newUserName.trim()}
+                  style={{
+                    padding: '10px 18px',
+                    background: 'hsl(270 10% 14%)',
+                    border: '1px solid hsl(270 15% 25% / 0.4)',
+                    borderRadius: '8px',
+                    color: 'var(--text-primary)',
+                    fontFamily: 'var(--font-sans)',
+                    fontSize: '14px',
+                    fontWeight: 500,
+                    cursor: 'pointer',
+                    opacity: newUserName.trim() ? 1 : 0.5,
+                  }}
                 >
-                  Switch User
+                  Create
                 </button>
               </div>
-            ) : (
-              <p className="hint">Select or create a user to track your sessions</p>
-            )}
-
-            {(showUserForm || !currentUser) && (
-              <div className="user-selection">
-                {users.length > 0 && (
-                  <div className="user-list">
-                    {users.map((user) => (
-                      <button
-                        key={user.id}
-                        className={`user-btn ${currentUser?.id === user.id ? 'active' : ''}`}
-                        onClick={() => {
-                          onSelectUser(user.id);
-                          setShowUserForm(false);
-                        }}
-                      >
-                        {user.name}
-                      </button>
-                    ))}
-                  </div>
-                )}
-
-                <div className="new-user-form">
-                  <input
-                    type="text"
-                    placeholder="Enter name..."
-                    value={newUserName}
-                    onChange={(e) => setNewUserName(e.target.value)}
-                    onKeyDown={(e) => e.key === 'Enter' && handleCreateUser()}
-                  />
-                  <button
-                    className="btn btn-secondary"
-                    onClick={handleCreateUser}
-                    disabled={!newUserName.trim()}
-                  >
-                    Create
-                  </button>
-                </div>
-              </div>
-            )}
-          </section>
+            </section>
+          )}
         </div>
       </div>
 
-      {/* Start Button */}
-      <footer className="screen-footer">
+      {/* Start Button Footer - Target 3/4: Centered gold button */}
+      <footer 
+        className="screen-footer"
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          gap: '12px',
+          paddingTop: '32px',
+        }}
+      >
         <motion.button
           className="btn btn-primary btn-large"
           onClick={onStartSession}
           disabled={!canStartSession}
-          whileHover={{ scale: canStartSession ? 1.02 : 1 }}
+          whileHover={{ scale: canStartSession ? 1.02 : 1, y: canStartSession ? -2 : 0 }}
           whileTap={{ scale: canStartSession ? 0.98 : 1 }}
+          style={{
+            padding: '16px 48px',
+            background: canStartSession 
+              ? 'linear-gradient(135deg, #D9C478, #C9B468)'
+              : 'hsl(270 10% 20%)',
+            color: canStartSession ? '#0c0a0e' : 'var(--text-muted)',
+            border: 'none',
+            borderRadius: '999px',
+            fontFamily: 'var(--font-sans)',
+            fontSize: '16px',
+            fontWeight: 500,
+            cursor: canStartSession ? 'pointer' : 'not-allowed',
+            boxShadow: canStartSession 
+              ? '0 4px 20px hsl(45 55% 70% / 0.3)'
+              : 'none',
+            transition: 'all 0.2s ease',
+            minWidth: '200px',
+          }}
         >
           Begin Practice
         </motion.button>
-        {!canStartSession && (
-          <p className="footer-hint">
-            {!museConnected
-              ? 'Connect your Muse device to begin'
-              : 'Select a user profile to begin'}
-          </p>
-        )}
+        <p 
+          className="footer-hint"
+          style={{
+            fontFamily: 'var(--font-sans)',
+            fontSize: '13px',
+            fontWeight: 400,
+            color: 'var(--text-muted)',
+            textAlign: 'center',
+            margin: 0,
+          }}
+        >
+          {!canStartSession
+            ? (!museConnected
+                ? 'Connect your Muse device to begin'
+                : 'Select a user profile to begin')
+            : 'Ready to begin your session'}
+        </p>
       </footer>
     </motion.div>
   );

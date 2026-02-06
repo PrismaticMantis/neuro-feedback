@@ -1,4 +1,5 @@
 // UI reference: design/targets/2 - Choose Journey.png
+// Lovable design tokens applied: icon circles, card backgrounds, play buttons, spacing
 
 import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
@@ -8,58 +9,66 @@ import type { User } from '../types';
 
 const ENABLED_JOURNEY_ID = 'creativeFlow';
 
-/* Journey display tokens from Lovable spec (duration + icon color + card background) */
+/* Journey display tokens from Lovable spec (duration + icon color + card background)
+ * Target 2 - Choose Journey.png reference:
+ * - Calm: Blue icon (#4d99b3), grey card
+ * - Deep Rest: Purple icon (#a67bc8), purple-tinted card
+ * - Creative Flow: Gold icon (#d9c478), grey card
+ * - Night Wind-Down: Purple icon (#a67bc8), purple-tinted card
+ */
 const JOURNEY_DISPLAY: Record<string, { 
   duration: string; 
   iconColor: string;
+  iconBg: string; // Background for icon circle
   cardBg: 'grey' | 'purple';
 }> = {
-  calm: { duration: '15 min', iconColor: '#4d99b3', cardBg: 'grey' },
-  deepRest: { duration: '25 min', iconColor: '#a67bc8', cardBg: 'purple' },
-  creativeFlow: { duration: '20 min', iconColor: '#d9c478', cardBg: 'grey' },
-  nightWindDown: { duration: '30 min', iconColor: '#a67bc8', cardBg: 'purple' },
+  calm: { duration: '15 min', iconColor: '#ffffff', iconBg: '#5B8DEF', cardBg: 'grey' },
+  deepRest: { duration: '25 min', iconColor: '#ffffff', iconBg: '#9B6BC8', cardBg: 'purple' },
+  creativeFlow: { duration: '20 min', iconColor: '#0c0a0e', iconBg: '#D9C478', cardBg: 'grey' },
+  nightWindDown: { duration: '30 min', iconColor: '#ffffff', iconBg: '#9B6BC8', cardBg: 'purple' },
 };
 
+/* Journey icons matching Lovable Target 2 - Choose Journey.png */
 function JourneyIcon({ id }: { id: string }) {
   if (id === 'calm') {
-    // Three horizontal wavy lines
+    // Three horizontal wavy lines (matches target)
     return (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M2 12c1-1.5 3-1.5 5 0s4 1.5 6 0 4-1.5 6 0 4-1.5 6 0"/>
-        <path d="M2 8c1-1.5 3-1.5 5 0s4 1.5 6 0 4-1.5 6 0 4-1.5 6 0"/>
-        <path d="M2 16c1-1.5 3-1.5 5 0s4 1.5 6 0 4-1.5 6 0 4-1.5 6 0"/>
+      <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M3 8c2-2 4-2 6 0s4 2 6 0 4-2 6 0"/>
+        <path d="M3 12c2-2 4-2 6 0s4 2 6 0 4-2 6 0"/>
+        <path d="M3 16c2-2 4-2 6 0s4 2 6 0 4-2 6 0"/>
       </svg>
     );
   }
   if (id === 'deepRest') {
-    // Crescent moon with small star/swirl
+    // Crescent moon (matches target)
     return (
-      <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+      <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden>
         <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
-        <circle cx="18" cy="6" r="1.5" fill="currentColor"/>
       </svg>
     );
   }
   if (id === 'creativeFlow') {
-    // Four-point sparkle/star (already correct)
+    // Four-point sparkle/star (matches target)
     return (
-      <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+      <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden>
         <path d="M12 2l2.5 7.5L22 12l-7.5 2.5L12 22l-2.5-7.5L2 12l7.5-2.5L12 2z" />
       </svg>
     );
   }
   if (id === 'nightWindDown') {
-    // Two horizontal lines with downward arrow
+    // Three horizontal lines with adjustment marks (matches target filter icon)
     return (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <line x1="3" y1="10" x2="21" y2="10"/>
-        <line x1="3" y1="14" x2="21" y2="14"/>
-        <path d="M12 14l-3 3 3 3"/>
+      <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+        <line x1="4" y1="8" x2="20" y2="8"/>
+        <circle cx="8" cy="8" r="2" fill="currentColor" stroke="none"/>
+        <line x1="4" y1="16" x2="20" y2="16"/>
+        <circle cx="16" cy="16" r="2" fill="currentColor" stroke="none"/>
       </svg>
     );
   }
   return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/></svg>
+    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/></svg>
   );
 }
 
@@ -89,18 +98,19 @@ export function JourneySelect({ currentUser }: JourneySelectProps) {
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: -12 }}
       style={{
-        padding: `0 var(--space-page-x) 80px`,
-        maxWidth: 'var(--container-max-width)',
+        padding: '0 24px 100px', // Lovable Target 2: padding with room for bottom nav
+        maxWidth: '900px',
         margin: '0 auto',
       }}
     >
+      {/* Header - Target 2: Back arrow + Title block */}
       <header 
         className="journey-select-header"
         style={{
           display: 'flex',
           alignItems: 'flex-start',
-          gap: 'var(--space-inner)',
-          padding: 'var(--space-card-gap) 0 var(--space-card-gap)',
+          gap: '12px',
+          padding: '24px 0 28px',
         }}
       >
         <Link 
@@ -108,17 +118,20 @@ export function JourneySelect({ currentUser }: JourneySelectProps) {
           className="btn-ghost" 
           aria-label="Back"
           style={{
-            padding: 'calc(var(--space-tight) + 4px)',
-            borderRadius: 'var(--radius-button-ghost)',
+            padding: '8px',
+            borderRadius: '8px',
             color: 'var(--text-muted)',
             textDecoration: 'none',
             display: 'inline-flex',
             alignItems: 'center',
             justifyContent: 'center',
-            transition: 'background var(--transition-default)',
+            transition: 'background 0.2s ease',
+            marginTop: '4px', // Align with title baseline
           }}
         >
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M19 12H5M12 19l-7-7 7-7"/>
+          </svg>
         </Link>
         <div 
           className="journey-select-title-block"
@@ -126,16 +139,17 @@ export function JourneySelect({ currentUser }: JourneySelectProps) {
             flex: 1,
             display: 'flex',
             flexDirection: 'column',
-            gap: 'var(--space-tight)',
+            gap: '4px',
           }}
         >
+          {/* Title - Target 2: "Choose Journey" bold white */}
           <h1 
             className="journey-select-title"
             style={{
               fontFamily: 'var(--font-sans)',
-              fontSize: 'var(--font-heading-1-size)',
-              fontWeight: 'var(--font-heading-1-weight)',
-              lineHeight: 'var(--font-heading-1-line-height)',
+              fontSize: '24px',
+              fontWeight: 600,
+              lineHeight: 1.2,
               letterSpacing: '-0.02em',
               color: 'var(--text-primary)',
               margin: 0,
@@ -143,15 +157,16 @@ export function JourneySelect({ currentUser }: JourneySelectProps) {
           >
             Choose Journey
           </h1>
+          {/* Subtitle - Target 2: "Select your path to clarity" muted */}
           <p 
             className="journey-select-subtitle"
             style={{
               fontFamily: 'var(--font-sans)',
-              fontSize: 'var(--font-caption-size)',
-              fontWeight: 'var(--weight-regular)',
+              fontSize: '14px',
+              fontWeight: 400,
               color: 'var(--text-muted)',
               margin: 0,
-              lineHeight: 'var(--font-caption-line-height)',
+              lineHeight: 1.4,
             }}
           >
             Select your path to clarity
@@ -184,169 +199,189 @@ export function JourneySelect({ currentUser }: JourneySelectProps) {
           Coming soon
         </div>
       )}
+      {/* Journey Grid - Target 2: 2x2 grid with 24px gap */}
       <div 
         className="journey-grid"
         style={{
           display: 'grid',
-          gridTemplateColumns: '1fr 1fr',
-          gap: 'var(--space-card-gap)',
-          marginBottom: 'var(--space-section-y)',
+          gridTemplateColumns: 'repeat(2, 1fr)',
+          gap: '16px', // Lovable target shows tighter gap
+          marginBottom: '32px',
         }}
       >
         {journeys.map((j) => {
-          const display = JOURNEY_DISPLAY[j.id] ?? { duration: '15 min', iconColor: '#9e59b8', cardBg: 'grey' };
+          const display = JOURNEY_DISPLAY[j.id] ?? { duration: '15 min', iconColor: '#ffffff', iconBg: '#9e59b8', cardBg: 'grey' };
           const isPurpleCard = display.cardBg === 'purple';
+          const isEnabled = j.id === ENABLED_JOURNEY_ID;
+          
           return (
             <motion.button
               key={j.id}
               type="button"
               className={`journey-card journey-card-${display.cardBg}`}
               onClick={() => handleSelect(j.id)}
-              whileHover={{ scale: 1.02 }}
+              whileHover={{ y: -4, transition: { duration: 0.2 } }}
               whileTap={{ scale: 0.98 }}
               style={{
                 display: 'flex',
                 flexDirection: 'column',
                 alignItems: 'flex-start',
                 textAlign: 'left',
-                padding: 'var(--padding-card-glass)',
-                borderRadius: 'var(--radius-card-glass)',
+                padding: '20px',
+                borderRadius: '12px',
                 cursor: 'pointer',
-                transition: 'all var(--transition-card)',
+                transition: 'all 0.3s ease',
                 position: 'relative',
                 overflow: 'hidden',
-                backdropFilter: 'var(--bg-card-glass-backdrop)',
-                boxShadow: 'var(--shadow-card-glass)',
+                // Card backgrounds from Lovable Target 2
                 background: isPurpleCard 
-                  ? 'linear-gradient(165deg, hsl(275 7% 14% / 0.7), hsl(275 10% 8% / 0.8))'
-                  : 'var(--bg-card-glass)',
+                  ? 'linear-gradient(165deg, hsl(275 12% 14% / 0.85), hsl(275 15% 9% / 0.9))'
+                  : 'linear-gradient(165deg, hsl(270 7% 13% / 0.75), hsl(270 10% 9% / 0.85))',
                 border: isPurpleCard
-                  ? '1px solid hsl(275 15% 25% / 0.3)'
-                  : 'var(--border-card-glass)',
-                gap: 0,
+                  ? '1px solid hsl(275 20% 28% / 0.4)'
+                  : '1px solid hsl(270 15% 22% / 0.35)',
+                boxShadow: '0 4px 20px hsl(270 20% 2% / 0.5)',
+                minHeight: '180px',
               }}
             >
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 0, width: '100%' }}>
-                <div 
-                  className="journey-card-icon" 
+              {/* Icon Circle - Lovable Target 2: 44px colored circle with glow */}
+              <motion.div 
+                className="journey-card-icon" 
+                style={{ 
+                  background: display.iconBg, 
+                  width: '44px',
+                  height: '44px',
+                  borderRadius: '12px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  marginBottom: '16px',
+                  flexShrink: 0,
+                  color: display.iconColor,
+                  boxShadow: `0 0 20px ${display.iconBg}40`,
+                }}
+                animate={{
+                  boxShadow: [
+                    `0 0 15px ${display.iconBg}30`,
+                    `0 0 25px ${display.iconBg}50`,
+                    `0 0 15px ${display.iconBg}30`,
+                  ],
+                }}
+                transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}
+              >
+                <JourneyIcon id={j.id} />
+              </motion.div>
+              
+              {/* Journey Name - Target 2: Bold white text */}
+              <span 
+                className="journey-name"
+                style={{
+                  fontFamily: 'var(--font-sans)',
+                  fontSize: '16px',
+                  fontWeight: 600,
+                  lineHeight: 1.3,
+                  color: 'var(--text-primary)',
+                  marginBottom: '6px',
+                  display: 'block',
+                }}
+              >
+                {j.name}
+              </span>
+              
+              {/* Journey Description - Target 2: Muted smaller text */}
+              <span 
+                className="journey-desc"
+                style={{
+                  fontFamily: 'var(--font-sans)',
+                  fontSize: '13px',
+                  fontWeight: 400,
+                  color: 'var(--text-muted)',
+                  lineHeight: 1.5,
+                  marginBottom: '16px',
+                  display: 'block',
+                  flex: 1,
+                }}
+              >
+                {j.description}
+              </span>
+              
+              {/* Footer: Duration + Play Button */}
+              <div 
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  width: '100%',
+                  marginTop: 'auto',
+                }}
+              >
+                {/* Duration with clock icon */}
+                <span 
+                  className="journey-duration"
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    fontFamily: 'var(--font-sans)',
+                    fontSize: '13px',
+                    fontWeight: 400,
+                    color: 'var(--text-muted)',
+                  }}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <circle cx="12" cy="12" r="10"/>
+                    <path d="M12 6v6l4 2"/>
+                  </svg>
+                  {display.duration}
+                </span>
+                
+                {/* Play Button - Target 2: Filled for enabled, outline for disabled */}
+                <span 
+                  className="journey-play-btn" 
                   style={{ 
-                    background: display.iconColor, 
-                    boxShadow: `0 0 20px ${display.iconColor}40`,
-                    width: '40px',
-                    height: '40px',
+                    background: isEnabled ? display.iconBg : 'transparent',
+                    border: isEnabled ? 'none' : '1px solid hsl(270 15% 30% / 0.5)',
+                    width: '32px',
+                    height: '32px',
                     borderRadius: '50%',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
-                    marginBottom: 'var(--space-inner)',
                     flexShrink: 0,
-                    color: 'var(--color-bg-primary)',
-                  }}
+                    color: isEnabled ? display.iconColor : 'var(--text-muted)',
+                    transition: 'all 0.2s ease',
+                  }} 
+                  aria-hidden
                 >
-                  <JourneyIcon id={j.id} />
-                </div>
-                <span 
-                  className="journey-name"
-                  style={{
-                    fontFamily: 'var(--font-sans)',
-                    fontSize: 'var(--font-heading-3-size)',
-                    fontWeight: 'var(--font-heading-3-weight)',
-                    lineHeight: 'var(--font-heading-3-line-height)',
-                    color: 'var(--text-primary)',
-                    marginBottom: 'var(--space-tight)',
-                    position: 'relative',
-                    zIndex: 1,
-                    display: 'block',
-                  }}
-                >
-                  {j.name}
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M8 5v14l11-7z"/>
+                  </svg>
                 </span>
-                <span 
-                  className="journey-desc"
-                  style={{
-                    fontFamily: 'var(--font-sans)',
-                    fontSize: 'var(--font-body-size)',
-                    fontWeight: 'var(--weight-regular)',
-                    color: 'var(--text-muted)',
-                    lineHeight: 'var(--font-body-line-height)',
-                    marginBottom: 'var(--space-inner)',
-                    position: 'relative',
-                    zIndex: 1,
-                    display: 'block',
-                    flex: 1,
-                  }}
-                >
-                  {j.description}
-                </span>
-                <div 
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    width: '100%',
-                    position: 'relative',
-                    zIndex: 1,
-                  }}
-                >
-                  <span 
-                    className="journey-duration"
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 'var(--space-tight)',
-                      fontFamily: 'var(--font-sans)',
-                      fontSize: 'var(--font-caption-size)',
-                      fontWeight: 'var(--weight-regular)',
-                      color: 'var(--text-muted)',
-                    }}
-                  >
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
-                    {display.duration}
-                  </span>
-                  <span 
-                    className="journey-play-btn" 
-                    style={{ 
-                      background: j.id === ENABLED_JOURNEY_ID ? display.iconColor : 'transparent',
-                      border: j.id === ENABLED_JOURNEY_ID ? 'none' : '1px solid var(--border-card-glass)',
-                      width: '32px',
-                      height: '32px',
-                      borderRadius: '50%',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      flexShrink: 0,
-                      color: j.id === ENABLED_JOURNEY_ID ? 'var(--color-bg-primary)' : 'var(--text-primary)',
-                    }} 
-                    aria-hidden
-                  >
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
-                  </span>
-                </div>
               </div>
             </motion.button>
           );
         })}
       </div>
 
+      {/* About Sound Journeys - Target 2: Info card at bottom */}
       <section 
         className="about-journeys-card"
         style={{
-          padding: 'var(--padding-card-glass)',
-          background: 'var(--bg-card-glass)',
-          border: 'var(--border-card-glass)',
-          borderRadius: 'var(--radius-card-glass)',
-          backdropFilter: 'var(--bg-card-glass-backdrop)',
-          boxShadow: 'var(--shadow-card-glass)',
+          padding: '20px',
+          background: 'linear-gradient(165deg, hsl(270 7% 13% / 0.75), hsl(270 10% 9% / 0.85))',
+          border: '1px solid hsl(270 15% 22% / 0.35)',
+          borderRadius: '12px',
+          boxShadow: '0 4px 20px hsl(270 20% 2% / 0.5)',
         }}
       >
         <h3
           style={{
             fontFamily: 'var(--font-sans)',
-            fontSize: 'var(--font-heading-3-size)',
-            fontWeight: 'var(--font-heading-3-weight)',
+            fontSize: '16px',
+            fontWeight: 600,
             color: 'var(--text-primary)',
-            margin: `0 0 var(--space-inner) 0`,
-            lineHeight: 'var(--font-heading-3-line-height)',
+            margin: '0 0 10px 0',
+            lineHeight: 1.3,
           }}
         >
           About Sound Journeys
@@ -354,10 +389,10 @@ export function JourneySelect({ currentUser }: JourneySelectProps) {
         <p
           style={{
             fontFamily: 'var(--font-sans)',
-            fontSize: 'var(--font-body-size)',
-            fontWeight: 'var(--weight-regular)',
+            fontSize: '14px',
+            fontWeight: 400,
             color: 'var(--text-muted)',
-            lineHeight: 'var(--font-body-line-height)',
+            lineHeight: 1.6,
             margin: 0,
           }}
         >

@@ -1,5 +1,6 @@
 // Connection Status Component
-// Shows Muse and headphone connection status
+// UI reference: design/targets/3 - Session Setup.png, design/targets/4 - Session Setup (Muse Connected).png
+// Lovable design: Device Connection card with Muse/Headphone status
 
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -47,58 +48,226 @@ export function ConnectionStatus({
   };
 
   return (
-    <div className="connection-status">
-      <div className="status-bar">
-        {/* Muse Status */}
-        <div className="status-item">
-          <div className="status-icon muse-icon">
-            <svg viewBox="0 0 24 24" fill="currentColor" width="24" height="24">
-              <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z" />
+    <div 
+      className="connection-status"
+      style={{
+        background: 'linear-gradient(165deg, hsl(270 7% 13% / 0.75), hsl(270 10% 9% / 0.85))',
+        border: '1px solid hsl(270 15% 22% / 0.35)',
+        borderRadius: '12px',
+        padding: '20px',
+        boxShadow: '0 4px 20px hsl(270 20% 2% / 0.5)',
+      }}
+    >
+      {/* Section Title - Target 3: "Device Connection" */}
+      <h2 
+        style={{
+          fontFamily: 'var(--font-sans)',
+          fontSize: '16px',
+          fontWeight: 600,
+          color: 'var(--text-primary)',
+          margin: '0 0 16px 0',
+          lineHeight: 1.3,
+        }}
+      >
+        Device Connection
+      </h2>
+      
+      {/* Status Row - Target 3/4: Muse + Headphone side by side */}
+      <div 
+        className="status-bar"
+        style={{
+          display: 'flex',
+          alignItems: 'flex-start',
+          gap: '16px',
+          marginBottom: museConnected ? '16px' : '0',
+        }}
+      >
+        {/* Muse Status - Target 3/4: Icon + Label/Value + optional green dot */}
+        <div 
+          className="status-item"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '10px',
+            flex: 1,
+            paddingRight: '16px',
+            borderRight: '1px solid hsl(270 15% 22% / 0.4)',
+          }}
+        >
+          <div 
+            className="status-icon muse-icon"
+            style={{
+              width: '36px',
+              height: '36px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              background: 'hsl(270 10% 16% / 0.8)',
+              borderRadius: '10px',
+              color: 'var(--text-muted)',
+              flexShrink: 0,
+            }}
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="20" height="20">
+              <circle cx="12" cy="12" r="10"/>
+              <path d="M12 8v4l2 2"/>
             </svg>
           </div>
-          <div className="status-text">
-            <span className="status-label">Muse</span>
-            <span className={`status-value ${museConnected ? 'connected' : ''}`}>
+          <div className="status-text" style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+            <span 
+              className="status-label"
+              style={{
+                fontFamily: 'var(--font-sans)',
+                fontSize: '12px',
+                fontWeight: 400,
+                color: 'var(--text-muted)',
+              }}
+            >
+              Muse
+            </span>
+            <span 
+              className={`status-value ${museConnected ? 'connected' : ''}`}
+              style={{
+                fontFamily: 'var(--font-sans)',
+                fontSize: '14px',
+                fontWeight: 500,
+                color: museConnected ? '#D9C478' : 'var(--text-primary)',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+              }}
+            >
               {museConnected ? museDeviceName || 'Connected' : 'Not Connected'}
+              {museConnected && (
+                <motion.span
+                  style={{
+                    width: '8px',
+                    height: '8px',
+                    borderRadius: '50%',
+                    background: '#3fa87a',
+                    boxShadow: '0 0 8px #3fa87a',
+                  }}
+                  animate={{ opacity: [1, 0.6, 1] }}
+                  transition={{ repeat: Infinity, duration: 2 }}
+                />
+              )}
             </span>
           </div>
-          <motion.div
-            className={`status-indicator ${museConnected ? 'active' : ''}`}
-            animate={{
-              scale: museConnected ? [1, 1.2, 1] : 1,
-              opacity: museConnected ? 1 : 0.3,
-            }}
-            transition={{ repeat: museConnected ? Infinity : 0, duration: 2 }}
-          />
         </div>
 
-        {/* Headphone Status */}
-        <div className="status-item">
-          <div className="status-icon headphone-icon">
-            <svg viewBox="0 0 24 24" fill="currentColor" width="24" height="24">
+        {/* Headphone Status - Target 3/4: Icon + Label/Value */}
+        <div 
+          className="status-item"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '10px',
+            flex: 1,
+          }}
+        >
+          <div 
+            className="status-icon headphone-icon"
+            style={{
+              width: '36px',
+              height: '36px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              background: 'hsl(270 10% 16% / 0.8)',
+              borderRadius: '10px',
+              color: 'var(--text-muted)',
+              flexShrink: 0,
+            }}
+          >
+            <svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18">
               <path d="M12 1c-4.97 0-9 4.03-9 9v7c0 1.66 1.34 3 3 3h3v-8H5v-2c0-3.87 3.13-7 7-7s7 3.13 7 7v2h-4v8h3c1.66 0 3-1.34 3-3v-7c0-4.97-4.03-9-9-9z" />
             </svg>
           </div>
-          <div className="status-text">
-            <span className="status-label">Headphone</span>
-            <span className="status-value hint">Required for binaural</span>
+          <div className="status-text" style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+            <span 
+              className="status-label"
+              style={{
+                fontFamily: 'var(--font-sans)',
+                fontSize: '12px',
+                fontWeight: 400,
+                color: 'var(--text-muted)',
+              }}
+            >
+              Headphone
+            </span>
+            <span 
+              className="status-value hint"
+              style={{
+                fontFamily: 'var(--font-sans)',
+                fontSize: '13px',
+                fontWeight: 400,
+                color: 'var(--text-subtle)',
+              }}
+            >
+              Required for binaural
+            </span>
           </div>
         </div>
       </div>
 
-      {/* Connection Quality Bar */}
+      {/* Signal Quality Bar - Target 4: Yellow progress bar */}
       {museConnected && (
-        <div className="quality-bar">
-          <span className="quality-label">Signal Quality</span>
-          <div className="quality-track">
+        <div 
+          className="quality-bar"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '12px',
+            marginBottom: '12px',
+          }}
+        >
+          <span 
+            className="quality-label"
+            style={{
+              fontFamily: 'var(--font-sans)',
+              fontSize: '12px',
+              fontWeight: 400,
+              color: 'var(--text-muted)',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            Signal Quality
+          </span>
+          <div 
+            className="quality-track"
+            style={{
+              flex: 1,
+              height: '6px',
+              background: 'hsl(270 7% 20%)',
+              borderRadius: '999px',
+              overflow: 'hidden',
+            }}
+          >
             <motion.div
               className="quality-fill"
               initial={{ width: 0 }}
               animate={{ width: `${connectionQuality * 100}%` }}
               transition={{ duration: 0.5 }}
+              style={{
+                height: '100%',
+                background: '#D9C478',
+                borderRadius: '999px',
+              }}
             />
           </div>
-          <span className="quality-value">{Math.round(connectionQuality * 100)}%</span>
+          <span 
+            className="quality-value"
+            style={{
+              fontFamily: 'var(--font-sans)',
+              fontSize: '13px',
+              fontWeight: 500,
+              color: 'var(--text-primary)',
+              minWidth: '36px',
+              textAlign: 'right',
+            }}
+          >
+            {Math.round(connectionQuality * 100)}%
+          </span>
         </div>
       )}
 
@@ -168,19 +337,68 @@ export function ConnectionStatus({
         )}
       </AnimatePresence>
 
-      {/* Connection Buttons */}
+      {/* Connection Buttons - Target 3: Gold "Connect Bluetooth" button */}
       {!museConnected && (
-        <div className="connection-buttons">
+        <div 
+          className="connection-buttons"
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '8px',
+            marginTop: '16px',
+          }}
+        >
           {isBluetoothAvailable && (
-            <button className="btn btn-primary" onClick={onConnectBluetooth}>
+            <button 
+              className="btn btn-primary" 
+              onClick={onConnectBluetooth}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '8px',
+                width: '100%',
+                padding: '14px 24px',
+                background: 'linear-gradient(135deg, #D9C478, #C9B468)',
+                color: '#0c0a0e',
+                border: 'none',
+                borderRadius: '10px',
+                fontFamily: 'var(--font-sans)',
+                fontSize: '15px',
+                fontWeight: 500,
+                cursor: 'pointer',
+                transition: 'all 0.2s ease',
+                boxShadow: '0 4px 16px hsl(45 55% 70% / 0.25)',
+              }}
+            >
               <svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18">
                 <path d="M17.71 7.71L12 2h-1v7.59L6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 11 14.41V22h1l5.71-5.71-4.3-4.29 4.3-4.29zM13 5.83l1.88 1.88L13 9.59V5.83zm1.88 10.46L13 18.17v-3.76l1.88 1.88z" />
               </svg>
               Connect Bluetooth
             </button>
           )}
-          <button className="btn btn-secondary" onClick={handleOSCConnect}>
-            <svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18">
+          <button 
+            className="btn btn-secondary" 
+            onClick={handleOSCConnect}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '8px',
+              width: '100%',
+              padding: '12px 24px',
+              background: 'hsl(270 10% 14% / 0.8)',
+              color: 'var(--text-primary)',
+              border: '1px solid hsl(270 15% 25% / 0.4)',
+              borderRadius: '10px',
+              fontFamily: 'var(--font-sans)',
+              fontSize: '14px',
+              fontWeight: 500,
+              cursor: 'pointer',
+              transition: 'all 0.2s ease',
+            }}
+          >
+            <svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16">
               <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z" />
             </svg>
             Connect via OSC
@@ -188,8 +406,23 @@ export function ConnectionStatus({
         </div>
       )}
 
+      {/* Disconnect Link - Target 4: Gold/champagne text link */}
       {museConnected && (
-        <button className="btn btn-text disconnect-btn" onClick={onDisconnect}>
+        <button 
+          className="btn btn-text disconnect-btn" 
+          onClick={onDisconnect}
+          style={{
+            background: 'none',
+            border: 'none',
+            color: '#D9C478',
+            fontFamily: 'var(--font-sans)',
+            fontSize: '14px',
+            fontWeight: 500,
+            cursor: 'pointer',
+            padding: '4px 0',
+            marginTop: '4px',
+          }}
+        >
           Disconnect
         </button>
       )}

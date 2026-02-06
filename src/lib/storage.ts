@@ -8,7 +8,19 @@ const STORAGE_KEYS = {
   USERS: 'neuro-feedback-users',
   SESSIONS: 'neuro-feedback-sessions',
   CURRENT_USER: 'neuro-feedback-current-user',
+  IN_PROGRESS_SESSION: 'neuro-feedback-in-progress-session',
 };
+
+/**
+ * In-progress session data (persisted immediately on start)
+ * This ensures startTime is not lost if the app crashes
+ */
+export interface InProgressSession {
+  id: string;
+  userId: string;
+  startTime: string; // ISO string - captured at BEGIN SESSION
+  journeyId?: string;
+}
 
 /**
  * Storage Manager for Users and Sessions
@@ -115,6 +127,47 @@ export class StorageManager {
   getCurrentUser(): User | null {
     const userId = this.getCurrentUserId();
     return userId ? this.getUser(userId) : null;
+  }
+
+  // ============== In-Progress Session ==============
+
+  /**
+   * Start tracking an in-progress session (persists startTime immediately)
+   * Call this at BEGIN SESSION to ensure startTime is not lost
+   */
+  startInProgressSession(userId: string, journeyId?: string): InProgressSession {
+    const session: InProgressSession = {
+      id: uuidv4(),
+      userId,
+      startTime: new Date().toISOString(), // Capture NOW
+      journeyId,
+    };
+    
+    localStorage.setItem(STORAGE_KEYS.IN_PROGRESS_SESSION, JSON.stringify(session));
+    console.log('[Storage] In-progress session started:', session);
+    
+    return session;
+  }
+
+  /**
+   * Get the current in-progress session (if any)
+   */
+  getInProgressSession(): InProgressSession | null {
+    try {
+      const data = localStorage.getItem(STORAGE_KEYS.IN_PROGRESS_SESSION);
+      return data ? JSON.parse(data) : null;
+    } catch {
+      console.error('[Storage] Failed to parse in-progress session');
+      return null;
+    }
+  }
+
+  /**
+   * Clear the in-progress session (call after session is saved)
+   */
+  clearInProgressSession(): void {
+    localStorage.removeItem(STORAGE_KEYS.IN_PROGRESS_SESSION);
+    console.log('[Storage] In-progress session cleared');
   }
 
   // ============== Sessions ==============

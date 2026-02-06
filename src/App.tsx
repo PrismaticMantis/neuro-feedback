@@ -17,6 +17,7 @@ import { BottomNav } from './components/BottomNav';
 import { DesignShowcase } from './components/DesignShowcase';
 import { audioEngine } from './lib/audio-engine';
 import { museHandler } from './lib/muse-handler';
+import { movementDetector, DEBUG_MOVEMENT } from './lib/movement-detector';
 import { calculateCalmScore, calculateCreativeFlowScore } from './lib/flow-state';
 import {
   buildSessionRecord,
@@ -117,6 +118,19 @@ function App() {
       await audio.init();
       await audioEngine.startSession();
       if (audio.entrainmentEnabled) await audio.setEntrainmentEnabled(true);
+      
+      // Start movement detection with callback to play movement cues
+      movementDetector.setOnMovement((movementDelta, source) => {
+        const cueNumber = audioEngine.playMovementCue();
+        if (DEBUG_MOVEMENT && cueNumber > 0) {
+          console.log(`[App] Movement cue ${cueNumber} triggered`, {
+            movementDelta: movementDelta.toFixed(4),
+            source,
+          });
+        }
+      });
+      movementDetector.start();
+      
       session.startSession();
       navigate('/session');
     } catch (e) {
@@ -125,6 +139,10 @@ function App() {
   }, [audio, session, navigate]);
 
   const handleEndSession = useCallback(() => {
+    // Stop movement detection
+    movementDetector.stop();
+    movementDetector.setOnMovement(null);
+    
     const audioMetrics = audioEngine.getCoherenceMetrics();
     audioEngine.stopSession();
     audio.setEntrainmentEnabled(false);
@@ -233,6 +251,7 @@ function App() {
               bands={muse.state.bandsSmooth}
               bandsDb={muse.state.bandsDbSmooth}
               batteryLevel={muse.state.batteryLevel}
+              connectionHealthState={muse.connectionHealthState}
               entrainmentEnabled={audio.entrainmentEnabled}
               onEntrainmentToggle={handleEntrainmentToggle}
               onEndSession={handleEndSession}

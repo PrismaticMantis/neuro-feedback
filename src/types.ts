@@ -1,5 +1,17 @@
 // Core type definitions for the Neuro-Somatic Feedback App
 
+/**
+ * Connection Health State for Muse device
+ * 
+ * IMPORTANT: Used to prevent false "disconnected" states during brief data stalls.
+ * 
+ * - 'healthy': BLE connected AND receiving data normally
+ * - 'stalled': BLE connected but data temporarily paused (<10s) - show connected state
+ * - 'reconnecting': BLE connected but data stalled (10-30s), attempting recovery - show "Reconnecting..."
+ * - 'disconnected': GATT disconnect fired OR recovery failed after 30s - show "Disconnected"
+ */
+export type ConnectionHealthState = 'healthy' | 'stalled' | 'reconnecting' | 'disconnected';
+
 export interface User {
   id: string;
   name: string;
@@ -42,6 +54,7 @@ export interface MuseState {
   touching: boolean;
   connectionQuality: number;
   batteryLevel: number;             // Battery percentage (0-100), -1 if unknown
+  healthState?: ConnectionHealthState; // Connection health for UI display (optional for backward compat)
   bands: BrainwaveBands;
   bandsSmooth: BrainwaveBands;
   bandsDb: BrainwaveBandsDb;        // Absolute power in dB
