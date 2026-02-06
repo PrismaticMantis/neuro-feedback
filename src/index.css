@@ -19,24 +19,68 @@ html, body {
 html {
   font-size: 16px;
   -webkit-text-size-adjust: 100%;
+  height: 100%;
 }
 
 body {
   margin: 0;
   padding: 0;
   font-family: var(--font-sans);
-  background-color: var(--bg, #0c0a0e); /* Variable with hard fallback */
-  color: var(--text, #f5f1e6); /* Variable with hard fallback */
-  min-height: 100vh;
+  background-color: #0c0a0e; /* Solid dark base */
+  color: var(--text, #f5f1e6);
+  min-height: 100%;
   overflow-x: hidden;
+}
+
+/**
+ * Global fixed background layer to prevent seams across pages.
+ * 
+ * This creates a single continuous Lovable-style background with:
+ * - Dark base color
+ * - Subtle purple glow (amethyst) in upper area
+ * - Soft champagne warmth in lower area  
+ * - Vignette effect at edges
+ * 
+ * Using position:fixed ensures background stays consistent
+ * regardless of scroll position or content height.
+ */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background: 
+    /* Vignette - darker at edges */
+    radial-gradient(
+      ellipse 100% 100% at 50% 50%,
+      transparent 40%,
+      hsl(270 12% 3% / 0.5) 100%
+    ),
+    /* Purple glow - upper left */
+    radial-gradient(
+      ellipse 80% 60% at 25% 15%,
+      hsl(275 45% 55% / 0.08) 0%,
+      transparent 60%
+    ),
+    /* Champagne warmth - lower right */
+    radial-gradient(
+      ellipse 70% 50% at 75% 85%,
+      hsl(45 55% 70% / 0.04) 0%,
+      transparent 60%
+    ),
+    /* Solid dark base */
+    #0c0a0e;
 }
 
 #root {
   min-height: 100vh;
-  background-color: #0c0a0e; /* Explicit dark background - not transparent */
-  background-color: var(--bg, #0c0a0e); /* Variable with hard fallback */
+  /* Transparent to let body::before show through */
+  background: transparent;
   display: flex;
   flex-direction: column;
+  position: relative;
+  z-index: 0;
 }
 
 /* Remove default button styles */
