@@ -84,7 +84,6 @@ export function SessionSetup({
     if (newUserName.trim()) {
       onCreateUser(newUserName.trim());
       setNewUserName('');
-      setShowUserForm(false);
     }
   };
 

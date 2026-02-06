@@ -128,34 +128,6 @@ export function SessionSummary({
     }
   }, [session, stats, user, peakCoherence, stability, getPdfBlob]);
 
-  /** Email: exact SoundBed copy + open mailto; trigger PDF download so user can attach */
-  const handleEmail = useCallback(async () => {
-    setIsSharing(true);
-    try {
-      const pdfBlob = await getPdfBlob();
-      const fileName = `SoundBed-Session-${new Date(session.startTime).toISOString().slice(0, 10)}.pdf`;
-      const url = URL.createObjectURL(pdfBlob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = fileName;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-
-      const firstName = user.name.trim().split(/\s+/)[0] || user.name;
-      const subject = encodeURIComponent('Your Nervous System Just Learned Something');
-      const body = encodeURIComponent(
-        `Hi ${firstName}, this is a snapshot of your most recent SoundBed session. Take a moment to feel into it. Your body remembers. Small shifts compound. Keep training.\n\n(Attach the downloaded PDF: ${fileName})`
-      );
-      window.location.href = `mailto:?subject=${subject}&body=${body}`;
-    } catch (e) {
-      console.error('Email/PDF failed:', e);
-    } finally {
-      setIsSharing(false);
-    }
-  }, [session, user, getPdfBlob]);
-
   // Draw timeline graph with gradient and axis labels
   const drawTimelineGraph = (canvas: HTMLCanvasElement, history: number[]) => {
     const ctx = canvas.getContext('2d');

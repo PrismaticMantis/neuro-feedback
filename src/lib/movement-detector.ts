@@ -77,7 +77,6 @@ export type MovementEventCallback = (movementDelta: number, source: 'acceleromet
 export class MovementDetector {
   // Accelerometer baseline tracking
   private baselineMagnitude: number = 1.0; // Start at ~1g (gravity)
-  private lastAccelUpdate: number = 0;
   
   // Debounce and cooldown tracking
   private lastMovementEvent: number = 0;
@@ -183,7 +182,6 @@ export class MovementDetector {
    */
   private resetBaselines(): void {
     this.baselineMagnitude = 1.0; // ~1g at rest (gravity)
-    this.lastAccelUpdate = 0;
     this.lastMovementEvent = 0;
     this.lastCueTrigger = 0;
     this.eegRmsBaseline = [0, 0, 0, 0];
