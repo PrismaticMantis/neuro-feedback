@@ -104,7 +104,7 @@ export function Profile({
           </div>
         </>
       ) : (
-        <div className="setup-section" style={{ marginBottom: 24 }}>
+        <div className="setup-section profile-no-user-section">
           <p className="text-caption">No profile selected. Create or select a profile below.</p>
           {users.length > 0 && (
             <ProfileUserList
@@ -114,11 +114,11 @@ export function Profile({
             />
           )}
           {!showCreateForm ? (
-            <button type="button" className="btn btn-secondary" onClick={() => setShowCreateForm(true)} style={{ width: '100%', marginTop: 16 }}>
+            <button type="button" className="btn btn-secondary profile-add-btn" onClick={() => setShowCreateForm(true)}>
               + Add New Profile
             </button>
           ) : (
-            <div className="new-user-form" style={{ marginTop: 16 }}>
+            <div className="new-user-form profile-create-form">
               <input
                 type="text"
                 placeholder="Enter name..."
@@ -130,7 +130,7 @@ export function Profile({
                 }}
                 autoFocus
               />
-              <div style={{ display: 'flex', gap: 8 }}>
+              <div className="profile-create-actions">
                 <button type="button" className="btn btn-text" onClick={() => { setShowCreateForm(false); setNewUserName(''); }}>Cancel</button>
                 <button type="button" className="btn btn-primary" onClick={handleCreateUser} disabled={!newUserName.trim() || isCreating}>
                   {isCreating ? 'Creating...' : 'Create'}
@@ -147,11 +147,11 @@ export function Profile({
       ) : records.length === 0 ? (
         <p className="text-caption">No sessions yet. Start a session to see history here.</p>
       ) : (
-        <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
+        <ul className="profile-sessions-list">
           {records.slice(0, 10).map((r) => (
             <li key={r.id}>
               <Link to={`/history/${r.id}`} className="profile-session-item">
-                <span className="profile-session-dot" style={{ background: JOURNEY_COLORS[r.journeyId] ?? 'var(--accent-secondary)' }} />
+                <span className="profile-session-dot" style={{ background: JOURNEY_COLORS[r.journeyId] ?? 'var(--color-accent-secondary)' }} />
                 <div className="profile-session-content">
                   <p className="profile-session-name">{getJourneyName(r.journeyId)}</p>
                   <p className="profile-session-date">
@@ -159,8 +159,8 @@ export function Profile({
                   </p>
                 </div>
                 <div className="profile-session-meta">
-                  <span>
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ display: 'inline-block', verticalAlign: 'middle', marginRight: 4 }}><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+                  <span className="profile-session-duration">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="profile-session-duration-icon"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
                     {Math.round(r.durationMs / 60000)} min
                   </span>
                   <span className="profile-session-coherence">{Math.round(r.coherencePercent)}%</span>

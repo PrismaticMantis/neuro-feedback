@@ -279,4 +279,37 @@
   --animation-pulse-glow-easing: ease-in-out;
   --animation-breathe-duration: 4s;
   --animation-breathe-easing: ease-in-out;
+  
+  /* ============================================
+     ALIASES - Short variable names for compatibility
+     (These map to the spec-based tokens above)
+     ============================================ */
+  
+  /* Backgrounds - dark Lovable values */
+  --bg: var(--color-bg-primary);                    /* Main background - dark */
+  --bg-primary: var(--color-bg-primary);            /* Main background - dark */
+  --bg-elevated: var(--color-bg-elevated);          /* Elevated surfaces - dark */
+  --bg-card: var(--color-bg-card);                  /* Card backgrounds - dark */
+  --bg-subtle: var(--color-bg-subtle);              /* Subtle backgrounds - dark */
+  --bg-muted: var(--color-bg-muted);                /* Muted elements - dark */
+  
+  /* Surfaces - dark translucent surfaces */
+  --surface: var(--color-bg-card);                  /* Card surface - dark */
+  --surface-2: var(--color-bg-card);                /* Secondary surface - dark */
+  
+  /* Text */
+  --text: var(--color-text-primary);                 /* Primary text - light */
+  --text-primary: var(--color-text-primary);         /* Primary text - light */
+  --text-muted: var(--color-text-muted);             /* Secondary text - muted */
+  --text-subtle: var(--color-text-subtle);          /* Helper text - subtle */
+  
+  /* Accents */
+  --accent: var(--color-accent-primary);             /* Champagne accent */
+  --accent-primary: var(--color-accent-primary);     /* Champagne accent */
+  --accent-secondary: var(--color-accent-secondary); /* Amethyst accent */
+  
+  /* Borders */
+  --border: var(--border-card-glass);                /* Default card border */
+  --border-default: var(--color-border-default);     /* Default border color */
+  --border-subtle: var(--color-border-subtle);      /* Subtle border color */
 }

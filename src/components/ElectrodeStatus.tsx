@@ -43,6 +43,10 @@ export function ElectrodeStatus({ status, compact = false }: ElectrodeStatusProp
   const overallPillLabel = overall.label === 'Strong signal' ? 'Good' : 
                            overall.label === 'Partial signal' ? 'Partial' : 'Poor';
 
+  // Calculate quality percentage based on good electrodes (0-100%)
+  const goodCount = electrodes.filter(e => status[e] === 'good').length;
+  const qualityPercentage = (goodCount / 4) * 100;
+
   return (
     <div className={`electrode-status ${compact ? 'compact' : ''} electrode-status-lovable`}>
       <div className="electrode-header-lovable">
@@ -82,6 +86,20 @@ export function ElectrodeStatus({ status, compact = false }: ElectrodeStatusProp
             </div>
           );
         })}
+      </div>
+
+      {/* Quality Bar */}
+      <div className="quality-bar">
+        <span className="quality-label">Contact Quality</span>
+        <div className="quality-track">
+          <motion.div
+            className="quality-fill"
+            initial={{ width: 0 }}
+            animate={{ width: `${qualityPercentage}%` }}
+            transition={{ duration: 0.5 }}
+          />
+        </div>
+        <span className="quality-value">{Math.round(qualityPercentage)}%</span>
       </div>
     </div>
   );

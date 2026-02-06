@@ -98,6 +98,7 @@ export function ConnectionStatus({
               transition={{ duration: 0.5 }}
             />
           </div>
+          <span className="quality-value">{Math.round(connectionQuality * 100)}%</span>
         </div>
       )}
 

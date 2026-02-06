@@ -506,6 +506,43 @@ export function SessionSummary({
             <canvas ref={handleGraphRef} className="summary-timeline-canvas" />
           </div>
         </div>
+
+        {/* Body Rhythm Section (conditional - only shown if data exists) */}
+        {(session as any).avgHeartRate !== undefined || (session as any).avgHRV !== undefined || (session as any).recoveryPoints !== undefined ? (
+          <div className="summary-body-rhythm-section">
+            <h3 className="summary-section-title">Body Rhythm</h3>
+            <div className="summary-body-rhythm-grid">
+              {(session as any).avgHeartRate !== undefined && (
+                <div className="summary-body-rhythm-card">
+                  <svg className="summary-body-rhythm-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
+                  </svg>
+                  <span className="summary-body-rhythm-label">Heart Rate</span>
+                  <span className="summary-body-rhythm-value">{(session as any).avgHeartRate || 0} bpm</span>
+                </div>
+              )}
+              {(session as any).avgHRV !== undefined && (
+                <div className="summary-body-rhythm-card">
+                  <svg className="summary-body-rhythm-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+                  </svg>
+                  <span className="summary-body-rhythm-label">HRV</span>
+                  <span className="summary-body-rhythm-value">{(session as any).avgHRV || 0} ms</span>
+                </div>
+              )}
+              {(session as any).recoveryPoints !== undefined && (
+                <div className="summary-body-rhythm-card">
+                  <svg className="summary-body-rhythm-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/>
+                    <polyline points="17 6 23 6 23 12"/>
+                  </svg>
+                  <span className="summary-body-rhythm-label">Recovery</span>
+                  <span className="summary-body-rhythm-value">+{(session as any).recoveryPoints || 0} pts</span>
+                </div>
+              )}
+            </div>
+          </div>
+        ) : null}
       </div>
 
       {/* CTA Buttons */}

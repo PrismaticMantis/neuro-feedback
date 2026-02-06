@@ -72,7 +72,7 @@ export function Home({ currentUser, users, onCreateUser, onSelectUser }: HomePro
         <div className="create-user-modal">
           <div className="create-user-card">
             <h2>Create Your Profile</h2>
-            <p className="footer-hint" style={{ marginTop: 8, marginBottom: 24 }}>
+            <p className="footer-hint create-user-hint">
               Get started by creating your profile
             </p>
             <div className="new-user-form">
@@ -111,11 +111,11 @@ export function Home({ currentUser, users, onCreateUser, onSelectUser }: HomePro
         <div className="create-user-modal">
           <div className="create-user-card">
             <h2>Select or Create Profile</h2>
-            <p className="footer-hint" style={{ marginTop: 8, marginBottom: 24 }}>
+            <p className="footer-hint create-user-hint">
               Choose an existing profile or create a new one
             </p>
             {users.length > 0 && (
-              <div className="user-list" style={{ marginBottom: 16 }}>
+              <div className="user-list create-user-list">
                 {users.map((user) => (
                   <button
                     key={user.id}
@@ -209,7 +209,7 @@ export function Home({ currentUser, users, onCreateUser, onSelectUser }: HomePro
             onClick={handleStartSession}
             whileHover={{ scale: 1.02 }}
             whileTap={{ scale: 0.98 }}
-            style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}
+            style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 'var(--space-tight)' }}
           >
             <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
             Start Session
