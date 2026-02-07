@@ -423,8 +423,8 @@ export function SessionSummary({
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: -20 }}
       style={{
-        padding: '0 24px 32px',
-        maxWidth: '900px',
+        padding: '0 24px 20px',
+        maxWidth: '600px',
         margin: '0 auto',
       }}
     >
@@ -435,7 +435,7 @@ export function SessionSummary({
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
-          padding: '12px 0 12px',
+          padding: '12px 0',
         }}
       >
         <Link 
@@ -471,14 +471,14 @@ export function SessionSummary({
               display: 'flex',
               alignItems: 'center',
               gap: '6px',
-              padding: '8px 14px',
-              background: 'hsl(270 10% 18% / 0.8)',
-              border: '1px solid hsl(270 10% 25%)',
-              borderRadius: '8px',
-              color: saved ? 'var(--text-muted)' : 'var(--text-primary)',
+              padding: '8px 16px',
+              background: 'transparent',
+              border: '1px solid hsl(275 20% 25% / 0.35)',
+              borderRadius: '12px',
+              color: saved ? 'var(--text-subtle)' : 'var(--text-primary)',
               fontFamily: 'var(--font-sans)',
-              fontSize: '13px',
-              fontWeight: 500,
+              fontSize: '14px',
+              fontWeight: 400,
               cursor: saved ? 'default' : 'pointer',
               transition: 'all 0.2s ease',
             }}
@@ -498,14 +498,14 @@ export function SessionSummary({
               display: 'flex',
               alignItems: 'center',
               gap: '6px',
-              padding: '8px 14px',
-              background: 'hsl(270 10% 18% / 0.8)',
-              border: '1px solid hsl(270 10% 25%)',
-              borderRadius: '8px',
-              color: isSharing ? 'var(--text-muted)' : 'var(--text-primary)',
+              padding: '8px 16px',
+              background: 'transparent',
+              border: '1px solid hsl(275 20% 25% / 0.35)',
+              borderRadius: '12px',
+              color: isSharing ? 'var(--text-subtle)' : 'var(--text-primary)',
               fontFamily: 'var(--font-sans)',
-              fontSize: '13px',
-              fontWeight: 500,
+              fontSize: '14px',
+              fontWeight: 400,
               cursor: isSharing ? 'default' : 'pointer',
               transition: 'all 0.2s ease',
             }}
@@ -526,12 +526,13 @@ export function SessionSummary({
         {/* Hero Section - Target 6: Glass card with coherence ring */}
         <div 
           className="summary-hero"
-          style={{
-            background: 'linear-gradient(135deg, hsl(270 10% 15% / 0.6), hsl(270 10% 12% / 0.4))',
-            border: '1px solid hsl(270 10% 25% / 0.3)',
-            borderRadius: '12px',
-            padding: '20px 20px',
+      style={{
+            background: 'linear-gradient(165deg, hsl(270 7% 14% / 0.7), hsl(270 10% 8% / 0.8))',
+            border: '1px solid hsl(275 20% 25% / 0.35)',
+            borderRadius: '16px',
+            padding: '24px 20px',
             backdropFilter: 'blur(20px)',
+            boxShadow: '0 4px 20px hsl(270 20% 2% / 0.6)',
             textAlign: 'center',
             marginBottom: '16px',
           }}
@@ -541,21 +542,22 @@ export function SessionSummary({
             style={{
               fontFamily: 'var(--font-sans)',
               fontSize: '12px',
-              fontWeight: 400,
+              fontWeight: 500,
               color: 'var(--text-muted)',
               margin: '0 0 4px',
-              letterSpacing: '0.02em',
+              letterSpacing: '0.1em',
+              textTransform: 'uppercase' as const,
             }}
           >Session Complete</p>
           <h2 
             className="summary-journey-name"
             style={{
               fontFamily: 'var(--font-sans)',
-              fontSize: '28px',
-              fontWeight: 600,
+              fontSize: '24px',
+              fontWeight: 500,
               color: 'var(--text-primary)',
               margin: '0 0 12px',
-              lineHeight: 1.2,
+              lineHeight: 1.25,
             }}
           >{journeyName}</h2>
           
@@ -564,9 +566,7 @@ export function SessionSummary({
             className="summary-coherence-ring glow-icon"
             style={{
               position: 'relative',
-              width: '160px',
-              height: '160px',
-              margin: '0 auto 12px',
+              margin: '0 auto 10px',
               borderRadius: '50%',
             }}
             animate={{
@@ -642,6 +642,9 @@ export function SessionSummary({
                 animate={{ opacity: 1 }}
                 transition={{ delay: 0.5 }}
                 style={{
+                  display: 'inline-flex',
+                  alignItems: 'baseline',
+                  justifyContent: 'center',
                   fontFamily: 'var(--font-sans)',
                   fontSize: '44px',
                   fontWeight: 600,
@@ -650,7 +653,7 @@ export function SessionSummary({
                 }}
               >
                 {Math.round(stats.coherencePercent)}
-                <span style={{ fontSize: '22px', fontWeight: 400, marginLeft: '2px' }}>%</span>
+                <span style={{ fontSize: '18px', fontWeight: 400, marginLeft: '3px', opacity: 0.7 }}>%</span>
               </motion.span>
               <span 
                 className="coherence-label"
@@ -661,7 +664,7 @@ export function SessionSummary({
                   color: 'var(--text-muted)',
                   marginTop: '4px',
                 }}
-              >{journeyName}</span>
+              >Coherence</span>
             </div>
           </motion.div>
           <p 
@@ -671,7 +674,7 @@ export function SessionSummary({
               fontSize: '14px',
               fontWeight: 400,
               color: 'var(--text-muted)',
-              margin: 0,
+              margin: '8px 0 0',
               lineHeight: 1.5,
               maxWidth: '400px',
               marginLeft: 'auto',
@@ -680,7 +683,7 @@ export function SessionSummary({
           >{sessionInterpretation}</p>
         </div>
 
-        {/* Session Metrics Section - Target 6: 4-card grid */}
+        {/* Session Metrics Section - Lovable spec: Heading 3, Metric Card styling */}
         <div 
           className="summary-metrics-section"
           style={{
@@ -691,29 +694,29 @@ export function SessionSummary({
             className="summary-section-title"
             style={{
               fontFamily: 'var(--font-sans)',
-              fontSize: '16px',
-              fontWeight: 600,
+              fontSize: '20px',
+              fontWeight: 500,
               color: 'var(--text-primary)',
               margin: '0 0 10px',
+              lineHeight: 1.3,
             }}
           >Session Metrics</h3>
           <div 
             className="summary-metrics-grid"
             style={{
               display: 'grid',
-              gridTemplateColumns: 'repeat(4, 1fr)',
+              gridTemplateColumns: 'repeat(2, 1fr)',
               gap: '12px',
             }}
           >
-            {/* Duration Card */}
+            {/* Duration Card — Metric Card spec */}
             <div 
               className="summary-metric-card"
               style={{
-                background: 'linear-gradient(135deg, hsl(270 10% 15% / 0.6), hsl(270 10% 12% / 0.4))',
-                border: '1px solid hsl(270 10% 25% / 0.3)',
+                background: 'hsl(270 10% 8% / 0.8)',
+                border: '1px solid hsl(270 10% 22% / 0.4)',
                 borderRadius: '12px',
                 padding: '16px',
-                backdropFilter: 'blur(20px)',
               }}
             >
               <span 
@@ -721,10 +724,11 @@ export function SessionSummary({
                 style={{
                   display: 'block',
                   fontFamily: 'var(--font-sans)',
-                  fontSize: '12px',
+                  fontSize: '14px',
                   fontWeight: 400,
                   color: 'var(--text-muted)',
                   marginBottom: '8px',
+                  lineHeight: 1.5,
                 }}
               >Duration</span>
               <span 
@@ -732,24 +736,24 @@ export function SessionSummary({
                 style={{
                   fontFamily: 'var(--font-sans)',
                   fontSize: '24px',
-                  fontWeight: 600,
+                  fontWeight: 500,
                   color: 'var(--text-primary)',
+                  lineHeight: 1.25,
                 }}
               >
                 {formatTime(stats.totalLength)}
-                <span style={{ fontSize: '14px', fontWeight: 400, marginLeft: '4px' }}>min</span>
+                <span style={{ fontSize: '14px', fontWeight: 400, marginLeft: '4px', opacity: 0.7 }}>min</span>
               </span>
             </div>
             
-            {/* Avg Coherence Card */}
+            {/* Avg Coherence Card — Metric Card spec */}
             <div 
               className="summary-metric-card"
               style={{
-                background: 'linear-gradient(135deg, hsl(270 10% 15% / 0.6), hsl(270 10% 12% / 0.4))',
-                border: '1px solid hsl(270 10% 25% / 0.3)',
+                background: 'hsl(270 10% 8% / 0.8)',
+                border: '1px solid hsl(270 10% 22% / 0.4)',
                 borderRadius: '12px',
                 padding: '16px',
-                backdropFilter: 'blur(20px)',
               }}
             >
               <span 
@@ -757,42 +761,39 @@ export function SessionSummary({
                 style={{
                   display: 'block',
                   fontFamily: 'var(--font-sans)',
-                  fontSize: '12px',
+                  fontSize: '14px',
                   fontWeight: 400,
                   color: 'var(--text-muted)',
                   marginBottom: '8px',
+                  lineHeight: 1.5,
                 }}
               >Avg. Coherence</span>
               <span 
                 className="summary-metric-value"
                 style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px',
+                  display: 'inline-flex',
+                  alignItems: 'baseline',
+                  gap: '4px',
                   fontFamily: 'var(--font-sans)',
                   fontSize: '24px',
-                  fontWeight: 600,
+                  fontWeight: 500,
                   color: 'var(--text-primary)',
+                  lineHeight: 1.25,
                 }}
               >
                 {Math.round(stats.avgCoherence * 100)}
-                <span style={{ fontSize: '14px', fontWeight: 400 }}>%</span>
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#22c55e" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-                  <line x1="12" y1="19" x2="12" y2="5"/>
-                  <polyline points="5 12 12 5 19 12"/>
-                </svg>
+                <span style={{ fontSize: '14px', fontWeight: 400, opacity: 0.7 }}>%</span>
               </span>
             </div>
             
-            {/* Peak Coherence Card */}
+            {/* Peak Coherence Card — Metric Card spec */}
             <div 
               className="summary-metric-card"
               style={{
-                background: 'linear-gradient(135deg, hsl(270 10% 15% / 0.6), hsl(270 10% 12% / 0.4))',
-                border: '1px solid hsl(270 10% 25% / 0.3)',
+                background: 'hsl(270 10% 8% / 0.8)',
+                border: '1px solid hsl(270 10% 22% / 0.4)',
                 borderRadius: '12px',
                 padding: '16px',
-                backdropFilter: 'blur(20px)',
               }}
             >
               <span 
@@ -800,35 +801,38 @@ export function SessionSummary({
                 style={{
                   display: 'block',
                   fontFamily: 'var(--font-sans)',
-                  fontSize: '12px',
+                  fontSize: '14px',
                   fontWeight: 400,
                   color: 'var(--text-muted)',
                   marginBottom: '8px',
+                  lineHeight: 1.5,
                 }}
               >Peak Coherence</span>
               <span 
                 className="summary-metric-value"
                 style={{
+                  display: 'inline-flex',
+                  alignItems: 'baseline',
                   fontFamily: 'var(--font-sans)',
                   fontSize: '24px',
-                  fontWeight: 600,
+                  fontWeight: 500,
                   color: 'var(--text-primary)',
+                  lineHeight: 1.25,
                 }}
               >
                 {Math.round(peakCoherence * 100)}
-                <span style={{ fontSize: '14px', fontWeight: 400, marginLeft: '4px' }}>%</span>
+                <span style={{ fontSize: '14px', fontWeight: 400, marginLeft: '3px', opacity: 0.7 }}>%</span>
               </span>
             </div>
             
-            {/* Stability Card */}
+            {/* Stability Card — Metric Card spec */}
             <div 
               className="summary-metric-card"
               style={{
-                background: 'linear-gradient(135deg, hsl(270 10% 15% / 0.6), hsl(270 10% 12% / 0.4))',
-                border: '1px solid hsl(270 10% 25% / 0.3)',
+                background: 'hsl(270 10% 8% / 0.8)',
+                border: '1px solid hsl(270 10% 22% / 0.4)',
                 borderRadius: '12px',
                 padding: '16px',
-                backdropFilter: 'blur(20px)',
               }}
             >
               <span 
@@ -836,10 +840,11 @@ export function SessionSummary({
                 style={{
                   display: 'block',
                   fontFamily: 'var(--font-sans)',
-                  fontSize: '12px',
+                  fontSize: '14px',
                   fontWeight: 400,
                   color: 'var(--text-muted)',
                   marginBottom: '8px',
+                  lineHeight: 1.5,
                 }}
               >Stability</span>
               <span 
@@ -848,8 +853,9 @@ export function SessionSummary({
                   display: 'block',
                   fontFamily: 'var(--font-sans)',
                   fontSize: '24px',
-                  fontWeight: 600,
+                  fontWeight: 500,
                   color: 'var(--text-primary)',
+                  lineHeight: 1.25,
                 }}
               >{stability}</span>
               <span 
@@ -857,9 +863,9 @@ export function SessionSummary({
                 style={{
                   display: 'block',
                   fontFamily: 'var(--font-sans)',
-                  fontSize: '11px',
+                  fontSize: '12px',
                   fontWeight: 400,
-                  color: 'var(--text-muted)',
+                  color: 'var(--text-subtle)',
                   marginTop: '4px',
                 }}
               >{stabilitySubtext}</span>
@@ -867,7 +873,7 @@ export function SessionSummary({
           </div>
         </div>
 
-        {/* Coherence Timeline - Target 6: Graph card */}
+        {/* Coherence Timeline — Card (Glass) spec */}
         <div 
           className="summary-timeline-section"
           style={{
@@ -878,20 +884,22 @@ export function SessionSummary({
             className="summary-section-title"
             style={{
               fontFamily: 'var(--font-sans)',
-              fontSize: '16px',
-              fontWeight: 600,
+              fontSize: '20px',
+              fontWeight: 500,
               color: 'var(--text-primary)',
               margin: '0 0 10px',
+              lineHeight: 1.3,
             }}
           >Coherence Timeline</h3>
           <div 
             className="summary-timeline-chart"
             style={{
-              background: 'linear-gradient(135deg, hsl(270 10% 15% / 0.6), hsl(270 10% 12% / 0.4))',
-              border: '1px solid hsl(270 10% 25% / 0.3)',
-              borderRadius: '12px',
+              background: 'linear-gradient(165deg, hsl(270 7% 14% / 0.7), hsl(270 10% 8% / 0.8))',
+              border: '1px solid hsl(275 20% 25% / 0.35)',
+              borderRadius: '16px',
               padding: '16px',
               backdropFilter: 'blur(20px)',
+              boxShadow: '0 4px 20px hsl(270 20% 2% / 0.6)',
               height: '200px',
             }}
           >
@@ -906,7 +914,7 @@ export function SessionSummary({
           </div>
         </div>
 
-        {/* Body Rhythm Section - always shown, "—" for unavailable data */}
+        {/* Body Rhythm Section — Metric Card spec */}
         <div 
           className="summary-body-rhythm-section"
           style={{
@@ -917,10 +925,11 @@ export function SessionSummary({
             className="summary-section-title"
             style={{
               fontFamily: 'var(--font-sans)',
-              fontSize: '16px',
-              fontWeight: 600,
+              fontSize: '20px',
+              fontWeight: 500,
               color: 'var(--text-primary)',
               margin: '0 0 10px',
+              lineHeight: 1.3,
             }}
           >Body Rhythm</h3>
           <div 
@@ -931,18 +940,17 @@ export function SessionSummary({
               gap: '12px',
             }}
           >
-            {/* Heart Rate Card */}
+            {/* Heart Rate Card — Metric Card spec */}
             <div 
               className="summary-body-rhythm-card"
               style={{
                 display: 'flex',
                 alignItems: 'center',
                 gap: '12px',
-                background: 'linear-gradient(135deg, hsl(270 10% 15% / 0.6), hsl(270 10% 12% / 0.4))',
-                border: '1px solid hsl(270 10% 25% / 0.3)',
+                background: 'hsl(270 10% 8% / 0.8)',
+                border: '1px solid hsl(270 10% 22% / 0.4)',
                 borderRadius: '12px',
                 padding: '16px',
-                backdropFilter: 'blur(20px)',
               }}
             >
               <div
@@ -964,36 +972,37 @@ export function SessionSummary({
               <div style={{ display: 'flex', flexDirection: 'column' }}>
                 <span style={{
                   fontFamily: 'var(--font-sans)',
-                  fontSize: '12px',
+                  fontSize: '14px',
                   fontWeight: 400,
                   color: 'var(--text-muted)',
+                  lineHeight: 1.5,
                 }}>Heart Rate</span>
                 <span style={{
                   fontFamily: 'var(--font-sans)',
-                  fontSize: '18px',
-                  fontWeight: 600,
+                  fontSize: '20px',
+                  fontWeight: 500,
                   color: 'var(--text-primary)',
+                  lineHeight: 1.3,
                 }}>
                   {session.avgHeartRate != null ? session.avgHeartRate : '—'}
                   {session.avgHeartRate != null && (
-                    <span style={{ fontSize: '12px', fontWeight: 400, marginLeft: '4px' }}>bpm</span>
+                    <span style={{ fontSize: '12px', fontWeight: 400, marginLeft: '4px', opacity: 0.7 }}>bpm</span>
                   )}
                 </span>
               </div>
             </div>
             
-            {/* HRV Card */}
+            {/* HRV Card — Metric Card spec */}
             <div 
               className="summary-body-rhythm-card"
               style={{
                 display: 'flex',
                 alignItems: 'center',
                 gap: '12px',
-                background: 'linear-gradient(135deg, hsl(270 10% 15% / 0.6), hsl(270 10% 12% / 0.4))',
-                border: '1px solid hsl(270 10% 25% / 0.3)',
+                background: 'hsl(270 10% 8% / 0.8)',
+                border: '1px solid hsl(270 10% 22% / 0.4)',
                 borderRadius: '12px',
                 padding: '16px',
-                backdropFilter: 'blur(20px)',
               }}
             >
               <div
@@ -1015,36 +1024,37 @@ export function SessionSummary({
               <div style={{ display: 'flex', flexDirection: 'column' }}>
                 <span style={{
                   fontFamily: 'var(--font-sans)',
-                  fontSize: '12px',
+                  fontSize: '14px',
                   fontWeight: 400,
                   color: 'var(--text-muted)',
+                  lineHeight: 1.5,
                 }}>HRV</span>
                 <span style={{
                   fontFamily: 'var(--font-sans)',
-                  fontSize: '18px',
-                  fontWeight: 600,
+                  fontSize: '20px',
+                  fontWeight: 500,
                   color: 'var(--text-primary)',
+                  lineHeight: 1.3,
                 }}>
                   {session.avgHRV != null ? session.avgHRV : '—'}
                   {session.avgHRV != null && (
-                    <span style={{ fontSize: '12px', fontWeight: 400, marginLeft: '4px' }}>ms</span>
+                    <span style={{ fontSize: '12px', fontWeight: 400, marginLeft: '4px', opacity: 0.7 }}>ms</span>
                   )}
                 </span>
               </div>
             </div>
             
-            {/* Recovery Card */}
+            {/* Recovery Card — Metric Card spec */}
             <div 
               className="summary-body-rhythm-card"
               style={{
                 display: 'flex',
                 alignItems: 'center',
                 gap: '12px',
-                background: 'linear-gradient(135deg, hsl(270 10% 15% / 0.6), hsl(270 10% 12% / 0.4))',
-                border: '1px solid hsl(270 10% 25% / 0.3)',
+                background: 'hsl(270 10% 8% / 0.8)',
+                border: '1px solid hsl(270 10% 22% / 0.4)',
                 borderRadius: '12px',
                 padding: '16px',
-                backdropFilter: 'blur(20px)',
               }}
             >
               <div
@@ -1067,19 +1077,21 @@ export function SessionSummary({
               <div style={{ display: 'flex', flexDirection: 'column' }}>
                 <span style={{
                   fontFamily: 'var(--font-sans)',
-                  fontSize: '12px',
+                  fontSize: '14px',
                   fontWeight: 400,
                   color: 'var(--text-muted)',
+                  lineHeight: 1.5,
                 }}>Recovery</span>
                 <span style={{
                   fontFamily: 'var(--font-sans)',
-                  fontSize: '18px',
-                  fontWeight: 600,
-                  color: '#22c55e',
+                  fontSize: '20px',
+                  fontWeight: 500,
+                  color: 'var(--success)',
+                  lineHeight: 1.3,
                 }}>
                   {session.recoveryPoints != null ? '+' + session.recoveryPoints : '—'}
                   {session.recoveryPoints != null && (
-                    <span style={{ fontSize: '12px', fontWeight: 400, marginLeft: '4px', color: 'var(--text-primary)' }}>pts</span>
+                    <span style={{ fontSize: '12px', fontWeight: 400, marginLeft: '4px', opacity: 0.7, color: 'var(--text-primary)' }}>pts</span>
                   )}
                 </span>
               </div>
@@ -1088,7 +1100,7 @@ export function SessionSummary({
         </div>
       </div>
 
-      {/* CTA Buttons - Target 6: Back to Home secondary, Start Another Journey primary */}
+      {/* CTA Buttons — Lovable spec: Secondary + Primary button styles */}
       <footer 
         className="summary-footer"
         style={{
@@ -1096,7 +1108,7 @@ export function SessionSummary({
           alignItems: 'center',
           justifyContent: 'center',
           gap: '16px',
-          paddingTop: '8px',
+          paddingTop: '12px',
         }}
       >
         <motion.button
@@ -1106,12 +1118,12 @@ export function SessionSummary({
           whileTap={{ scale: 0.98 }}
           style={{
             padding: '12px 24px',
-            background: 'hsl(270 10% 18%)',
+            background: 'hsl(270 7% 14% / 0.8)',
             color: 'var(--text-primary)',
-            border: '1px solid hsl(270 10% 30%)',
-            borderRadius: '999px',
+            border: '1px solid hsl(275 15% 28% / 0.4)',
+            borderRadius: '12px',
             fontFamily: 'var(--font-sans)',
-            fontSize: '15px',
+            fontSize: '16px',
             fontWeight: 500,
             cursor: 'pointer',
             transition: 'all 0.2s ease',
@@ -1125,16 +1137,16 @@ export function SessionSummary({
           whileHover={{ scale: 1.02, y: -2 }}
           whileTap={{ scale: 0.98 }}
           style={{
-            padding: '12px 24px',
-            background: 'linear-gradient(135deg, #D9C478, #C9B468)',
-            color: '#0c0a0e',
+            padding: '14px 28px',
+            background: 'linear-gradient(135deg, hsl(45 55% 70%), hsl(40 50% 62%))',
+            color: 'hsl(270 12% 8%)',
             border: 'none',
-            borderRadius: '999px',
+            borderRadius: '12px',
             fontFamily: 'var(--font-sans)',
-            fontSize: '15px',
+            fontSize: '16px',
             fontWeight: 500,
             cursor: 'pointer',
-            boxShadow: '0 4px 20px hsl(45 55% 70% / 0.3)',
+            boxShadow: '0 4px 20px hsl(270 20% 2% / 0.6), 0 0 30px hsl(45 55% 70% / 0.2)',
             transition: 'all 0.2s ease',
           }}
         >

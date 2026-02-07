@@ -49,7 +49,7 @@ export const DEBUG_MOVEMENT = true;
  *   250ms prevents rapid-fire triggers from a single head motion
  * 
  * - cooldownMs: Minimum time between audio cue playback
- *   6000ms (6s) ensures cues are gentle nudges, not nagging
+ *   2500ms (2.5s) allows double-shakes to trigger multiple cues while staying gentle
  * 
  * EEG FALLBACK THRESHOLDS:
  * - eegArtifactThreshold: RMS spike multiplier to trigger
@@ -60,7 +60,7 @@ const MOVEMENT_CONFIG = {
   // Accelerometer-based detection (per-axis delta)
   axisDeltaThreshold: 0.06,     // Sum of |dx|+|dy|+|dz| to trigger (tune via logs)
   debounceMs: 250,              // Minimum ms between processing movement
-  cooldownMs: 6000,             // Minimum ms between cue playback (6 seconds)
+  cooldownMs: 2500,             // Minimum ms between cue playback (2.5 seconds)
   warmupSamples: 5,             // Ignore first N samples to let prevAcc stabilize
   
   // EEG artifact fallback (conservative)

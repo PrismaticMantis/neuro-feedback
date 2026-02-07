@@ -10,8 +10,6 @@ import { CoherenceGraph } from './CoherenceGraph';
 import { ElectrodeStatus } from './ElectrodeStatus';
 import { DEBUG_SESSION_TELEMETRY } from '../lib/feature-flags';
 import { museHandler } from '../lib/muse-handler';
-import { audioEngine } from '../lib/audio-engine';
-import { DEBUG_MOVEMENT } from '../lib/movement-detector';
 import { getJourneys, getLastJourneyId } from '../lib/session-storage';
 import { useSession } from '../hooks/useSession';
 import type { ElectrodeStatus as ElectrodeStatusType, BrainwaveBands, BrainwaveBandsDb, ConnectionHealthState } from '../types';
@@ -125,7 +123,7 @@ export function ActiveSession({
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
       style={{
-        padding: '0 24px 24px',
+        padding: '0 24px 16px',
         maxWidth: '900px',
         margin: '0 auto',
         position: 'relative',
@@ -140,7 +138,7 @@ export function ActiveSession({
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
-          padding: '12px 0 10px',
+          padding: '8px 0 6px',
         }}
       >
         <div 
@@ -243,8 +241,8 @@ export function ActiveSession({
         style={{
           display: 'grid',
           gridTemplateColumns: 'repeat(2, 1fr)',
-          gap: '12px',
-          marginBottom: '10px',
+          gap: '10px',
+          marginBottom: '8px',
         }}
       >
         {/* Electrode Contact Card - Target 5: Shows electrode status + band powers */}
@@ -451,7 +449,7 @@ export function ActiveSession({
           background: 'linear-gradient(135deg, hsl(270 10% 16% / 0.7), hsl(270 10% 13% / 0.5))',
           border: '1px solid hsl(270 10% 25% / 0.3)',
           borderRadius: '12px',
-          marginBottom: '12px',
+          marginBottom: '8px',
           backdropFilter: 'blur(20px)',
         }}
       >
@@ -527,7 +525,7 @@ export function ActiveSession({
           display: 'flex',
           flexDirection: 'column',
           alignItems: 'center',
-          margin: '4px 0 12px',
+          margin: '2px 0 8px',
         }}
       >
         {/* Circular Timer with Progress Ring - with breathing glow effect */}
@@ -662,7 +660,7 @@ export function ActiveSession({
       <main 
         className="session-main-lovable"
         style={{
-          marginBottom: '16px',
+          marginBottom: '10px',
         }}
       >
         <div 
@@ -802,7 +800,7 @@ export function ActiveSession({
           alignItems: 'center',
           justifyContent: 'center',
           gap: '16px',
-          paddingBottom: '16px',
+          paddingBottom: '10px',
         }}
       >
         <motion.button
@@ -856,35 +854,6 @@ export function ActiveSession({
           </svg>
         </button>
 
-        {/* DEBUG: Test Movement Cue button - visible only when DEBUG_MOVEMENT is true */}
-        {/* Calls testPlayMovementCue() which: awaits AudioContext.resume() (iOS-safe from */}
-        {/* user gesture), reloads buffer if null, and logs every step for diagnosis. */}
-        {DEBUG_MOVEMENT && (
-          <button
-            onClick={async () => {
-              console.log('[TestCue] Button pressed — calling testPlayMovementCue()...');
-              try {
-                const cueNumber = await audioEngine.testPlayMovementCue();
-                console.log('[TestCue] Result: cue ' + cueNumber + (cueNumber > 0 ? ' (should be audible)' : ' (FAILED — check logs above)'));
-              } catch (e) {
-                console.error('[TestCue] Unexpected error:', e);
-              }
-            }}
-            style={{
-              padding: '8px 16px',
-              background: 'hsl(200 80% 40% / 0.3)',
-              border: '1px solid hsl(200 80% 50% / 0.5)',
-              borderRadius: '8px',
-              color: '#67b8e3',
-              fontFamily: 'var(--font-sans)',
-              fontSize: '12px',
-              fontWeight: 500,
-              cursor: 'pointer',
-            }}
-          >
-            Test Cue
-          </button>
-        )}
       </footer>
     </motion.div>
   );

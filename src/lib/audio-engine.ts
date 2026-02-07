@@ -170,11 +170,11 @@ export class AudioEngine {
   private shimmerGain: GainNode | null = null;
   private sustainedCoherenceGain: GainNode | null = null;
   
-  // Movement cue playback (cycling through 3 cues)
+  // Movement cue playback (cycling through 3 cues, polyphonic/stackable)
   private movementCueGain: GainNode | null = null;
-  private movementCueSource: AudioBufferSourceNode | null = null;
   private movementCueIndex: number = 0; // Cycles 0 -> 1 -> 2 -> 0...
-  private isMovementCuePlaying: boolean = false;
+  private lastMovementCueTime: number = 0; // Timestamp of last cue start (anti-spam)
+  private static readonly MOVEMENT_CUE_MIN_INTERVAL_MS = 200; // Minimum ms between cues
 
   // Shimmer limiter
   private shimmerLimiter: DynamicsCompressorNode | null = null;
@@ -1933,9 +1933,10 @@ export class AudioEngine {
       return 0;
     }
 
-    // Step 4: Check overlap
-    if (this.isMovementCuePlaying) {
-      if (DEBUG_MOVEMENT_AUDIO) console.log('[MoveCue] BLOCKED step4: cue already playing');
+    // Step 4: Anti-spam minimum interval (allows polyphonic overlap, prevents machine-gun)
+    const now = Date.now();
+    if (now - this.lastMovementCueTime < AudioEngine.MOVEMENT_CUE_MIN_INTERVAL_MS) {
+      if (DEBUG_MOVEMENT_AUDIO) console.log('[MoveCue] BLOCKED step4: anti-spam interval');
       return 0;
     }
 
@@ -1959,41 +1960,36 @@ export class AudioEngine {
       return 0;
     }
 
-    // All guards passed — play the cue
+    // All guards passed — play the cue (polyphonic: each call creates a fresh source)
+    this.lastMovementCueTime = now;
     return this.playCueFromBuffer(buffer);
   }
 
   /**
    * Internal helper: play a movement cue buffer through the gain chain.
-   * Called by both playMovementCue() and testPlayMovementCue().
+   * Polyphonic — each call creates a new fire-and-forget AudioBufferSourceNode
+   * so multiple cues can overlap if triggers arrive quickly.
    */
   private playCueFromBuffer(buffer: AudioBuffer): number {
     if (!this.ctx || !this.movementCueGain) return 0;
 
     const cueNumber = this.movementCueIndex + 1;
 
-    // Stop any lingering source
-    if (this.movementCueSource) {
-      try { this.movementCueSource.stop(); } catch { /* already stopped */ }
-      this.movementCueSource = null;
-    }
+    // Create a fresh one-shot source (polyphonic — does not stop previous sources)
+    const source = this.ctx.createBufferSource();
+    source.buffer = buffer;
+    source.loop = false;
+    source.connect(this.movementCueGain);
 
-    // Create one-shot source
-    this.movementCueSource = this.ctx.createBufferSource();
-    this.movementCueSource.buffer = buffer;
-    this.movementCueSource.loop = false;
-    this.movementCueSource.connect(this.movementCueGain);
-
-    this.movementCueSource.onended = () => {
-      this.isMovementCuePlaying = false;
-      this.movementCueSource = null;
+    source.onended = () => {
+      // Fire-and-forget cleanup — source is already GC-eligible once disconnected
+      try { source.disconnect(); } catch { /* already disconnected */ }
       if (DEBUG_MOVEMENT_AUDIO) {
         console.log('[MoveCue] cue ' + cueNumber + ' ended');
       }
     };
 
-    this.movementCueSource.start(0);
-    this.isMovementCuePlaying = true;
+    source.start(0);
 
     if (DEBUG_MOVEMENT_AUDIO) {
       console.log('[MoveCue] ▶ PLAYING cue ' + cueNumber, {
@@ -2029,7 +2025,6 @@ export class AudioEngine {
       hasCtx: !!this.ctx,
       ctxState: this.ctx?.state ?? 'N/A',
       isSessionActive: this.isSessionActive,
-      isPlaying: this.isMovementCuePlaying,
       cueIndex: this.movementCueIndex,
       buffers: this.movementCueBuffers.map((b, i) =>
         b ? 'cue' + (i + 1) + ':' + b.duration.toFixed(2) + 's' : 'cue' + (i + 1) + ':null'
@@ -2106,14 +2101,7 @@ export class AudioEngine {
       return 0;
     }
 
-    // 5) Stop any currently playing cue
-    if (this.isMovementCuePlaying && this.movementCueSource) {
-      try { this.movementCueSource.stop(); } catch { /* already stopped */ }
-      this.isMovementCuePlaying = false;
-      this.movementCueSource = null;
-    }
-
-    // 6) Play
+    // 5) Play (polyphonic — no need to stop previous cues)
     const result = this.playCueFromBuffer(buffer);
     console.log('[MoveCue] === TEST PLAY ' + (result > 0 ? 'SUCCESS cue ' + result : 'FAILED') + ' ===');
     return result;
@@ -2124,15 +2112,7 @@ export class AudioEngine {
    */
   resetMovementCueIndex(): void {
     this.movementCueIndex = 0;
-    this.isMovementCuePlaying = false;
-    if (this.movementCueSource) {
-      try {
-        this.movementCueSource.stop();
-      } catch {
-        // Ignore if already stopped
-      }
-      this.movementCueSource = null;
-    }
+    this.lastMovementCueTime = 0;
   }
 
   /**
