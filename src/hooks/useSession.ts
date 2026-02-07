@@ -24,7 +24,11 @@ export interface UseSessionReturn {
 
   // Session controls
   startSession: () => void;
-  endSession: (audioCoherenceTimeMs?: number) => Session | null; // PART 2: Accept audio-based time
+  endSession: (
+    audioCoherenceTimeMs?: number,
+    ppgData?: { avgHR: number | null; avgHRV: number | null },
+    recoveryPoints?: number | null,
+  ) => Session | null;
   updateCoherenceStatus: (isActive: boolean, coherence: number) => void;
 
   // Completed session
