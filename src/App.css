@@ -1680,7 +1680,7 @@ h3 {
 }
 
 /* ============ Ambient Background Glow ============ */
-/* For Active Session screen - "enhanced glow" per spec */
+/* Slow animated overlay for non-session pages. Hidden on Session page to keep graph clean. */
 
 .ambient-glow {
   position: fixed;
@@ -1728,24 +1728,8 @@ h3 {
   }
 }
 
-/* Enhanced glow for active session */
-.ambient-glow--enhanced::before {
-  background: radial-gradient(
-    ellipse at 30% 20%,
-    hsl(275 45% 55% / 0.12) 0%,
-    transparent 45%
-  ),
-  radial-gradient(
-    ellipse at 70% 80%,
-    hsl(45 55% 70% / 0.1) 0%,
-    transparent 45%
-  ),
-  radial-gradient(
-    ellipse at 50% 50%,
-    hsl(45 55% 70% / 0.05) 0%,
-    transparent 60%
-  );
-}
+/* Enhanced glow variant removed - no longer used on session page.
+   Global body::before provides the static background haze for all pages. */
 
 /* ============ Electrode Status ============ */
 
@@ -2059,32 +2043,33 @@ h3 {
   transition: all var(--transition-default);
 }
 
+/* Lovable: active state is subtle, not bright gold */
 .mental-state-item.active {
-  background: var(--color-accent-primary);
-  color: var(--color-bg-primary);
-  border-color: var(--color-accent-primary);
-  box-shadow: var(--shadow-sm);
+  background: hsl(270 10% 20% / 0.6);
+  color: var(--text-primary);
+  border-color: hsl(270 12% 35% / 0.3);
 }
 
 .mental-state-item svg {
   flex-shrink: 0;
 }
 
-/* Current Journey Card */
+/* Current Journey Card - Lovable: muted glass card, no bright gold fill */
 .session-journey-card {
   display: flex;
   align-items: center;
   gap: var(--space-inner);
   padding: var(--space-card-gap);
   margin-bottom: var(--space-inner);
-  background: var(--color-accent-primary);
+  background: linear-gradient(135deg, hsl(270 10% 16% / 0.7), hsl(270 10% 13% / 0.5));
+  border: 1px solid hsl(270 10% 25% / 0.3);
   border-radius: var(--radius-card-glass);
-  box-shadow: var(--shadow-md), var(--shadow-glow-accent);
+  backdrop-filter: blur(20px);
 }
 
 .journey-card-icon {
   flex-shrink: 0;
-  color: var(--color-bg-primary);
+  color: var(--text-primary);
 }
 
 .journey-card-content {
@@ -2098,7 +2083,7 @@ h3 {
   font-family: var(--font-sans);
   font-size: var(--font-body-large-size);
   font-weight: var(--weight-semibold);
-  color: var(--color-bg-primary);
+  color: var(--text-primary);
   margin: 0;
   line-height: var(--font-body-large-line-height);
 }
@@ -2107,8 +2092,8 @@ h3 {
   font-family: var(--font-sans);
   font-size: var(--font-caption-size);
   font-weight: var(--weight-regular);
-  color: var(--color-bg-primary);
-  opacity: 0.9;
+  color: var(--text-muted);
+  opacity: 1;
   margin: 0;
   line-height: var(--font-caption-line-height);
 }
@@ -3101,6 +3086,44 @@ h3 {
   border-radius: var(--radius-xl);
   color: var(--accent-primary);
   box-shadow: var(--shadow-glow-accent);
+  position: relative;
+}
+
+/* Star glow - subtle pulsing glow behind the star icon on the Home "Ready to begin" card */
+.hero-icon-circle::before {
+  content: '';
+  position: absolute;
+  inset: -16px;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle at 50% 50%,
+    hsl(45 55% 70% / 0.25) 0%,
+    hsl(45 55% 70% / 0.08) 40%,
+    transparent 70%
+  );
+  z-index: -1;
+  animation: star-glow-pulse 8s ease-in-out infinite;
+  pointer-events: none;
+}
+
+@keyframes star-glow-pulse {
+  0%, 100% {
+    opacity: 0.6;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.15);
+  }
+}
+
+/* Respect prefers-reduced-motion: show static glow, no animation */
+@media (prefers-reduced-motion: reduce) {
+  .hero-icon-circle::before {
+    animation: none;
+    opacity: 0.8;
+    transform: scale(1.05);
+  }
 }
 
 .hero-icon-circle svg {

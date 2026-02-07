@@ -119,14 +119,13 @@ function App() {
       await audioEngine.startSession();
       if (audio.entrainmentEnabled) await audio.setEntrainmentEnabled(true);
       
-      // Start movement detection with callback to play movement cues
+      // Wire movement detection -> audio cue playback (end-to-end pipeline)
+      // Flow: Muse accelerometer -> MovementDetector (axis-delta) -> this callback -> playMovementCue()
       movementDetector.setOnMovement((movementDelta, source) => {
         const cueNumber = audioEngine.playMovementCue();
-        if (DEBUG_MOVEMENT && cueNumber > 0) {
-          console.log(`[App] Movement cue ${cueNumber} triggered`, {
-            movementDelta: movementDelta.toFixed(4),
-            source,
-          });
+        if (DEBUG_MOVEMENT) {
+          console.log('[Move] PLAY movement-cue-' + cueNumber + '.mp3 source=' + source +
+            ' delta=' + movementDelta.toFixed(4));
         }
       });
       movementDetector.start();
@@ -190,7 +189,10 @@ function App() {
 
   return (
     <div className="app">
-      <div className="ambient-glow" aria-hidden />
+      {/* Animated ambient glow overlay - hidden on session page to keep graph area clean */}
+      {location.pathname !== '/session' && (
+        <div className="ambient-glow" aria-hidden />
+      )}
       <Routes>
         <Route path="/" element={<Navigate to="/home" replace />} />
         <Route

@@ -2,15 +2,59 @@
 
 import { useRef, useEffect, useState } from 'react';
 
+/**
+ * Intentional deviation from Lovable: vertical layering yellow above purple.
+ * 
+ * The graph uses a vertical gradient (top-to-bottom) rather than horizontal:
+ *   - Top (high coherence): warm champagne/gold
+ *   - Bottom (low coherence / active mind): soft purple/amethyst
+ * 
+ * This creates an intuitive visual where rising coherence moves into the
+ * warm gold zone and falling coherence drops into the purple zone.
+ * 
+ * Three mental states are shown as subtle horizontal zone bands:
+ *   - Coherence (top):     coherence >= 0.7  → gold tint
+ *   - Stabilizing (middle): 0.4 <= coherence < 0.7 → transitional
+ *   - Active Mind (bottom): coherence < 0.4  → purple tint
+ */
+const GRAPH_COLORS = {
+  // Line gradient (vertical: top = gold, bottom = purple)
+  lineTop: '#dfc58b',        // Champagne gold (high coherence)
+  lineBottom: '#9e59b8',     // Amethyst purple (low coherence / active mind)
+
+  // Fill gradient (vertical: top = gold/transparent, bottom = purple/transparent)
+  fillTop: 'rgba(223, 197, 139, 0.25)',
+  fillBottom: 'rgba(158, 89, 184, 0.20)',
+
+  // Zone bands (subtle background indicators)
+  zoneCoherence: 'rgba(223, 197, 139, 0.06)',       // Gold tint (top)
+  zoneStabilizing: 'rgba(180, 160, 170, 0.03)',      // Neutral (middle)
+  zoneActiveMind: 'rgba(158, 89, 184, 0.05)',        // Purple tint (bottom)
+
+  // Zone boundary lines
+  zoneLine: 'rgba(255, 255, 255, 0.06)',
+
+  // Zone label text
+  zoneLabel: 'rgba(255, 255, 255, 0.25)',
+
+  // Glow on the line
+  lineGlow: 'rgba(223, 197, 139, 0.3)',
+} as const;
+
+// Zone thresholds (coherence 0–1 range)
+// These MUST match getCoherenceZone() in flow-state.ts
+const ZONE_THRESHOLDS = {
+  coherenceMin: 0.7,     // Above this = Coherence / flow zone (top)
+  stabilizingMin: 0.4,   // Above this = Stabilizing zone (middle)
+  // Below stabilizingMin = Active Mind / noise zone (bottom)
+} as const;
+
 interface CoherenceGraphProps {
   coherenceHistory: number[];
   coherenceZone: 'flow' | 'stabilizing' | 'noise';
   duration: number; // Current session duration in ms
 }
 
-// Zone thresholds removed - not used in Lovable design (clean background)
-
-// Coordinate mapping function for graph
 function mapValueToY(
   value: number,
   height: number,
@@ -31,7 +75,7 @@ export function CoherenceGraph({
   coherenceZone: _coherenceZone,
   duration,
 }: CoherenceGraphProps) {
-  void _coherenceZone; // Keep prop for API compatibility but not used in Lovable design
+  void _coherenceZone; // Keep prop for API compatibility
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [smoothedHistory, setSmoothedHistory] = useState<number[]>([]);
   const previousSmoothedRef = useRef<number | null>(null);
@@ -78,13 +122,52 @@ export function CoherenceGraph({
     // Clear
     ctx.clearRect(0, 0, width, height);
 
-    // No zone backgrounds in Lovable design - clean dark background
+    // Draw zone bands (3 horizontal regions)
+    const coherenceY = mapValueToY(ZONE_THRESHOLDS.coherenceMin, height);
+    const stabilizingY = mapValueToY(ZONE_THRESHOLDS.stabilizingMin, height);
+
+    // Coherence zone (top) - subtle gold tint
+    ctx.fillStyle = GRAPH_COLORS.zoneCoherence;
+    ctx.fillRect(0, 0, width, coherenceY);
+
+    // Stabilizing zone (middle) - neutral
+    ctx.fillStyle = GRAPH_COLORS.zoneStabilizing;
+    ctx.fillRect(0, coherenceY, width, stabilizingY - coherenceY);
+
+    // Active Mind zone (bottom) - subtle purple tint
+    ctx.fillStyle = GRAPH_COLORS.zoneActiveMind;
+    ctx.fillRect(0, stabilizingY, width, height - stabilizingY);
+
+    // Draw zone boundary lines
+    ctx.strokeStyle = GRAPH_COLORS.zoneLine;
+    ctx.lineWidth = 1;
+    ctx.setLineDash([4, 6]);
+
+    ctx.beginPath();
+    ctx.moveTo(0, coherenceY);
+    ctx.lineTo(width, coherenceY);
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.moveTo(0, stabilizingY);
+    ctx.lineTo(width, stabilizingY);
+    ctx.stroke();
+
+    ctx.setLineDash([]);
+
+    // Draw zone labels (right-aligned, small)
+    ctx.fillStyle = GRAPH_COLORS.zoneLabel;
+    ctx.font = '10px Inter, sans-serif';
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('Coherence', width - 8, coherenceY / 2);
+    ctx.fillText('Settling', width - 8, (coherenceY + stabilizingY) / 2);
+    ctx.fillText('Active', width - 8, (stabilizingY + height) / 2);
 
     // Draw coherence line (use smoothed history for visual smoothness)
     const historyToDraw = smoothedHistory.length > 0 ? smoothedHistory : coherenceHistory;
     
     if (historyToDraw.length > 1) {
-      // Determine line width based on device (thicker on iPad)
       const isTablet = window.innerWidth >= 768;
       const lineWidth = isTablet ? 3.5 : 2.5;
       
@@ -96,21 +179,12 @@ export function CoherenceGraph({
         y: mapValueToY(value, height),
       }));
 
-      // Draw smooth bezier curve with gradient (purple to gold)
-      if (points.length >= 2) {
-        // Create gradient for stroke (purple to gold)
-        const gradient = ctx.createLinearGradient(0, 0, width, 0);
-        gradient.addColorStop(0, '#9e59b8'); // Purple (accent-secondary)
-        gradient.addColorStop(1, '#dfc58b'); // Gold (accent-primary)
-
-        // Draw filled area under line first
-        ctx.beginPath();
+      // Helper: draw the bezier path
+      const traceBezierPath = () => {
         ctx.moveTo(points[0].x, points[0].y);
-        
         for (let i = 0; i < points.length - 1; i++) {
           const p0 = points[i];
           const p1 = points[i + 1];
-          
           if (i === 0) {
             const cpX = (p0.x + p1.x) / 2;
             const cpY = (p0.y + p1.y) / 2;
@@ -124,47 +198,38 @@ export function CoherenceGraph({
             ctx.bezierCurveTo(cp1X, cp1Y, cp2X, cp2Y, p1.x, p1.y);
           }
         }
-        
-        // Close path for fill
-        ctx.lineTo(width, height);
+      };
+
+      if (points.length >= 2) {
+        // Vertical gradient for fill (gold top, purple bottom)
+        // Intentional deviation from Lovable: vertical layering yellow above purple.
+        const fillGradient = ctx.createLinearGradient(0, 0, 0, height);
+        fillGradient.addColorStop(0, GRAPH_COLORS.fillTop);
+        fillGradient.addColorStop(1, GRAPH_COLORS.fillBottom);
+
+        // Draw filled area under line
+        ctx.beginPath();
+        traceBezierPath();
+        ctx.lineTo(points[points.length - 1].x, height);
         ctx.lineTo(0, height);
         ctx.closePath();
-
-        // Fill with gradient
-        const fillGradient = ctx.createLinearGradient(0, 0, width, 0);
-        fillGradient.addColorStop(0, 'rgba(158, 89, 184, 0.3)'); // Purple with opacity
-        fillGradient.addColorStop(1, 'rgba(223, 197, 139, 0.2)'); // Gold with opacity
         ctx.fillStyle = fillGradient;
         ctx.fill();
 
-        // Draw main line with gradient
-        ctx.beginPath();
-        ctx.moveTo(points[0].x, points[0].y);
-        
-        for (let i = 0; i < points.length - 1; i++) {
-          const p0 = points[i];
-          const p1 = points[i + 1];
-          
-          if (i === 0) {
-            const cpX = (p0.x + p1.x) / 2;
-            const cpY = (p0.y + p1.y) / 2;
-            ctx.quadraticCurveTo(cpX, cpY, p1.x, p1.y);
-          } else {
-            const prevP = points[i - 1];
-            const cp1X = p0.x + (p1.x - prevP.x) * 0.3;
-            const cp1Y = p0.y + (p1.y - prevP.y) * 0.3;
-            const cp2X = p1.x - (p1.x - p0.x) * 0.3;
-            const cp2Y = p1.y - (p1.y - p0.y) * 0.3;
-            ctx.bezierCurveTo(cp1X, cp1Y, cp2X, cp2Y, p1.x, p1.y);
-          }
-        }
+        // Vertical gradient for stroke (gold top, purple bottom)
+        const strokeGradient = ctx.createLinearGradient(0, 0, 0, height);
+        strokeGradient.addColorStop(0, GRAPH_COLORS.lineTop);
+        strokeGradient.addColorStop(1, GRAPH_COLORS.lineBottom);
 
-        ctx.strokeStyle = gradient;
+        // Draw main line
+        ctx.beginPath();
+        traceBezierPath();
+        ctx.strokeStyle = strokeGradient;
         ctx.lineWidth = lineWidth;
         ctx.lineCap = 'round';
         ctx.lineJoin = 'round';
         ctx.shadowBlur = 8;
-        ctx.shadowColor = 'rgba(223, 197, 139, 0.4)';
+        ctx.shadowColor = GRAPH_COLORS.lineGlow;
         ctx.stroke();
         ctx.shadowBlur = 0;
       }

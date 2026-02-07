@@ -10,6 +10,8 @@ import { CoherenceGraph } from './CoherenceGraph';
 import { ElectrodeStatus } from './ElectrodeStatus';
 import { DEBUG_SESSION_TELEMETRY } from '../lib/feature-flags';
 import { museHandler } from '../lib/muse-handler';
+import { audioEngine } from '../lib/audio-engine';
+import { DEBUG_MOVEMENT } from '../lib/movement-detector';
 import { getJourneys, getLastJourneyId } from '../lib/session-storage';
 import { useSession } from '../hooks/useSession';
 import type { ElectrodeStatus as ElectrodeStatusType, BrainwaveBands, BrainwaveBandsDb, ConnectionHealthState } from '../types';
@@ -140,8 +142,7 @@ export function ActiveSession({
         position: 'relative',
       }}
     >
-      {/* Ambient Background Glow - Design Spec: "enhanced glow" for active session */}
-      <div className="ambient-glow ambient-glow--enhanced" />
+      {/* Ambient glow removed - global body::before provides the static background haze */}
       
       {/* Top Bar - Target 5: muse logo + battery left, headphone icon + status right */}
       <header 
@@ -351,7 +352,7 @@ export function ActiveSession({
               gap: '8px',
             }}
           >
-            {/* Coherence Button */}
+            {/* Coherence Button - Lovable: muted accent when active, subtle distinction */}
             <button 
               className={`mental-state-item ${coherenceZone === 'flow' ? 'active' : ''}`}
               style={{
@@ -362,16 +363,16 @@ export function ActiveSession({
                 gap: '6px',
                 padding: '12px 8px',
                 background: coherenceZone === 'flow' 
-                  ? 'linear-gradient(135deg, hsl(45 55% 65% / 0.3), hsl(45 55% 55% / 0.2))'
+                  ? 'hsl(270 10% 20% / 0.6)'
                   : 'transparent',
                 border: coherenceZone === 'flow' 
-                  ? '1px solid hsl(45 55% 65% / 0.4)'
+                  ? '1px solid hsl(45 30% 55% / 0.25)'
                   : '1px solid transparent',
                 borderRadius: '8px',
                 cursor: 'default',
               }}
             >
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="18" height="18" style={{ color: coherenceZone === 'flow' ? '#D9C478' : 'var(--text-muted)' }}>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="18" height="18" style={{ color: coherenceZone === 'flow' ? 'hsl(45 35% 72%)' : 'var(--text-subtle)' }}>
                 <circle cx="12" cy="12" r="10" />
                 <path d="M12 6v6l4 2" />
               </svg>
@@ -379,7 +380,7 @@ export function ActiveSession({
                 fontFamily: 'var(--font-sans)',
                 fontSize: '11px',
                 fontWeight: 500,
-                color: coherenceZone === 'flow' ? '#D9C478' : 'var(--text-muted)',
+                color: coherenceZone === 'flow' ? 'hsl(45 30% 75%)' : 'var(--text-subtle)',
               }}>Coherence</span>
             </button>
             
@@ -394,16 +395,16 @@ export function ActiveSession({
                 gap: '6px',
                 padding: '12px 8px',
                 background: coherenceZone === 'stabilizing' 
-                  ? 'linear-gradient(135deg, hsl(45 55% 65% / 0.3), hsl(45 55% 55% / 0.2))'
+                  ? 'hsl(270 10% 20% / 0.6)'
                   : 'transparent',
                 border: coherenceZone === 'stabilizing' 
-                  ? '1px solid hsl(45 55% 65% / 0.4)'
+                  ? '1px solid hsl(275 25% 50% / 0.25)'
                   : '1px solid transparent',
                 borderRadius: '8px',
                 cursor: 'default',
               }}
             >
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="18" height="18" style={{ color: coherenceZone === 'stabilizing' ? '#D9C478' : 'var(--text-muted)' }}>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="18" height="18" style={{ color: coherenceZone === 'stabilizing' ? 'hsl(275 25% 68%)' : 'var(--text-subtle)' }}>
                 <path d="M12 2L2 7l10 5 10-5-10-5z" />
                 <path d="M2 17l10 5 10-5" />
                 <path d="M2 12l10 5 10-5" />
@@ -412,7 +413,7 @@ export function ActiveSession({
                 fontFamily: 'var(--font-sans)',
                 fontSize: '11px',
                 fontWeight: 500,
-                color: coherenceZone === 'stabilizing' ? '#D9C478' : 'var(--text-muted)',
+                color: coherenceZone === 'stabilizing' ? 'hsl(275 20% 72%)' : 'var(--text-subtle)',
               }}>Settling In</span>
             </button>
             
@@ -427,30 +428,30 @@ export function ActiveSession({
                 gap: '6px',
                 padding: '12px 8px',
                 background: coherenceZone === 'noise' 
-                  ? 'linear-gradient(135deg, hsl(45 55% 65% / 0.3), hsl(45 55% 55% / 0.2))'
+                  ? 'hsl(270 10% 20% / 0.6)'
                   : 'transparent',
                 border: coherenceZone === 'noise' 
-                  ? '1px solid hsl(45 55% 65% / 0.4)'
+                  ? '1px solid hsl(270 12% 45% / 0.25)'
                   : '1px solid transparent',
                 borderRadius: '8px',
                 cursor: 'default',
               }}
             >
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="18" height="18" style={{ color: coherenceZone === 'noise' ? '#D9C478' : 'var(--text-muted)' }}>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="18" height="18" style={{ color: coherenceZone === 'noise' ? 'hsl(270 10% 65%)' : 'var(--text-subtle)' }}>
                 <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />
               </svg>
               <span style={{
                 fontFamily: 'var(--font-sans)',
                 fontSize: '11px',
                 fontWeight: 500,
-                color: coherenceZone === 'noise' ? '#D9C478' : 'var(--text-muted)',
+                color: coherenceZone === 'noise' ? 'hsl(270 8% 68%)' : 'var(--text-subtle)',
               }}>Active Mind</span>
             </button>
           </div>
         </div>
       </div>
 
-      {/* Current Journey Card - Target 5: Gold-tinted banner with journey info */}
+      {/* Current Journey Card - Lovable: subtle glass card, muted tint, no harsh gold */}
       <div 
         className="session-journey-card"
         style={{
@@ -458,26 +459,28 @@ export function ActiveSession({
           alignItems: 'center',
           gap: '14px',
           padding: '16px 20px',
-          background: 'linear-gradient(135deg, hsl(45 55% 65% / 0.15), hsl(45 55% 55% / 0.08))',
-          border: '1px solid hsl(45 55% 65% / 0.25)',
+          background: 'linear-gradient(135deg, hsl(270 10% 16% / 0.7), hsl(270 10% 13% / 0.5))',
+          border: '1px solid hsl(270 10% 25% / 0.3)',
           borderRadius: '12px',
           marginBottom: '20px',
+          backdropFilter: 'blur(20px)',
         }}
       >
-        {/* Journey Icon Circle */}
+        {/* Journey Icon Circle - muted accent tint */}
         <div
           style={{
             width: '44px',
             height: '44px',
             borderRadius: '50%',
-            background: journeyIconStyle.iconBg,
+            background: 'hsl(45 30% 45% / 0.2)',
+            border: '1px solid hsl(45 30% 50% / 0.15)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
             flexShrink: 0,
           }}
         >
-          <svg viewBox="0 0 24 24" fill="currentColor" width="22" height="22" style={{ color: journeyIconStyle.iconColor }}>
+          <svg viewBox="0 0 24 24" fill="currentColor" width="22" height="22" style={{ color: 'hsl(45 40% 70%)' }}>
             <path d="M12 2l2.5 7.5L22 12l-7.5 2.5L12 22l-2.5-7.5L2 12l7.5-2.5L12 2z" />
           </svg>
         </div>
@@ -863,6 +866,31 @@ export function ActiveSession({
             )}
           </svg>
         </button>
+
+        {/* DEBUG: Test Movement Cue button - visible only when DEBUG_MOVEMENT is true */}
+        {/* Clicking this calls playMovementCue() directly, bypassing accelerometer detection. */}
+        {/* This isolates audio issues from detection issues during development. */}
+        {DEBUG_MOVEMENT && (
+          <button
+            onClick={() => {
+              const cueNumber = audioEngine.playMovementCue();
+              console.log('[Move] PLAY movement-cue-' + cueNumber + '.mp3 (manual test)');
+            }}
+            style={{
+              padding: '8px 16px',
+              background: 'hsl(200 80% 40% / 0.3)',
+              border: '1px solid hsl(200 80% 50% / 0.5)',
+              borderRadius: '8px',
+              color: '#67b8e3',
+              fontFamily: 'var(--font-sans)',
+              fontSize: '12px',
+              fontWeight: 500,
+              cursor: 'pointer',
+            }}
+          >
+            🔔 Test Cue
+          </button>
+        )}
       </footer>
     </motion.div>
   );

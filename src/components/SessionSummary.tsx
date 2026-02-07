@@ -128,7 +128,18 @@ export function SessionSummary({
     }
   }, [session, stats, user, peakCoherence, stability, getPdfBlob]);
 
-  // Draw timeline graph with gradient and axis labels
+  /**
+   * Draw timeline graph with 3 mental state zones and vertical color layering.
+   * 
+   * Intentional deviation from Lovable: vertical layering yellow above purple.
+   * - Top (high coherence): warm champagne/gold
+   * - Bottom (low coherence / active mind): soft purple/amethyst
+   * 
+   * Three zones (matching getCoherenceZone() in flow-state.ts):
+   *   Coherence (top):      >= 0.7  → gold tint
+   *   Stabilizing (middle): 0.4–0.7 → transitional
+   *   Active Mind (bottom): < 0.4   → purple tint
+   */
   const drawTimelineGraph = (canvas: HTMLCanvasElement, history: number[]) => {
     const ctx = canvas.getContext('2d');
     if (!ctx || history.length < 2) return;
@@ -148,74 +159,136 @@ export function SessionSummary({
     const chartWidth = width - paddingLeft - paddingRight;
     const chartHeight = height - paddingTop - paddingBottom;
 
+    // Zone thresholds (coherence 0–1 range) — MUST match getCoherenceZone() in flow-state.ts
+    const coherenceMin = 0.7;
+    const stabilizingMin = 0.4;
+
     // Clear
     ctx.clearRect(0, 0, width, height);
 
-    // Draw Y-axis labels
-    ctx.fillStyle = 'var(--text-muted)';
-    ctx.font = '11px Inter';
+    // Zone colors (matching CoherenceGraph component)
+    const zoneCoherence = 'rgba(223, 197, 139, 0.06)';
+    const zoneStabilizing = 'rgba(180, 160, 170, 0.03)';
+    const zoneActiveMind = 'rgba(158, 89, 184, 0.05)';
+    const zoneLine = 'rgba(255, 255, 255, 0.06)';
+    const zoneLabel = 'rgba(255, 255, 255, 0.25)';
+
+    const chartX = paddingLeft;
+    const chartY = paddingTop;
+
+    // Y positions for zone boundaries within chart area
+    const coherenceLineY = chartY + chartHeight * (1 - coherenceMin);
+    const stabilizingLineY = chartY + chartHeight * (1 - stabilizingMin);
+
+    // Draw zone bands within chart area
+    ctx.fillStyle = zoneCoherence;
+    ctx.fillRect(chartX, chartY, chartWidth, coherenceLineY - chartY);
+
+    ctx.fillStyle = zoneStabilizing;
+    ctx.fillRect(chartX, coherenceLineY, chartWidth, stabilizingLineY - coherenceLineY);
+
+    ctx.fillStyle = zoneActiveMind;
+    ctx.fillRect(chartX, stabilizingLineY, chartWidth, chartY + chartHeight - stabilizingLineY);
+
+    // Draw zone boundary lines (dashed)
+    ctx.strokeStyle = zoneLine;
+    ctx.lineWidth = 1;
+    ctx.setLineDash([4, 6]);
+
+    ctx.beginPath();
+    ctx.moveTo(chartX, coherenceLineY);
+    ctx.lineTo(chartX + chartWidth, coherenceLineY);
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.moveTo(chartX, stabilizingLineY);
+    ctx.lineTo(chartX + chartWidth, stabilizingLineY);
+    ctx.stroke();
+
+    ctx.setLineDash([]);
+
+    // Draw Y-axis labels (zone names instead of percentages)
+    ctx.fillStyle = zoneLabel;
+    ctx.font = '10px Inter, sans-serif';
     ctx.textAlign = 'right';
     ctx.textBaseline = 'middle';
-    const yLabels = ['100%', '75%', '50%', '25%', '0%'];
-    yLabels.forEach((label, i) => {
-      const y = paddingTop + (chartHeight / 4) * i;
-      ctx.fillText(label, paddingLeft - 8, y);
-    });
+    ctx.fillText('Coherence', chartX - 6, (chartY + coherenceLineY) / 2);
+    ctx.fillText('Settling', chartX - 6, (coherenceLineY + stabilizingLineY) / 2);
+    ctx.fillText('Active', chartX - 6, (stabilizingLineY + chartY + chartHeight) / 2);
 
     // Draw X-axis labels
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';
+    ctx.font = '11px Inter, sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'top';
     const durationMinutes = Math.ceil(session.duration / 60000);
     const xLabelCount = 5;
     for (let i = 0; i < xLabelCount; i++) {
       const minutes = Math.round((durationMinutes / (xLabelCount - 1)) * i);
-      const x = paddingLeft + (chartWidth / (xLabelCount - 1)) * i;
+      const x = chartX + (chartWidth / (xLabelCount - 1)) * i;
       const timeStr = `${Math.floor(minutes / 60)}:${String(minutes % 60).padStart(2, '0')}`;
       ctx.fillText(timeStr, x, height - paddingBottom + 8);
     }
 
-    // Draw chart area
-    const chartX = paddingLeft;
-    const chartY = paddingTop;
-
-    // Background
-    ctx.fillStyle = 'var(--bg-card)';
-    ctx.fillRect(chartX, chartY, chartWidth, chartHeight);
-
-    // Draw line with gradient (purple to gold)
-    ctx.beginPath();
+    // Draw line with bezier smoothing
     const pointSpacing = chartWidth / (history.length - 1);
+    const points = history.map((value, index) => ({
+      x: chartX + index * pointSpacing,
+      y: chartY + chartHeight * (1 - value),
+    }));
 
-    history.forEach((value, index) => {
-      const x = chartX + index * pointSpacing;
-      const y = chartY + chartHeight * (1 - value);
-
-      if (index === 0) {
-        ctx.moveTo(x, y);
-      } else {
-        ctx.lineTo(x, y);
+    // Helper: trace bezier path through points
+    const traceBezierPath = () => {
+      ctx.moveTo(points[0].x, points[0].y);
+      for (let i = 0; i < points.length - 1; i++) {
+        const p0 = points[i];
+        const p1 = points[i + 1];
+        if (i === 0) {
+          const cpX = (p0.x + p1.x) / 2;
+          const cpY = (p0.y + p1.y) / 2;
+          ctx.quadraticCurveTo(cpX, cpY, p1.x, p1.y);
+        } else {
+          const prevP = points[i - 1];
+          const cp1X = p0.x + (p1.x - prevP.x) * 0.3;
+          const cp1Y = p0.y + (p1.y - prevP.y) * 0.3;
+          const cp2X = p1.x - (p1.x - p0.x) * 0.3;
+          const cp2Y = p1.y - (p1.y - p0.y) * 0.3;
+          ctx.bezierCurveTo(cp1X, cp1Y, cp2X, cp2Y, p1.x, p1.y);
+        }
       }
-    });
+    };
 
-    // Create gradient for stroke
-    const gradient = ctx.createLinearGradient(chartX, 0, chartX + chartWidth, 0);
-    gradient.addColorStop(0, '#9e59b8'); // Purple (accent-secondary)
-    gradient.addColorStop(1, '#dfc58b'); // Gold (accent-primary)
-    ctx.strokeStyle = gradient;
-    ctx.lineWidth = 2.5;
-    ctx.stroke();
+    // Vertical fill gradient (gold top, purple bottom)
+    // Intentional deviation from Lovable: vertical layering yellow above purple.
+    const fillGradient = ctx.createLinearGradient(0, chartY, 0, chartY + chartHeight);
+    fillGradient.addColorStop(0, 'rgba(223, 197, 139, 0.25)');
+    fillGradient.addColorStop(1, 'rgba(158, 89, 184, 0.20)');
 
-    // Fill area under line with matching gradient
-    ctx.lineTo(chartX + chartWidth, chartY + chartHeight);
+    // Draw filled area under line
+    ctx.beginPath();
+    traceBezierPath();
+    ctx.lineTo(points[points.length - 1].x, chartY + chartHeight);
     ctx.lineTo(chartX, chartY + chartHeight);
     ctx.closePath();
-
-    // Create fill gradient
-    const fillGradient = ctx.createLinearGradient(chartX, 0, chartX + chartWidth, 0);
-    fillGradient.addColorStop(0, 'rgba(158, 89, 184, 0.3)'); // Purple with opacity
-    fillGradient.addColorStop(1, 'rgba(223, 197, 139, 0.2)'); // Gold with opacity
     ctx.fillStyle = fillGradient;
     ctx.fill();
+
+    // Vertical stroke gradient (gold top, purple bottom)
+    const strokeGradient = ctx.createLinearGradient(0, chartY, 0, chartY + chartHeight);
+    strokeGradient.addColorStop(0, '#dfc58b');
+    strokeGradient.addColorStop(1, '#9e59b8');
+
+    // Draw main line
+    ctx.beginPath();
+    traceBezierPath();
+    ctx.strokeStyle = strokeGradient;
+    ctx.lineWidth = 2.5;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.shadowBlur = 8;
+    ctx.shadowColor = 'rgba(223, 197, 139, 0.3)';
+    ctx.stroke();
+    ctx.shadowBlur = 0;
   };
 
   // Removed PDF/share functionality - presentation-only refactor per requirements
@@ -929,14 +1002,14 @@ export function SessionSummary({
                       width: '40px',
                       height: '40px',
                       borderRadius: '50%',
-                      background: 'hsl(45 55% 65% / 0.2)',
+                      background: 'hsl(45 30% 50% / 0.12)',
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
                       flexShrink: 0,
                     }}
                   >
-                    <svg viewBox="0 0 24 24" fill="none" stroke="#D9C478" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="20" height="20">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="hsl(45 35% 72%)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="20" height="20">
                       <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
                     </svg>
                   </div>

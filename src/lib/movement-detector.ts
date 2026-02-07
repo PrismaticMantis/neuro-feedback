@@ -4,16 +4,23 @@
  * Detects head movement during meditation sessions and triggers gentle audio cues
  * to help users return to stillness for better EEG signal quality.
  * 
- * PRIMARY: Accelerometer-based detection (Muse 2)
+ * PRIMARY: Accelerometer-based detection (Muse 2) using per-axis delta
  * FALLBACK: EEG artifact detection (conservative, rarely triggers)
+ * 
+ * DETECTION METHOD:
+ * Uses per-axis delta: delta = |x - prevX| + |y - prevY| + |z - prevZ|
+ * This is superior to magnitude-based detection because head *rotation*
+ * (e.g. turning/nodding) can keep magnitude near 1.0g while changing
+ * individual axis values significantly. Per-axis delta catches rotations.
  * 
  * UI Reference: This is an audio-only feature, no visual UI changes
  * 
  * Test Plan:
- * - iPhone + Muse 2: nod head, rotate head, slight shifts
+ * - iPhone/iPad + Muse 2: nod head, rotate head, slight shifts
  * - Verify cues are not spammy (cooldown enforced)
  * - Verify cue cycles 1-2-3-1
  * - Verify no interference with coherence layers and shimmer SFX
+ * - Press DEBUG "Test Movement Cue" button to isolate audio from detection
  */
 
 import { museHandler } from './muse-handler';
@@ -26,43 +33,45 @@ export const DEBUG_MOVEMENT = true;
 /**
  * Movement Detection Configuration
  * 
- * ACCELEROMETER THRESHOLDS:
- * - movementThreshold: Delta in g-force magnitude to trigger movement event
- *   - 0.12g is a good starting point (slight head nod)
- *   - Increase if too sensitive (false positives)
+ * AXIS-DELTA THRESHOLDS:
+ * - axisDeltaThreshold: Sum of per-axis deltas to trigger movement event
+ *   The Muse 2 accelerometer values are in g-force (scale 1/16384).
+ *   At rest, values are roughly stable with gravity on one axis (~1.0g).
+ *   A gentle head nod produces axis deltas of ~0.03-0.08 per axis.
+ *   Sum of 3 axes: ~0.06 is a reasonable starting threshold.
+ *   
+ *   TUNING:
+ *   - Increase if too sensitive (false positives from small tremors)
  *   - Decrease if missing real movements
+ *   - Check console logs: [Move] delta=... threshold=...
  * 
  * - debounceMs: Minimum time between movement event processing
- *   - 250ms prevents rapid-fire triggers from a single head motion
+ *   250ms prevents rapid-fire triggers from a single head motion
  * 
  * - cooldownMs: Minimum time between audio cue playback
- *   - 6000ms (6s) ensures cues are gentle nudges, not nagging
- * 
- * - baselineAlpha: EMA smoothing factor for baseline magnitude
- *   - 0.05 = slow adaptation (~20 samples to reach new baseline)
- *   - Higher = faster adaptation but less stable
+ *   6000ms (6s) ensures cues are gentle nudges, not nagging
  * 
  * EEG FALLBACK THRESHOLDS:
  * - eegArtifactThreshold: RMS spike multiplier to trigger
- *   - 3.0x = very conservative (broadband spike across channels)
+ *   3.0x = very conservative (broadband spike across channels)
  * - eegCooldownMs: Longer cooldown for fallback (10s)
  */
 const MOVEMENT_CONFIG = {
-  // Accelerometer-based detection
-  movementThreshold: 0.12,    // g-force delta threshold (tune if needed)
-  debounceMs: 250,            // Minimum ms between processing movement
-  cooldownMs: 6000,           // Minimum ms between cue playback (6 seconds)
-  baselineAlpha: 0.05,        // EMA smoothing for baseline (slower = more stable)
+  // Accelerometer-based detection (per-axis delta)
+  axisDeltaThreshold: 0.06,     // Sum of |dx|+|dy|+|dz| to trigger (tune via logs)
+  debounceMs: 250,              // Minimum ms between processing movement
+  cooldownMs: 6000,             // Minimum ms between cue playback (6 seconds)
+  warmupSamples: 5,             // Ignore first N samples to let prevAcc stabilize
   
   // EEG artifact fallback (conservative)
-  eegArtifactThreshold: 3.0,  // RMS multiplier for artifact detection
-  eegCooldownMs: 10000,       // Longer cooldown for EEG fallback (10 seconds)
-  eegMinChannelsAffected: 3,  // Must affect 3+ channels to trigger
+  eegArtifactThreshold: 3.0,    // RMS multiplier for artifact detection
+  eegCooldownMs: 10000,         // Longer cooldown for EEG fallback (10 seconds)
+  eegMinChannelsAffected: 3,    // Must affect 3+ channels to trigger
 };
 
 /**
  * Movement event callback type
- * @param movementDelta - The magnitude of detected movement
+ * @param movementDelta - The axis-delta magnitude of detected movement
  * @param source - 'accelerometer' or 'eeg_artifact'
  */
 export type MovementEventCallback = (movementDelta: number, source: 'accelerometer' | 'eeg_artifact') => void;
@@ -73,10 +82,17 @@ export type MovementEventCallback = (movementDelta: number, source: 'acceleromet
  * Monitors Muse 2 accelerometer data and triggers callbacks when significant
  * head movement is detected. Falls back to EEG artifact detection if
  * accelerometer data is unavailable.
+ * 
+ * End-to-end pipeline:
+ * Muse 2 BLE -> muse-handler (accX/accY/accZ) -> MovementDetector (axis-delta)
+ *   -> onMovementCallback -> audioEngine.playMovementCue() -> audible cue
  */
 export class MovementDetector {
-  // Accelerometer baseline tracking
-  private baselineMagnitude: number = 1.0; // Start at ~1g (gravity)
+  // Previous accelerometer values for axis-delta calculation
+  private prevAccX: number = 0;
+  private prevAccY: number = 0;
+  private prevAccZ: number = 0;
+  private hasPrevSample: boolean = false;
   
   // Debounce and cooldown tracking
   private lastMovementEvent: number = 0;
@@ -109,35 +125,56 @@ export class MovementDetector {
   }
 
   /**
-   * Check if accelerometer data is available from the Muse handler
+   * Check if accelerometer data is available from the Muse handler.
+   * 
+   * The muse-js library subscribes to GATT characteristic 273e000a (accelerometer)
+   * during connect(). We check:
+   * 1. museHandler.accelSubscribed — was the subscription created?
+   * 2. museHandler.accelSampleCount — is data actually arriving?
+   * 
+   * If not yet connected, we optimistically assume it will work (Muse 2 always
+   * exposes accelerometer). The fallback (EEG artifacts) activates automatically
+   * if accX/accY/accZ stay at 0.
    */
   private checkAccelerometerAvailability(): void {
-    // Accelerometer is available if accX/accY/accZ are exposed by museHandler
-    // The muse-js library supports accelerometerData subscription
-    this.hasAccelerometer = true; // Muse 2 has accelerometer
+    const subscribed = museHandler.accelSubscribed;
+    const sampleCount = museHandler.accelSampleCount;
+    
+    // If connected and subscribed, or not yet connected (assume will be), mark as available
+    this.hasAccelerometer = subscribed || !museHandler.connected;
     
     if (DEBUG_MOVEMENT) {
-      console.log('[MovementDetector] Accelerometer availability:', this.hasAccelerometer);
+      console.log('[Move] Accelerometer availability check:', {
+        accelSubscribed: subscribed,
+        accelSampleCount: sampleCount,
+        museConnected: museHandler.connected,
+        hasAccelerometer: this.hasAccelerometer,
+      });
     }
   }
 
   /**
-   * Set the callback for movement events
+   * Set the callback for movement events.
+   * Typically wired to: (delta, source) => audioEngine.playMovementCue()
    */
   setOnMovement(callback: MovementEventCallback | null): void {
     this.onMovementCallback = callback;
   }
 
   /**
-   * Start monitoring for movement
+   * Start monitoring for movement.
+   * Call this when session starts (after AudioContext is resumed from user gesture).
    */
   start(): void {
     if (this.isEnabled) {
       if (DEBUG_MOVEMENT) {
-        console.log('[MovementDetector] Already started, ignoring');
+        console.log('[Move] Already started, ignoring');
       }
       return;
     }
+
+    // Re-check accelerometer availability at session start
+    this.checkAccelerometerAvailability();
 
     this.isEnabled = true;
     this.resetBaselines();
@@ -148,15 +185,18 @@ export class MovementDetector {
     }, 50); // 50ms = 20Hz
     
     if (DEBUG_MOVEMENT) {
-      console.log('[MovementDetector] Started', {
+      console.log('[Move] Started', {
         hasAccelerometer: this.hasAccelerometer,
+        accelSubscribed: museHandler.accelSubscribed,
+        accelSampleCount: museHandler.accelSampleCount,
         config: MOVEMENT_CONFIG,
       });
     }
   }
 
   /**
-   * Stop monitoring for movement
+   * Stop monitoring for movement.
+   * Call this when session ends.
    */
   stop(): void {
     if (!this.isEnabled) {
@@ -171,7 +211,7 @@ export class MovementDetector {
     }
     
     if (DEBUG_MOVEMENT) {
-      console.log('[MovementDetector] Stopped', {
+      console.log('[Move] Stopped', {
         stats: this.stats,
       });
     }
@@ -181,7 +221,10 @@ export class MovementDetector {
    * Reset baseline values (call when starting a new session)
    */
   private resetBaselines(): void {
-    this.baselineMagnitude = 1.0; // ~1g at rest (gravity)
+    this.prevAccX = 0;
+    this.prevAccY = 0;
+    this.prevAccZ = 0;
+    this.hasPrevSample = false;
     this.lastMovementEvent = 0;
     this.lastCueTrigger = 0;
     this.eegRmsBaseline = [0, 0, 0, 0];
@@ -202,87 +245,107 @@ export class MovementDetector {
     
     const now = Date.now();
     
-    // Primary: Check accelerometer
+    // Primary: Check accelerometer (requires subscription AND Muse connected)
     if (this.hasAccelerometer && museHandler.connected) {
       this.checkAccelerometer(now);
     }
     
-    // Fallback: Check EEG artifacts (only if accelerometer not triggering)
-    // This is very conservative to avoid false positives
+    // Fallback: Check EEG artifacts (only if accelerometer not providing data)
     if (museHandler.connected && now - this.lastCueTrigger > MOVEMENT_CONFIG.cooldownMs) {
       this.checkEegArtifacts(now);
     }
   }
 
   /**
-   * Check accelerometer data for movement
+   * Check accelerometer data for movement using per-axis delta.
+   * 
+   * Detection: delta = |x - prevX| + |y - prevY| + |z - prevZ|
+   * This catches rotations that magnitude-only detection misses,
+   * because rotating the head changes axis distribution while
+   * keeping total magnitude near 1.0g.
    */
   private checkAccelerometer(now: number): void {
-    // Get current accelerometer values from museHandler
     const accX = museHandler.accX;
     const accY = museHandler.accY;
     const accZ = museHandler.accZ;
     
-    // Skip if no data (all zeros typically means no subscription)
+    // Skip if no data (all zeros = no subscription or no data yet)
     if (accX === 0 && accY === 0 && accZ === 0) {
       return;
     }
     
     this.stats.accelSamples++;
     
-    // Calculate current magnitude (should be ~1g at rest due to gravity)
-    const currentMagnitude = Math.sqrt(accX * accX + accY * accY + accZ * accZ);
+    // If this is our first valid sample, store it and wait for the next
+    if (!this.hasPrevSample) {
+      this.prevAccX = accX;
+      this.prevAccY = accY;
+      this.prevAccZ = accZ;
+      this.hasPrevSample = true;
+      if (DEBUG_MOVEMENT) {
+        console.log('[Accel] First sample received, initializing prev values', {
+          x: accX.toFixed(4), y: accY.toFixed(4), z: accZ.toFixed(4),
+        });
+      }
+      return;
+    }
     
-    // Update baseline with EMA
-    this.baselineMagnitude = 
-      this.baselineMagnitude * (1 - MOVEMENT_CONFIG.baselineAlpha) + 
-      currentMagnitude * MOVEMENT_CONFIG.baselineAlpha;
+    // Skip warmup period to let values stabilize
+    if (this.stats.accelSamples < MOVEMENT_CONFIG.warmupSamples) {
+      this.prevAccX = accX;
+      this.prevAccY = accY;
+      this.prevAccZ = accZ;
+      return;
+    }
     
-    // Calculate movement delta
-    const movementDelta = Math.abs(currentMagnitude - this.baselineMagnitude);
+    // Calculate per-axis delta (sum of absolute differences)
+    const dx = Math.abs(accX - this.prevAccX);
+    const dy = Math.abs(accY - this.prevAccY);
+    const dz = Math.abs(accZ - this.prevAccZ);
+    const axisDelta = dx + dy + dz;
+    
+    // Update previous values for next iteration
+    this.prevAccX = accX;
+    this.prevAccY = accY;
+    this.prevAccZ = accZ;
     
     // Check debounce
     if (now - this.lastMovementEvent < MOVEMENT_CONFIG.debounceMs) {
       return;
     }
     
-    // Check if movement exceeds threshold
-    if (movementDelta > MOVEMENT_CONFIG.movementThreshold) {
+    // Check if axis-delta exceeds threshold
+    if (axisDelta > MOVEMENT_CONFIG.axisDeltaThreshold) {
       this.lastMovementEvent = now;
       this.stats.movementEvents++;
       
       if (DEBUG_MOVEMENT) {
-        console.log('[MovementDetector] Movement detected (accelerometer)', {
-          movementDelta: movementDelta.toFixed(4),
-          threshold: MOVEMENT_CONFIG.movementThreshold,
-          currentMagnitude: currentMagnitude.toFixed(4),
-          baselineMagnitude: this.baselineMagnitude.toFixed(4),
-          accX: accX.toFixed(3),
-          accY: accY.toFixed(3),
-          accZ: accZ.toFixed(3),
-          timestamp: now,
+        const cooldownRemaining = Math.max(0, MOVEMENT_CONFIG.cooldownMs - (now - this.lastCueTrigger));
+        console.log('[Move] delta=' + axisDelta.toFixed(4) +
+          ' threshold=' + MOVEMENT_CONFIG.axisDeltaThreshold +
+          ' cooldownRemaining=' + cooldownRemaining + 'ms', {
+          dx: dx.toFixed(4), dy: dy.toFixed(4), dz: dz.toFixed(4),
+          accX: accX.toFixed(4), accY: accY.toFixed(4), accZ: accZ.toFixed(4),
         });
       }
       
       // Check cooldown before triggering cue
       if (now - this.lastCueTrigger >= MOVEMENT_CONFIG.cooldownMs) {
-        this.triggerMovementCue(movementDelta, 'accelerometer');
+        this.triggerMovementCue(axisDelta, 'accelerometer');
       } else if (DEBUG_MOVEMENT) {
         const remaining = MOVEMENT_CONFIG.cooldownMs - (now - this.lastCueTrigger);
-        console.log('[MovementDetector] Movement detected but cooldown active', {
-          cooldownRemaining: remaining,
-        });
+        console.log('[Move] Movement detected but cooldown active, remaining=' + remaining + 'ms');
       }
     }
   }
 
   /**
    * Check EEG data for artifacts (fallback detection)
-   * Uses RMS spike detection across channels
-   * Very conservative to avoid false positives
+   * Uses RMS spike detection across channels.
+   * Very conservative to avoid false positives.
+   * Only active when accelerometer data is NOT flowing.
    */
   private checkEegArtifacts(now: number): void {
-    // Only use fallback if accelerometer isn't providing data
     const accX = museHandler.accX;
     const accY = museHandler.accY;
     const accZ = museHandler.accZ;
@@ -297,22 +360,18 @@ export class MovementDetector {
       return;
     }
     
-    // Get electrode quality (this is our proxy for signal disruption)
+    // Get electrode quality (proxy for signal disruption)
     const electrodeQuality = museHandler.getElectrodeQuality();
-    
-    // Count how many channels have poor quality (3 or 4)
     const poorChannels = electrodeQuality.filter(q => q >= 3).length;
     
-    // Get band powers for artifact detection (look for broadband spike)
+    // Get band powers for artifact detection (broadband spike)
     const bands = museHandler.bandsDb;
     const totalPower = bands.delta + bands.theta + bands.alpha + bands.beta + bands.gamma;
     
-    // Update baseline for EEG
+    // Update EEG baseline with EMA
     if (this.eegRmsBaseline[0] === 0) {
-      // Initialize baseline
       this.eegRmsBaseline[0] = totalPower;
     } else {
-      // Update with EMA
       this.eegRmsBaseline[0] = 
         this.eegRmsBaseline[0] * (1 - this.eegRmsAlpha) + 
         totalPower * this.eegRmsAlpha;
@@ -328,16 +387,13 @@ export class MovementDetector {
       this.lastEegCueTrigger = now;
       
       if (DEBUG_MOVEMENT) {
-        console.log('[MovementDetector] Artifact detected (EEG fallback)', {
+        console.log('[Move] EEG artifact detected (fallback)', {
           powerRatio: powerRatio.toFixed(2),
           threshold: MOVEMENT_CONFIG.eegArtifactThreshold,
           poorChannels,
-          minChannels: MOVEMENT_CONFIG.eegMinChannelsAffected,
-          timestamp: now,
         });
       }
       
-      // Trigger cue if cooldown allows
       if (now - this.lastCueTrigger >= MOVEMENT_CONFIG.cooldownMs) {
         this.triggerMovementCue(powerRatio, 'eeg_artifact');
       }
@@ -353,22 +409,17 @@ export class MovementDetector {
     this.stats.cuesTriggered++;
     
     if (DEBUG_MOVEMENT) {
-      console.log('[MovementDetector] 🔔 Movement cue triggered', {
-        movementDelta: movementDelta.toFixed(4),
-        source,
-        cueIndex: this.stats.cuesTriggered,
-        timestamp: now,
-      });
+      console.log('[Move] TRIGGER cue #' + this.stats.cuesTriggered + ' source=' + source +
+        ' delta=' + movementDelta.toFixed(4));
     }
     
-    // Call the callback if set
     if (this.onMovementCallback) {
       this.onMovementCallback(movementDelta, source);
     }
   }
 
   /**
-   * Get current detection stats
+   * Get current detection stats (for debugging)
    */
   getStats(): typeof this.stats {
     return { ...this.stats };
