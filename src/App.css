@@ -756,7 +756,7 @@ h3 {
   background: transparent;
   display: flex;
   flex-direction: column;
-  min-height: 100vh;
+  min-height: 100dvh; /* Use dvh (dynamic viewport) so mobile address bar doesn't force scroll */
 }
 
 @media (min-width: 768px) {
@@ -1511,7 +1511,44 @@ h3 {
   justify-content: center;
 }
 
-/* Body Rhythm Section (conditional - only shown if data exists) */
+/* ============ iPad Viewport Condensation ============ */
+/* Fit Session + Summary pages in one iPad viewport without scrolling.
+   Targets tablet (≥768px). Reduces graph/ring sizes that are set inline
+   and can't be overridden without !important. Spacing reductions are
+   handled directly in component inline styles to benefit all viewports. */
+
+@media (min-width: 768px) {
+  /* Session page: compact graph card */
+  .session-chart-card {
+    min-height: 220px !important;
+  }
+
+  /* Summary page: compact coherence ring */
+  .summary-coherence-ring {
+    width: 130px !important;
+    height: 130px !important;
+  }
+
+  /* Summary page: compact timeline chart */
+  .summary-timeline-chart {
+    height: 150px !important;
+  }
+
+  /* Summary page: tighter metric cards */
+  .summary-metric-card {
+    padding: 12px !important;
+  }
+  .summary-metric-label {
+    margin-bottom: 4px !important;
+  }
+
+  /* Summary page: tighter body rhythm cards */
+  .summary-body-rhythm-card {
+    padding: 12px !important;
+  }
+}
+
+/* Body Rhythm Section */
 .summary-body-rhythm-section {
   display: flex;
   flex-direction: column;
@@ -3089,17 +3126,18 @@ h3 {
   position: relative;
 }
 
-/* Star glow - subtle pulsing glow behind the star icon on the Home "Ready to begin" card */
+/* Star glow - pulsing glow behind the star icon on the Home "Ready to begin" card.
+   Tuned for clear visibility while remaining soft and premium. */
 .hero-icon-circle::before {
   content: '';
   position: absolute;
-  inset: -16px;
+  inset: -24px;
   border-radius: 50%;
   background: radial-gradient(
     circle at 50% 50%,
-    hsl(45 55% 70% / 0.25) 0%,
-    hsl(45 55% 70% / 0.08) 40%,
-    transparent 70%
+    hsl(45 55% 70% / 0.38) 0%,
+    hsl(45 55% 70% / 0.15) 40%,
+    transparent 72%
   );
   z-index: -1;
   animation: star-glow-pulse 8s ease-in-out infinite;
@@ -3108,12 +3146,12 @@ h3 {
 
 @keyframes star-glow-pulse {
   0%, 100% {
-    opacity: 0.6;
-    transform: scale(1);
+    opacity: 0.7;
+    transform: scale(1.05);
   }
   50% {
     opacity: 1;
-    transform: scale(1.15);
+    transform: scale(1.25);
   }
 }
 
@@ -3121,8 +3159,8 @@ h3 {
 @media (prefers-reduced-motion: reduce) {
   .hero-icon-circle::before {
     animation: none;
-    opacity: 0.8;
-    transform: scale(1.05);
+    opacity: 0.9;
+    transform: scale(1.1);
   }
 }
 
@@ -3370,28 +3408,11 @@ h3 {
   box-shadow: var(--shadow-card-glass);
 }
 
-/* Grey background for Calm and Creative Flow */
-.journey-card-grey {
-  background: var(--bg-card-glass);
-  border: var(--border-card-glass);
-}
-
-/* Purple background for Deep Rest and Night Wind-Down */
-.journey-card-purple {
-  background: linear-gradient(165deg, hsl(275 15% 12% / 0.9), hsl(275 18% 8% / 0.95));
-  border: 1px solid hsl(275 25% 30% / 0.4);
-}
-
+/* Per-journey themed gradients are set inline via JOURNEY_THEMES.
+   Hover: lighten border slightly for any card. */
 .journey-card:hover {
   transform: var(--transform-journey-card-hover);
-}
-
-.journey-card-grey:hover {
-  border-color: hsl(275 15% 32% / 0.5);
-}
-
-.journey-card-purple:hover {
-  border-color: hsl(275 20% 35% / 0.5);
+  filter: brightness(1.06);
 }
 
 .journey-card-icon {

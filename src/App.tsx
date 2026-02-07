@@ -19,6 +19,7 @@ import { audioEngine } from './lib/audio-engine';
 import { museHandler } from './lib/muse-handler';
 import { movementDetector, DEBUG_MOVEMENT } from './lib/movement-detector';
 import { calculateCalmScore, calculateCreativeFlowScore } from './lib/flow-state';
+import { deriveRecoveryPoints } from './lib/summary-pdf';
 import {
   buildSessionRecord,
   saveSessionRecord,
@@ -119,6 +120,9 @@ function App() {
       await audioEngine.startSession();
       if (audio.entrainmentEnabled) await audio.setEntrainmentEnabled(true);
       
+      // Reset PPG session tracking so averages are fresh for this session
+      museHandler.resetSessionPPG();
+      
       // Wire movement detection -> audio cue playback (end-to-end pipeline)
       // Flow: Muse accelerometer -> MovementDetector (axis-delta) -> this callback -> playMovementCue()
       movementDetector.setOnMovement((movementDelta, source) => {
@@ -145,7 +149,19 @@ function App() {
     const audioMetrics = audioEngine.getCoherenceMetrics();
     audioEngine.stopSession();
     audio.setEntrainmentEnabled(false);
-    session.endSession(audioMetrics.totalCoherenceAudioTimeMs);
+
+    // Collect PPG data before ending session (must read before session state resets)
+    const ppgData = museHandler.getSessionPPGSummary();
+
+    // Compute recovery points from coherence + stability
+    // deriveRecoveryPoints(coherencePercent, stability) returns 6–15
+    const coherencePercent = session.sessionDuration > 0
+      ? (session.coherenceTime / session.sessionDuration) * 100
+      : 0;
+    const stability = coherencePercent >= 50 ? 'High' : coherencePercent >= 30 ? 'Medium' : 'Low';
+    const recoveryPts = deriveRecoveryPoints(coherencePercent, stability);
+
+    session.endSession(audioMetrics.totalCoherenceAudioTimeMs, ppgData, recoveryPts);
     navigate('/summary');
   }, [audio, session, navigate]);
 

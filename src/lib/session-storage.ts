@@ -14,6 +14,7 @@ export type StabilityLevel = 'Unsettled' | 'Steady' | 'Very Steady';
 
 export interface PPGSummary {
   avgHR: number;
+  avgHRV?: number | null; // RMSSD of inter-beat intervals (ms)
   hrTrend: 'up' | 'down' | 'stable';
 }
 

@@ -91,8 +91,8 @@ export function SessionSummary({
       journeyName,
       peakCoherence,
       stability,
-      avgHeartRate: null,
-      avgHRV: null,
+      avgHeartRate: session.avgHeartRate ?? null,
+      avgHRV: session.avgHRV ?? null,
     });
   }, [session, stats, user, journeyName, peakCoherence, stability]);
 
@@ -423,7 +423,7 @@ export function SessionSummary({
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: -20 }}
       style={{
-        padding: '0 24px 100px',
+        padding: '0 24px 32px',
         maxWidth: '900px',
         margin: '0 auto',
       }}
@@ -435,7 +435,7 @@ export function SessionSummary({
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
-          padding: '16px 0 24px',
+          padding: '12px 0 12px',
         }}
       >
         <Link 
@@ -530,10 +530,10 @@ export function SessionSummary({
             background: 'linear-gradient(135deg, hsl(270 10% 15% / 0.6), hsl(270 10% 12% / 0.4))',
             border: '1px solid hsl(270 10% 25% / 0.3)',
             borderRadius: '12px',
-            padding: '32px 24px',
+            padding: '20px 20px',
             backdropFilter: 'blur(20px)',
             textAlign: 'center',
-            marginBottom: '24px',
+            marginBottom: '16px',
           }}
         >
           <p 
@@ -543,7 +543,7 @@ export function SessionSummary({
               fontSize: '12px',
               fontWeight: 400,
               color: 'var(--text-muted)',
-              margin: '0 0 8px',
+              margin: '0 0 4px',
               letterSpacing: '0.02em',
             }}
           >Session Complete</p>
@@ -554,7 +554,7 @@ export function SessionSummary({
               fontSize: '28px',
               fontWeight: 600,
               color: 'var(--text-primary)',
-              margin: '0 0 24px',
+              margin: '0 0 12px',
               lineHeight: 1.2,
             }}
           >{journeyName}</h2>
@@ -566,7 +566,7 @@ export function SessionSummary({
               position: 'relative',
               width: '160px',
               height: '160px',
-              margin: '0 auto 24px',
+              margin: '0 auto 12px',
               borderRadius: '50%',
             }}
             animate={{
@@ -650,6 +650,7 @@ export function SessionSummary({
                 }}
               >
                 {Math.round(stats.coherencePercent)}
+                <span style={{ fontSize: '22px', fontWeight: 400, marginLeft: '2px' }}>%</span>
               </motion.span>
               <span 
                 className="coherence-label"
@@ -660,7 +661,7 @@ export function SessionSummary({
                   color: 'var(--text-muted)',
                   marginTop: '4px',
                 }}
-              >Coherence</span>
+              >{journeyName}</span>
             </div>
           </motion.div>
           <p 
@@ -683,7 +684,7 @@ export function SessionSummary({
         <div 
           className="summary-metrics-section"
           style={{
-            marginBottom: '24px',
+            marginBottom: '16px',
           }}
         >
           <h3 
@@ -693,7 +694,7 @@ export function SessionSummary({
               fontSize: '16px',
               fontWeight: 600,
               color: 'var(--text-primary)',
-              margin: '0 0 16px',
+              margin: '0 0 10px',
             }}
           >Session Metrics</h3>
           <div 
@@ -870,7 +871,7 @@ export function SessionSummary({
         <div 
           className="summary-timeline-section"
           style={{
-            marginBottom: '24px',
+            marginBottom: '16px',
           }}
         >
           <h3 
@@ -880,7 +881,7 @@ export function SessionSummary({
               fontSize: '16px',
               fontWeight: 600,
               color: 'var(--text-primary)',
-              margin: '0 0 16px',
+              margin: '0 0 10px',
             }}
           >Coherence Timeline</h3>
           <div 
@@ -905,188 +906,186 @@ export function SessionSummary({
           </div>
         </div>
 
-        {/* Body Rhythm Section - Target 6: 3-card grid (conditional - only shown if data exists) */}
-        {((session as any).avgHeartRate !== undefined || (session as any).avgHRV !== undefined || (session as any).recoveryPoints !== undefined) && (
-          <div 
-            className="summary-body-rhythm-section"
+        {/* Body Rhythm Section - always shown, "—" for unavailable data */}
+        <div 
+          className="summary-body-rhythm-section"
+          style={{
+            marginBottom: '16px',
+          }}
+        >
+          <h3 
+            className="summary-section-title"
             style={{
-              marginBottom: '24px',
+              fontFamily: 'var(--font-sans)',
+              fontSize: '16px',
+              fontWeight: 600,
+              color: 'var(--text-primary)',
+              margin: '0 0 10px',
+            }}
+          >Body Rhythm</h3>
+          <div 
+            className="summary-body-rhythm-grid"
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(3, 1fr)',
+              gap: '12px',
             }}
           >
-            <h3 
-              className="summary-section-title"
-              style={{
-                fontFamily: 'var(--font-sans)',
-                fontSize: '16px',
-                fontWeight: 600,
-                color: 'var(--text-primary)',
-                margin: '0 0 16px',
-              }}
-            >Body Rhythm</h3>
+            {/* Heart Rate Card */}
             <div 
-              className="summary-body-rhythm-grid"
+              className="summary-body-rhythm-card"
               style={{
-                display: 'grid',
-                gridTemplateColumns: 'repeat(3, 1fr)',
+                display: 'flex',
+                alignItems: 'center',
                 gap: '12px',
+                background: 'linear-gradient(135deg, hsl(270 10% 15% / 0.6), hsl(270 10% 12% / 0.4))',
+                border: '1px solid hsl(270 10% 25% / 0.3)',
+                borderRadius: '12px',
+                padding: '16px',
+                backdropFilter: 'blur(20px)',
               }}
             >
-              {/* Heart Rate Card */}
-              {(session as any).avgHeartRate !== undefined && (
-                <div 
-                  className="summary-body-rhythm-card"
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '12px',
-                    background: 'linear-gradient(135deg, hsl(270 10% 15% / 0.6), hsl(270 10% 12% / 0.4))',
-                    border: '1px solid hsl(270 10% 25% / 0.3)',
-                    borderRadius: '12px',
-                    padding: '16px',
-                    backdropFilter: 'blur(20px)',
-                  }}
-                >
-                  <div
-                    style={{
-                      width: '40px',
-                      height: '40px',
-                      borderRadius: '50%',
-                      background: 'hsl(350 70% 45% / 0.2)',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      flexShrink: 0,
-                    }}
-                  >
-                    <svg viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="20" height="20">
-                      <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
-                    </svg>
-                  </div>
-                  <div style={{ display: 'flex', flexDirection: 'column' }}>
-                    <span style={{
-                      fontFamily: 'var(--font-sans)',
-                      fontSize: '12px',
-                      fontWeight: 400,
-                      color: 'var(--text-muted)',
-                    }}>Heart Rate</span>
-                    <span style={{
-                      fontFamily: 'var(--font-sans)',
-                      fontSize: '18px',
-                      fontWeight: 600,
-                      color: 'var(--text-primary)',
-                    }}>
-                      {(session as any).avgHeartRate || 0}
-                      <span style={{ fontSize: '12px', fontWeight: 400, marginLeft: '4px' }}>bpm</span>
-                    </span>
-                  </div>
-                </div>
-              )}
-              
-              {/* HRV Card */}
-              {(session as any).avgHRV !== undefined && (
-                <div 
-                  className="summary-body-rhythm-card"
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '12px',
-                    background: 'linear-gradient(135deg, hsl(270 10% 15% / 0.6), hsl(270 10% 12% / 0.4))',
-                    border: '1px solid hsl(270 10% 25% / 0.3)',
-                    borderRadius: '12px',
-                    padding: '16px',
-                    backdropFilter: 'blur(20px)',
-                  }}
-                >
-                  <div
-                    style={{
-                      width: '40px',
-                      height: '40px',
-                      borderRadius: '50%',
-                      background: 'hsl(45 30% 50% / 0.12)',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      flexShrink: 0,
-                    }}
-                  >
-                    <svg viewBox="0 0 24 24" fill="none" stroke="hsl(45 35% 72%)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="20" height="20">
-                      <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
-                    </svg>
-                  </div>
-                  <div style={{ display: 'flex', flexDirection: 'column' }}>
-                    <span style={{
-                      fontFamily: 'var(--font-sans)',
-                      fontSize: '12px',
-                      fontWeight: 400,
-                      color: 'var(--text-muted)',
-                    }}>HRV</span>
-                    <span style={{
-                      fontFamily: 'var(--font-sans)',
-                      fontSize: '18px',
-                      fontWeight: 600,
-                      color: 'var(--text-primary)',
-                    }}>
-                      {(session as any).avgHRV || 0}
-                      <span style={{ fontSize: '12px', fontWeight: 400, marginLeft: '4px' }}>ms</span>
-                    </span>
-                  </div>
-                </div>
-              )}
-              
-              {/* Recovery Card */}
-              {(session as any).recoveryPoints !== undefined && (
-                <div 
-                  className="summary-body-rhythm-card"
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '12px',
-                    background: 'linear-gradient(135deg, hsl(270 10% 15% / 0.6), hsl(270 10% 12% / 0.4))',
-                    border: '1px solid hsl(270 10% 25% / 0.3)',
-                    borderRadius: '12px',
-                    padding: '16px',
-                    backdropFilter: 'blur(20px)',
-                  }}
-                >
-                  <div
-                    style={{
-                      width: '40px',
-                      height: '40px',
-                      borderRadius: '50%',
-                      background: 'hsl(270 40% 55% / 0.2)',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      flexShrink: 0,
-                    }}
-                  >
-                    <svg viewBox="0 0 24 24" fill="none" stroke="#9e59b8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="20" height="20">
-                      <polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/>
-                      <polyline points="17 6 23 6 23 12"/>
-                    </svg>
-                  </div>
-                  <div style={{ display: 'flex', flexDirection: 'column' }}>
-                    <span style={{
-                      fontFamily: 'var(--font-sans)',
-                      fontSize: '12px',
-                      fontWeight: 400,
-                      color: 'var(--text-muted)',
-                    }}>Recovery</span>
-                    <span style={{
-                      fontFamily: 'var(--font-sans)',
-                      fontSize: '18px',
-                      fontWeight: 600,
-                      color: '#22c55e',
-                    }}>
-                      +{(session as any).recoveryPoints || 0}
-                      <span style={{ fontSize: '12px', fontWeight: 400, marginLeft: '4px', color: 'var(--text-primary)' }}>pts</span>
-                    </span>
-                  </div>
-                </div>
-              )}
+              <div
+                style={{
+                  width: '40px',
+                  height: '40px',
+                  borderRadius: '50%',
+                  background: 'hsl(350 70% 45% / 0.2)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  flexShrink: 0,
+                }}
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="hsl(350 55% 55%)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="20" height="20">
+                  <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
+                </svg>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column' }}>
+                <span style={{
+                  fontFamily: 'var(--font-sans)',
+                  fontSize: '12px',
+                  fontWeight: 400,
+                  color: 'var(--text-muted)',
+                }}>Heart Rate</span>
+                <span style={{
+                  fontFamily: 'var(--font-sans)',
+                  fontSize: '18px',
+                  fontWeight: 600,
+                  color: 'var(--text-primary)',
+                }}>
+                  {session.avgHeartRate != null ? session.avgHeartRate : '—'}
+                  {session.avgHeartRate != null && (
+                    <span style={{ fontSize: '12px', fontWeight: 400, marginLeft: '4px' }}>bpm</span>
+                  )}
+                </span>
+              </div>
+            </div>
+            
+            {/* HRV Card */}
+            <div 
+              className="summary-body-rhythm-card"
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '12px',
+                background: 'linear-gradient(135deg, hsl(270 10% 15% / 0.6), hsl(270 10% 12% / 0.4))',
+                border: '1px solid hsl(270 10% 25% / 0.3)',
+                borderRadius: '12px',
+                padding: '16px',
+                backdropFilter: 'blur(20px)',
+              }}
+            >
+              <div
+                style={{
+                  width: '40px',
+                  height: '40px',
+                  borderRadius: '50%',
+                  background: 'hsl(45 30% 50% / 0.12)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  flexShrink: 0,
+                }}
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="hsl(45 35% 72%)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="20" height="20">
+                  <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+                </svg>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column' }}>
+                <span style={{
+                  fontFamily: 'var(--font-sans)',
+                  fontSize: '12px',
+                  fontWeight: 400,
+                  color: 'var(--text-muted)',
+                }}>HRV</span>
+                <span style={{
+                  fontFamily: 'var(--font-sans)',
+                  fontSize: '18px',
+                  fontWeight: 600,
+                  color: 'var(--text-primary)',
+                }}>
+                  {session.avgHRV != null ? session.avgHRV : '—'}
+                  {session.avgHRV != null && (
+                    <span style={{ fontSize: '12px', fontWeight: 400, marginLeft: '4px' }}>ms</span>
+                  )}
+                </span>
+              </div>
+            </div>
+            
+            {/* Recovery Card */}
+            <div 
+              className="summary-body-rhythm-card"
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '12px',
+                background: 'linear-gradient(135deg, hsl(270 10% 15% / 0.6), hsl(270 10% 12% / 0.4))',
+                border: '1px solid hsl(270 10% 25% / 0.3)',
+                borderRadius: '12px',
+                padding: '16px',
+                backdropFilter: 'blur(20px)',
+              }}
+            >
+              <div
+                style={{
+                  width: '40px',
+                  height: '40px',
+                  borderRadius: '50%',
+                  background: 'hsl(270 40% 55% / 0.2)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  flexShrink: 0,
+                }}
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="hsl(270 35% 60%)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="20" height="20">
+                  <polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/>
+                  <polyline points="17 6 23 6 23 12"/>
+                </svg>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column' }}>
+                <span style={{
+                  fontFamily: 'var(--font-sans)',
+                  fontSize: '12px',
+                  fontWeight: 400,
+                  color: 'var(--text-muted)',
+                }}>Recovery</span>
+                <span style={{
+                  fontFamily: 'var(--font-sans)',
+                  fontSize: '18px',
+                  fontWeight: 600,
+                  color: '#22c55e',
+                }}>
+                  {session.recoveryPoints != null ? '+' + session.recoveryPoints : '—'}
+                  {session.recoveryPoints != null && (
+                    <span style={{ fontSize: '12px', fontWeight: 400, marginLeft: '4px', color: 'var(--text-primary)' }}>pts</span>
+                  )}
+                </span>
+              </div>
             </div>
           </div>
-        )}
+        </div>
       </div>
 
       {/* CTA Buttons - Target 6: Back to Home secondary, Start Another Journey primary */}
@@ -1097,7 +1096,7 @@ export function SessionSummary({
           alignItems: 'center',
           justifyContent: 'center',
           gap: '16px',
-          paddingTop: '16px',
+          paddingTop: '8px',
         }}
       >
         <motion.button
@@ -1106,7 +1105,7 @@ export function SessionSummary({
           whileHover={{ scale: 1.02, y: -2 }}
           whileTap={{ scale: 0.98 }}
           style={{
-            padding: '14px 28px',
+            padding: '12px 24px',
             background: 'hsl(270 10% 18%)',
             color: 'var(--text-primary)',
             border: '1px solid hsl(270 10% 30%)',
@@ -1126,7 +1125,7 @@ export function SessionSummary({
           whileHover={{ scale: 1.02, y: -2 }}
           whileTap={{ scale: 0.98 }}
           style={{
-            padding: '14px 28px',
+            padding: '12px 24px',
             background: 'linear-gradient(135deg, #D9C478, #C9B468)',
             color: '#0c0a0e',
             border: 'none',

@@ -135,7 +135,11 @@ export function useSession(): UseSessionReturn {
     console.log('[useSession] Session started with persisted startTime:', inProgress.startTime);
   }, [currentUser]);
 
-  const endSession = useCallback((audioCoherenceTimeMs?: number) => {
+  const endSession = useCallback((
+    audioCoherenceTimeMs?: number,
+    ppgData?: { avgHR: number | null; avgHRV: number | null },
+    recoveryPoints?: number | null,
+  ) => {
     if (!isSessionActive || !currentUser) {
       setIsSessionActive(false);
       // Clean up any orphaned in-progress session
@@ -217,6 +221,11 @@ export function useSession(): UseSessionReturn {
       longestStreak: finalLongestStreak,
       avgCoherence,
       coherenceHistory,
+      // PPG heart metrics (null if PPG data unavailable)
+      avgHeartRate: ppgData?.avgHR ?? null,
+      avgHRV: ppgData?.avgHRV ?? null,
+      // Recovery points (null if not computed)
+      recoveryPoints: recoveryPoints ?? null,
     });
     
     // Clear the in-progress session now that it's been saved
@@ -231,6 +240,11 @@ export function useSession(): UseSessionReturn {
     // Auto-persist session to user profile (session history) so it is not lost
     const journeyId = getLastJourneyId(currentUser.id);
     const coherencePercent = duration > 0 ? (finalCoherenceTime / duration) * 100 : 0;
+    // Build PPG summary for session record (if HR data available)
+    const ppgSummary = ppgData?.avgHR != null
+      ? { avgHR: ppgData.avgHR, avgHRV: ppgData.avgHRV, hrTrend: 'stable' as const }
+      : undefined;
+
     const record = buildSessionRecord({
       id: session.id,
       userId: currentUser.id,
@@ -245,6 +259,7 @@ export function useSession(): UseSessionReturn {
       avgCoherence,
       achievementScore: stats.achievementScore,
       coherenceHistory,
+      ppgSummary,
     });
     Promise.resolve(saveSessionRecord(record)).catch((e) => {
       console.warn('Failed to save session record', e);

@@ -28,6 +28,11 @@ export interface Session {
   longestStreak: number; // ms longest continuous
   avgCoherence: number; // 0-1
   coherenceHistory: number[]; // time-series for graph
+  // PPG/Heart metrics (null when PPG data unavailable)
+  avgHeartRate?: number | null;   // Average BPM over session (from Muse 2 PPG)
+  avgHRV?: number | null;         // RMSSD of inter-beat intervals (ms)
+  // Recovery points (6–15 scale, derived from coherence + stability)
+  recoveryPoints?: number | null;
 }
 
 export interface BrainwaveBands {

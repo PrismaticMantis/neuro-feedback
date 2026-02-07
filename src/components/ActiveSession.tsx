@@ -140,7 +140,7 @@ export function ActiveSession({
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
-          padding: '16px 0 20px',
+          padding: '12px 0 10px',
         }}
       >
         <div 
@@ -243,8 +243,8 @@ export function ActiveSession({
         style={{
           display: 'grid',
           gridTemplateColumns: 'repeat(2, 1fr)',
-          gap: '16px',
-          marginBottom: '16px',
+          gap: '12px',
+          marginBottom: '10px',
         }}
       >
         {/* Electrode Contact Card - Target 5: Shows electrode status + band powers */}
@@ -254,7 +254,7 @@ export function ActiveSession({
             background: 'linear-gradient(135deg, hsl(270 10% 15% / 0.6), hsl(270 10% 12% / 0.4))',
             border: '1px solid hsl(270 10% 25% / 0.3)',
             borderRadius: '12px',
-            padding: '16px',
+            padding: '14px',
             backdropFilter: 'blur(20px)',
           }}
         >
@@ -267,8 +267,8 @@ export function ActiveSession({
               display: 'flex',
               justifyContent: 'space-between',
               alignItems: 'center',
-              paddingTop: '12px',
-              marginTop: '12px',
+              paddingTop: '10px',
+              marginTop: '10px',
               borderTop: '1px solid hsl(270 10% 25% / 0.3)',
             }}
           >
@@ -318,7 +318,7 @@ export function ActiveSession({
             background: 'linear-gradient(135deg, hsl(270 10% 15% / 0.6), hsl(270 10% 12% / 0.4))',
             border: '1px solid hsl(270 10% 25% / 0.3)',
             borderRadius: '12px',
-            padding: '16px',
+            padding: '14px',
             backdropFilter: 'blur(20px)',
           }}
         >
@@ -331,7 +331,7 @@ export function ActiveSession({
               color: 'var(--text-muted)',
               letterSpacing: '0.05em',
               textTransform: 'uppercase',
-              margin: '0 0 12px',
+              margin: '0 0 8px',
             }}
           >MENTAL STATE</h3>
           <div 
@@ -349,8 +349,8 @@ export function ActiveSession({
                 display: 'flex',
                 flexDirection: 'column',
                 alignItems: 'center',
-                gap: '6px',
-                padding: '12px 8px',
+                gap: '4px',
+                padding: '10px 8px',
                 background: coherenceZone === 'flow' 
                   ? 'hsl(270 10% 20% / 0.6)'
                   : 'transparent',
@@ -381,8 +381,8 @@ export function ActiveSession({
                 display: 'flex',
                 flexDirection: 'column',
                 alignItems: 'center',
-                gap: '6px',
-                padding: '12px 8px',
+                gap: '4px',
+                padding: '10px 8px',
                 background: coherenceZone === 'stabilizing' 
                   ? 'hsl(270 10% 20% / 0.6)'
                   : 'transparent',
@@ -414,8 +414,8 @@ export function ActiveSession({
                 display: 'flex',
                 flexDirection: 'column',
                 alignItems: 'center',
-                gap: '6px',
-                padding: '12px 8px',
+                gap: '4px',
+                padding: '10px 8px',
                 background: coherenceZone === 'noise' 
                   ? 'hsl(270 10% 20% / 0.6)'
                   : 'transparent',
@@ -447,11 +447,11 @@ export function ActiveSession({
           display: 'flex',
           alignItems: 'center',
           gap: '14px',
-          padding: '16px 20px',
+          padding: '12px 16px',
           background: 'linear-gradient(135deg, hsl(270 10% 16% / 0.7), hsl(270 10% 13% / 0.5))',
           border: '1px solid hsl(270 10% 25% / 0.3)',
           borderRadius: '12px',
-          marginBottom: '20px',
+          marginBottom: '12px',
           backdropFilter: 'blur(20px)',
         }}
       >
@@ -527,7 +527,7 @@ export function ActiveSession({
           display: 'flex',
           flexDirection: 'column',
           alignItems: 'center',
-          margin: '8px 0 20px',
+          margin: '4px 0 12px',
         }}
       >
         {/* Circular Timer with Progress Ring - with breathing glow effect */}
@@ -633,7 +633,7 @@ export function ActiveSession({
             display: 'flex',
             flexDirection: 'column',
             alignItems: 'center',
-            marginTop: '12px',
+            marginTop: '6px',
           }}
         >
           <span 
@@ -662,7 +662,7 @@ export function ActiveSession({
       <main 
         className="session-main-lovable"
         style={{
-          marginBottom: '24px',
+          marginBottom: '16px',
         }}
       >
         <div 
@@ -671,9 +671,9 @@ export function ActiveSession({
             background: 'linear-gradient(135deg, hsl(270 10% 15% / 0.6), hsl(270 10% 12% / 0.4))',
             border: '1px solid hsl(270 10% 25% / 0.3)',
             borderRadius: '12px',
-            padding: '20px',
+            padding: '16px',
             backdropFilter: 'blur(20px)',
-            minHeight: '300px',
+            minHeight: '280px',
           }}
         >
           <CoherenceGraph
@@ -802,7 +802,7 @@ export function ActiveSession({
           alignItems: 'center',
           justifyContent: 'center',
           gap: '16px',
-          paddingBottom: '24px',
+          paddingBottom: '16px',
         }}
       >
         <motion.button
@@ -857,13 +857,18 @@ export function ActiveSession({
         </button>
 
         {/* DEBUG: Test Movement Cue button - visible only when DEBUG_MOVEMENT is true */}
-        {/* Clicking this calls playMovementCue() directly, bypassing accelerometer detection. */}
-        {/* This isolates audio issues from detection issues during development. */}
+        {/* Calls testPlayMovementCue() which: awaits AudioContext.resume() (iOS-safe from */}
+        {/* user gesture), reloads buffer if null, and logs every step for diagnosis. */}
         {DEBUG_MOVEMENT && (
           <button
-            onClick={() => {
-              const cueNumber = audioEngine.playMovementCue();
-              console.log('[Move] PLAY movement-cue-' + cueNumber + '.mp3 (manual test)');
+            onClick={async () => {
+              console.log('[TestCue] Button pressed — calling testPlayMovementCue()...');
+              try {
+                const cueNumber = await audioEngine.testPlayMovementCue();
+                console.log('[TestCue] Result: cue ' + cueNumber + (cueNumber > 0 ? ' (should be audible)' : ' (FAILED — check logs above)'));
+              } catch (e) {
+                console.error('[TestCue] Unexpected error:', e);
+              }
             }}
             style={{
               padding: '8px 16px',
@@ -877,7 +882,7 @@ export function ActiveSession({
               cursor: 'pointer',
             }}
           >
-            🔔 Test Cue
+            Test Cue
           </button>
         )}
       </footer>

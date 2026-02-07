@@ -180,6 +180,10 @@ export class MuseHandler {
   private ppgBPM: number | null = null; // Current BPM estimate
   private ppgBPMConfidence: number = 0; // Confidence 0-1
   private ppgLastBeatMs: number | null = null; // Timestamp of last detected beat
+  private ppgHRV: number | null = null; // RMSSD of recent inter-beat intervals (ms)
+  // Session-level BPM aggregation (running average)
+  private ppgSessionBPMSum: number = 0;
+  private ppgSessionBPMCount: number = 0;
   private ppgSmoothingAlpha = 0.1; // EMA smoothing for raw signal
   private ppgBPMSmoothingAlpha = 0.1; // EMA smoothing for BPM (heavy smoothing)
   private ppgMinRefractoryPeriod = 300; // Minimum time between peaks (ms) - prevents double detection
@@ -1001,6 +1005,23 @@ export class MuseHandler {
       this.ppgBPM = null;
     }
 
+    // Calculate HRV (RMSSD of successive inter-beat interval differences)
+    // RMSSD = Root Mean Square of Successive Differences
+    if (ibis.length >= 2) {
+      let sumSquaredDiffs = 0;
+      for (let i = 1; i < ibis.length; i++) {
+        const diff = ibis[i] - ibis[i - 1];
+        sumSquaredDiffs += diff * diff;
+      }
+      this.ppgHRV = Math.sqrt(sumSquaredDiffs / (ibis.length - 1));
+    }
+
+    // Accumulate BPM for session-level average (only when confident)
+    if (this.ppgBPM !== null && this.ppgBPMConfidence >= 0.6) {
+      this.ppgSessionBPMSum += this.ppgBPM;
+      this.ppgSessionBPMCount++;
+    }
+
     // Debug logging (throttled to once every 3-5 seconds)
     if (DEBUG_PPG && this.ppgBPM !== null && this.ppgBPMConfidence >= 0.6) {
       const timeSinceLastLog = now - this.ppgLastLogTime;
@@ -1008,6 +1029,7 @@ export class MuseHandler {
         console.log('[MuseHandler] PPG data:', {
           bpm: this.ppgBPM.toFixed(1),
           confidence: this.ppgBPMConfidence.toFixed(2),
+          hrv: this.ppgHRV !== null ? this.ppgHRV.toFixed(1) + 'ms' : 'N/A',
           recentPeaks: recentPeaks.length,
           lastBeatMs: this.ppgLastBeatMs,
         });
@@ -1444,6 +1466,31 @@ export class MuseHandler {
       confidence: this.ppgBPMConfidence,
       lastBeatMs: this.ppgLastBeatMs,
     };
+  }
+
+  /**
+   * Get session-level PPG summary (average HR and HRV over the session).
+   * Returns null values if no confident BPM readings were recorded.
+   * Call this at session end before resetting.
+   */
+  getSessionPPGSummary(): { avgHR: number | null; avgHRV: number | null } {
+    if (!ENABLE_PPG_MODULATION) {
+      return { avgHR: null, avgHRV: null };
+    }
+    const avgHR = this.ppgSessionBPMCount > 0
+      ? Math.round(this.ppgSessionBPMSum / this.ppgSessionBPMCount)
+      : null;
+    const avgHRV = this.ppgHRV !== null ? Math.round(this.ppgHRV) : null;
+    return { avgHR, avgHRV };
+  }
+
+  /**
+   * Reset session-level PPG tracking (call when starting a new session).
+   */
+  resetSessionPPG(): void {
+    this.ppgSessionBPMSum = 0;
+    this.ppgSessionBPMCount = 0;
+    this.ppgHRV = null;
   }
 }
 

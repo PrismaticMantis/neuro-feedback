@@ -19,6 +19,10 @@ export const DEBUG_COHERENCE_EVENTS = true;
 // Set to true to enable detailed movement cue logging
 export const DEBUG_MOVEMENT_CUES = true;
 
+// Debug flag for movement cue AUDIO diagnostics (load/decode/play/gain chain)
+// Set to true to log every step of the audio playback pipeline
+export const DEBUG_MOVEMENT_AUDIO = true;
+
 /**
  * COHERENCE TRIGGER PARAMETERS
  * 
@@ -1864,13 +1868,42 @@ export class AudioEngine {
   // ============================================
   
   /**
-   * Play the next movement cue in the 1-2-3 cycle
+   * Ensure AudioContext is in 'running' state.
+   * Call from a user gesture handler (e.g. button click) on iOS to guarantee resume works.
+   * @returns true if context is running after this call
+   */
+  async ensureContextRunning(): Promise<boolean> {
+    if (!this.ctx) {
+      if (DEBUG_MOVEMENT_AUDIO) console.warn('[MoveCue] ensureContextRunning: no AudioContext');
+      return false;
+    }
+    if (this.ctx.state === 'running') return true;
+
+    if (DEBUG_MOVEMENT_AUDIO) {
+      console.log('[MoveCue] ensureContextRunning: state=' + this.ctx.state + ', calling resume()...');
+    }
+    try {
+      await this.ctx.resume();
+      if (DEBUG_MOVEMENT_AUDIO) {
+        console.log('[MoveCue] ensureContextRunning: resumed, state=' + this.ctx.state);
+      }
+    } catch (e) {
+      console.error('[MoveCue] ensureContextRunning: resume() failed:', e);
+      return false;
+    }
+    // Re-read state after resume (TypeScript narrows the type above, so cast)
+    return (this.ctx.state as string) === 'running';
+  }
+
+  /**
+   * Play the next movement cue in the 1-2-3 cycle.
    * 
    * BEHAVIOR:
    * - Cycles through cues deterministically: 1 -> 2 -> 3 -> 1 -> ...
    * - Will not play if a cue is already playing (prevents overlap/stacking)
    * - Respects master volume
    * - Does not duck or pause main audio layers
+   * - If context is suspended, fires a resume() attempt for the NEXT call
    * 
    * TUNING:
    * - Adjust movementCueGain.gain.value in init() to change volume
@@ -1879,87 +1912,215 @@ export class AudioEngine {
    * @returns The cue number that was played (1, 2, or 3), or 0 if no cue played
    */
   playMovementCue(): number {
-    // Guard: ensure we have context and session is active
-    if (!this.ctx || !this.isSessionActive) {
-      if (DEBUG_MOVEMENT_CUES) {
-        console.log('[AudioEngine] 🔇 Movement cue skipped: session not active');
-      }
+    // Step 1: Check context exists
+    if (!this.ctx) {
+      if (DEBUG_MOVEMENT_AUDIO) console.warn('[MoveCue] BLOCKED step1: no AudioContext');
       return 0;
     }
 
-    // Guard: check if audio context is running
+    // Step 2: Check session is active
+    if (!this.isSessionActive) {
+      if (DEBUG_MOVEMENT_AUDIO) console.warn('[MoveCue] BLOCKED step2: session not active');
+      return 0;
+    }
+
+    // Step 3: Check context state — try resume if suspended (fire-and-forget for next poll)
     if (this.ctx.state !== 'running') {
-      if (DEBUG_MOVEMENT_CUES) {
-        console.log('[AudioEngine] 🔇 Movement cue skipped: audio context not running');
+      if (DEBUG_MOVEMENT_AUDIO) {
+        console.warn('[MoveCue] BLOCKED step3: ctx.state=' + this.ctx.state + ' (firing resume for next attempt)');
       }
+      this.ctx.resume().catch(() => {});
       return 0;
     }
 
-    // Guard: prevent overlap - don't play if already playing
+    // Step 4: Check overlap
     if (this.isMovementCuePlaying) {
-      if (DEBUG_MOVEMENT_CUES) {
-        console.log('[AudioEngine] 🔇 Movement cue skipped: already playing');
-      }
+      if (DEBUG_MOVEMENT_AUDIO) console.log('[MoveCue] BLOCKED step4: cue already playing');
       return 0;
     }
 
-    // Get the buffer for the current cue index
+    // Step 5: Check buffer
     const buffer = this.movementCueBuffers[this.movementCueIndex];
     if (!buffer) {
-      if (DEBUG_MOVEMENT_CUES) {
-        console.warn(`[AudioEngine] 🔇 Movement cue skipped: buffer ${this.movementCueIndex + 1} not loaded`);
+      if (DEBUG_MOVEMENT_AUDIO) {
+        console.warn('[MoveCue] BLOCKED step5: buffer[' + this.movementCueIndex + '] is null', {
+          allBuffers: this.movementCueBuffers.map((b, i) =>
+            b ? 'cue' + (i + 1) + ':' + b.duration.toFixed(2) + 's' : 'cue' + (i + 1) + ':null'
+          ),
+        });
       }
-      // Still advance the index for next time
       this.movementCueIndex = (this.movementCueIndex + 1) % 3;
       return 0;
     }
 
-    // Guard: ensure gain node exists
+    // Step 6: Check gain node
     if (!this.movementCueGain) {
-      if (DEBUG_MOVEMENT_CUES) {
-        console.warn('[AudioEngine] 🔇 Movement cue skipped: gain node not created');
-      }
+      if (DEBUG_MOVEMENT_AUDIO) console.warn('[MoveCue] BLOCKED step6: gain node is null');
       return 0;
     }
 
-    const cueNumber = this.movementCueIndex + 1; // 1-indexed for logging
-    const now = this.ctx.currentTime;
+    // All guards passed — play the cue
+    return this.playCueFromBuffer(buffer);
+  }
 
-    // Create and configure the source
+  /**
+   * Internal helper: play a movement cue buffer through the gain chain.
+   * Called by both playMovementCue() and testPlayMovementCue().
+   */
+  private playCueFromBuffer(buffer: AudioBuffer): number {
+    if (!this.ctx || !this.movementCueGain) return 0;
+
+    const cueNumber = this.movementCueIndex + 1;
+
+    // Stop any lingering source
+    if (this.movementCueSource) {
+      try { this.movementCueSource.stop(); } catch { /* already stopped */ }
+      this.movementCueSource = null;
+    }
+
+    // Create one-shot source
     this.movementCueSource = this.ctx.createBufferSource();
     this.movementCueSource.buffer = buffer;
-    this.movementCueSource.loop = false; // One-shot playback
+    this.movementCueSource.loop = false;
     this.movementCueSource.connect(this.movementCueGain);
 
-    // Set up ended callback to allow next cue
     this.movementCueSource.onended = () => {
       this.isMovementCuePlaying = false;
       this.movementCueSource = null;
-      if (DEBUG_MOVEMENT_CUES) {
-        console.log(`[AudioEngine] 🔔 Movement cue ${cueNumber} finished playing`);
+      if (DEBUG_MOVEMENT_AUDIO) {
+        console.log('[MoveCue] cue ' + cueNumber + ' ended');
       }
     };
 
-    // Start playback
-    this.movementCueSource.start(now);
+    this.movementCueSource.start(0);
     this.isMovementCuePlaying = true;
 
-    if (DEBUG_MOVEMENT_CUES) {
-      console.log(`[AudioEngine] 🔔 Movement cue ${cueNumber} playing`, {
-        cueIndex: this.movementCueIndex,
+    if (DEBUG_MOVEMENT_AUDIO) {
+      console.log('[MoveCue] ▶ PLAYING cue ' + cueNumber, {
         duration: buffer.duration.toFixed(2) + 's',
-        nextCue: ((this.movementCueIndex + 1) % 3) + 1,
+        gainValue: this.movementCueGain.gain.value,
+        masterGainValue: this.masterGain?.gain?.value,
+        ctxState: this.ctx.state,
       });
     }
 
-    // Advance to next cue in cycle
     this.movementCueIndex = (this.movementCueIndex + 1) % 3;
-
     return cueNumber;
   }
 
   /**
-   * Reset movement cue index to start fresh (called on session start)
+   * Test-play the next movement cue (async, called from the DEBUG test button).
+   * 
+   * This method is designed to be called from a user gesture (button click),
+   * which is REQUIRED on iOS to resume a suspended AudioContext.
+   * 
+   * Unlike playMovementCue(), this method:
+   * - Awaits AudioContext.resume() (guaranteed to work from user gesture on iOS)
+   * - Does NOT require isSessionActive (so it works even if session state is wrong)
+   * - Attempts to reload the buffer from network if it is null
+   * - Creates the gain node if missing
+   * - Logs every step for full diagnosis
+   * 
+   * @returns The cue number played (1-3), or 0 if playback failed
+   */
+  async testPlayMovementCue(): Promise<number> {
+    console.log('[MoveCue] === TEST PLAY START ===');
+    console.log('[MoveCue] Diagnostics:', {
+      hasCtx: !!this.ctx,
+      ctxState: this.ctx?.state ?? 'N/A',
+      isSessionActive: this.isSessionActive,
+      isPlaying: this.isMovementCuePlaying,
+      cueIndex: this.movementCueIndex,
+      buffers: this.movementCueBuffers.map((b, i) =>
+        b ? 'cue' + (i + 1) + ':' + b.duration.toFixed(2) + 's' : 'cue' + (i + 1) + ':null'
+      ),
+      hasGainNode: !!this.movementCueGain,
+      gainValue: this.movementCueGain?.gain?.value ?? 'N/A',
+      masterGainValue: this.masterGain?.gain?.value ?? 'N/A',
+    });
+
+    // 1) Ensure context exists
+    if (!this.ctx) {
+      console.error('[MoveCue] TEST FAIL: No AudioContext. Engine not initialized.');
+      return 0;
+    }
+
+    // 2) Resume context (this is a user gesture, so iOS allows it)
+    if (this.ctx.state !== 'running') {
+      console.log('[MoveCue] Resuming AudioContext (state=' + this.ctx.state + ')...');
+      try {
+        await this.ctx.resume();
+        console.log('[MoveCue] Resumed → state=' + this.ctx.state);
+      } catch (e) {
+        console.error('[MoveCue] TEST FAIL: resume() threw:', e);
+        return 0;
+      }
+      // Re-read state after resume (TypeScript narrows the type above, so cast)
+      if ((this.ctx.state as string) !== 'running') {
+        console.error('[MoveCue] TEST FAIL: state still ' + this.ctx.state + ' after resume');
+        return 0;
+      }
+    }
+
+    // 3) Ensure gain node exists (recreate if missing)
+    if (!this.movementCueGain) {
+      console.log('[MoveCue] Creating missing gain node...');
+      this.movementCueGain = this.ctx.createGain();
+      this.movementCueGain.gain.value = 0.5;
+      if (this.masterGain) {
+        this.movementCueGain.connect(this.masterGain);
+        console.log('[MoveCue] Gain node connected to masterGain');
+      } else {
+        // Fallback: connect directly to destination
+        this.movementCueGain.connect(this.ctx.destination);
+        console.warn('[MoveCue] No masterGain — connected gain directly to destination');
+      }
+    }
+
+    // 4) Check buffer — attempt reload if null
+    let buffer = this.movementCueBuffers[this.movementCueIndex];
+    if (!buffer) {
+      const cueNum = this.movementCueIndex + 1;
+      const url = '/audio/movement-cue-' + cueNum + '.mp3';
+      console.log('[MoveCue] Buffer[' + this.movementCueIndex + '] is null. Fetching ' + url + '...');
+      try {
+        const resp = await fetch(url);
+        if (!resp.ok) {
+          console.error('[MoveCue] TEST FAIL: fetch ' + url + ' → ' + resp.status + ' ' + resp.statusText);
+          return 0;
+        }
+        console.log('[MoveCue] Fetch OK (' + resp.status + '), decoding...');
+        const ab = await resp.arrayBuffer();
+        console.log('[MoveCue] ArrayBuffer size: ' + ab.byteLength + ' bytes');
+        this.movementCueBuffers[this.movementCueIndex] = await this.ctx.decodeAudioData(ab);
+        buffer = this.movementCueBuffers[this.movementCueIndex];
+        console.log('[MoveCue] Decoded! Duration: ' + buffer!.duration.toFixed(2) + 's');
+      } catch (e) {
+        console.error('[MoveCue] TEST FAIL: fetch/decode error:', e);
+        return 0;
+      }
+    }
+
+    if (!buffer) {
+      console.error('[MoveCue] TEST FAIL: buffer still null after reload');
+      return 0;
+    }
+
+    // 5) Stop any currently playing cue
+    if (this.isMovementCuePlaying && this.movementCueSource) {
+      try { this.movementCueSource.stop(); } catch { /* already stopped */ }
+      this.isMovementCuePlaying = false;
+      this.movementCueSource = null;
+    }
+
+    // 6) Play
+    const result = this.playCueFromBuffer(buffer);
+    console.log('[MoveCue] === TEST PLAY ' + (result > 0 ? 'SUCCESS cue ' + result : 'FAILED') + ' ===');
+    return result;
+  }
+
+  /**
+   * Reset movement cue index to start fresh (called on session start/stop)
    */
   resetMovementCueIndex(): void {
     this.movementCueIndex = 0;

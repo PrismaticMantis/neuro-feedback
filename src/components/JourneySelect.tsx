@@ -9,23 +9,52 @@ import type { User } from '../types';
 
 const ENABLED_JOURNEY_ID = 'creativeFlow';
 
-/* Journey display tokens from Lovable spec (duration + icon color + card background)
- * Target 2 - Choose Journey.png reference:
- * - Calm: Blue icon (#4d99b3), grey card
- * - Deep Rest: Purple icon (#a67bc8), purple-tinted card
- * - Creative Flow: Gold icon (#d9c478), grey card
- * - Night Wind-Down: Purple icon (#a67bc8), purple-tinted card
+/**
+ * Journey theme map — unique gradient, icon, and glow per journey (Lovable parity).
+ *
+ * Each card gets a subtle tint of its accent color on the glass background,
+ * a matching border hue, and a soft radial glow that differentiates it visually.
  */
-const JOURNEY_DISPLAY: Record<string, { 
-  duration: string; 
+const JOURNEY_THEMES: Record<string, {
+  duration: string;
   iconColor: string;
-  iconBg: string; // Background for icon circle
-  cardBg: 'grey' | 'purple';
+  iconBg: string;
+  cardGradient: string;   // Themed glass background
+  cardBorder: string;     // Accent-tinted border
+  cardGlow: string;       // Subtle box-shadow glow
 }> = {
-  calm: { duration: '15 min', iconColor: '#ffffff', iconBg: '#5B8DEF', cardBg: 'grey' },
-  deepRest: { duration: '25 min', iconColor: '#ffffff', iconBg: '#9B6BC8', cardBg: 'purple' },
-  creativeFlow: { duration: '20 min', iconColor: '#0c0a0e', iconBg: '#D9C478', cardBg: 'grey' },
-  nightWindDown: { duration: '30 min', iconColor: '#ffffff', iconBg: '#9B6BC8', cardBg: 'purple' },
+  calm: {
+    duration: '15 min',
+    iconColor: '#ffffff',
+    iconBg: '#5B8DEF',
+    cardGradient: 'linear-gradient(165deg, hsl(210 18% 15% / 0.85), hsl(215 14% 10% / 0.9))',
+    cardBorder: '1px solid hsl(210 22% 28% / 0.35)',
+    cardGlow: '0 4px 24px hsl(210 35% 18% / 0.3), inset 0 1px 0 hsl(210 30% 40% / 0.08)',
+  },
+  deepRest: {
+    duration: '25 min',
+    iconColor: '#ffffff',
+    iconBg: '#9B6BC8',
+    cardGradient: 'linear-gradient(165deg, hsl(275 18% 15% / 0.85), hsl(275 15% 10% / 0.9))',
+    cardBorder: '1px solid hsl(275 25% 30% / 0.4)',
+    cardGlow: '0 4px 24px hsl(275 35% 18% / 0.3), inset 0 1px 0 hsl(275 30% 40% / 0.08)',
+  },
+  creativeFlow: {
+    duration: '20 min',
+    iconColor: '#0c0a0e',
+    iconBg: '#D9C478',
+    cardGradient: 'linear-gradient(165deg, hsl(45 14% 14% / 0.85), hsl(40 10% 10% / 0.9))',
+    cardBorder: '1px solid hsl(45 20% 28% / 0.35)',
+    cardGlow: '0 4px 24px hsl(45 35% 18% / 0.3), inset 0 1px 0 hsl(45 30% 40% / 0.08)',
+  },
+  nightWindDown: {
+    duration: '30 min',
+    iconColor: '#ffffff',
+    iconBg: '#7C6BC8',
+    cardGradient: 'linear-gradient(165deg, hsl(255 18% 15% / 0.85), hsl(255 15% 10% / 0.9))',
+    cardBorder: '1px solid hsl(255 22% 30% / 0.4)',
+    cardGlow: '0 4px 24px hsl(255 35% 18% / 0.3), inset 0 1px 0 hsl(255 25% 40% / 0.08)',
+  },
 };
 
 /* Journey icons matching Lovable Target 2 - Choose Journey.png */
@@ -210,15 +239,14 @@ export function JourneySelect({ currentUser }: JourneySelectProps) {
         }}
       >
         {journeys.map((j) => {
-          const display = JOURNEY_DISPLAY[j.id] ?? { duration: '15 min', iconColor: '#ffffff', iconBg: '#9e59b8', cardBg: 'grey' };
-          const isPurpleCard = display.cardBg === 'purple';
+          const theme = JOURNEY_THEMES[j.id] ?? JOURNEY_THEMES.creativeFlow;
           const isEnabled = j.id === ENABLED_JOURNEY_ID;
           
           return (
             <motion.button
               key={j.id}
               type="button"
-              className={`journey-card journey-card-${display.cardBg}`}
+              className="journey-card"
               onClick={() => handleSelect(j.id)}
               whileHover={{ y: -4, transition: { duration: 0.2 } }}
               whileTap={{ scale: 0.98 }}
@@ -233,22 +261,19 @@ export function JourneySelect({ currentUser }: JourneySelectProps) {
                 transition: 'all 0.3s ease',
                 position: 'relative',
                 overflow: 'hidden',
-                // Card backgrounds from Lovable Target 2
-                background: isPurpleCard 
-                  ? 'linear-gradient(165deg, hsl(275 12% 14% / 0.85), hsl(275 15% 9% / 0.9))'
-                  : 'linear-gradient(165deg, hsl(270 7% 13% / 0.75), hsl(270 10% 9% / 0.85))',
-                border: isPurpleCard
-                  ? '1px solid hsl(275 20% 28% / 0.4)'
-                  : '1px solid hsl(270 15% 22% / 0.35)',
-                boxShadow: '0 4px 20px hsl(270 20% 2% / 0.5)',
+                // Per-journey themed glass background
+                background: theme.cardGradient,
+                border: theme.cardBorder,
+                boxShadow: theme.cardGlow,
+                backdropFilter: 'blur(16px)',
                 minHeight: '180px',
               }}
             >
-              {/* Icon Circle - Lovable Target 2: 44px colored circle with glow */}
+              {/* Icon Circle - Lovable: 44px rounded-lg with accent fill and subtle glow */}
               <motion.div 
                 className="journey-card-icon" 
                 style={{ 
-                  background: display.iconBg, 
+                  background: theme.iconBg, 
                   width: '44px',
                   height: '44px',
                   borderRadius: '12px',
@@ -257,14 +282,14 @@ export function JourneySelect({ currentUser }: JourneySelectProps) {
                   justifyContent: 'center',
                   marginBottom: '16px',
                   flexShrink: 0,
-                  color: display.iconColor,
-                  boxShadow: `0 0 20px ${display.iconBg}40`,
+                  color: theme.iconColor,
+                  boxShadow: `0 0 20px ${theme.iconBg}40`,
                 }}
                 animate={{
                   boxShadow: [
-                    `0 0 15px ${display.iconBg}30`,
-                    `0 0 25px ${display.iconBg}50`,
-                    `0 0 15px ${display.iconBg}30`,
+                    `0 0 15px ${theme.iconBg}30`,
+                    `0 0 25px ${theme.iconBg}50`,
+                    `0 0 15px ${theme.iconBg}30`,
                   ],
                 }}
                 transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}
@@ -272,7 +297,7 @@ export function JourneySelect({ currentUser }: JourneySelectProps) {
                 <JourneyIcon id={j.id} />
               </motion.div>
               
-              {/* Journey Name - Target 2: Bold white text */}
+              {/* Journey Name */}
               <span 
                 className="journey-name"
                 style={{
@@ -288,7 +313,7 @@ export function JourneySelect({ currentUser }: JourneySelectProps) {
                 {j.name}
               </span>
               
-              {/* Journey Description - Target 2: Muted smaller text */}
+              {/* Journey Description */}
               <span 
                 className="journey-desc"
                 style={{
@@ -332,15 +357,15 @@ export function JourneySelect({ currentUser }: JourneySelectProps) {
                     <circle cx="12" cy="12" r="10"/>
                     <path d="M12 6v6l4 2"/>
                   </svg>
-                  {display.duration}
+                  {theme.duration}
                 </span>
                 
-                {/* Play Button - Target 2: Filled for enabled, outline for disabled */}
+                {/* Play Button — filled accent for enabled, subtle outline for coming-soon */}
                 <span 
                   className="journey-play-btn" 
                   style={{ 
-                    background: isEnabled ? display.iconBg : 'transparent',
-                    border: isEnabled ? 'none' : '1px solid hsl(270 15% 30% / 0.5)',
+                    background: isEnabled ? theme.iconBg : 'hsl(270 10% 18% / 0.6)',
+                    border: isEnabled ? 'none' : '1px solid hsl(270 15% 30% / 0.4)',
                     width: '32px',
                     height: '32px',
                     borderRadius: '50%',
@@ -348,7 +373,7 @@ export function JourneySelect({ currentUser }: JourneySelectProps) {
                     alignItems: 'center',
                     justifyContent: 'center',
                     flexShrink: 0,
-                    color: isEnabled ? display.iconColor : 'var(--text-muted)',
+                    color: isEnabled ? theme.iconColor : 'var(--text-subtle)',
                     transition: 'all 0.2s ease',
                   }} 
                   aria-hidden
@@ -363,15 +388,16 @@ export function JourneySelect({ currentUser }: JourneySelectProps) {
         })}
       </div>
 
-      {/* About Sound Journeys - Target 2: Info card at bottom */}
+      {/* About Sound Journeys - Target 2: Neutral info card at bottom */}
       <section 
         className="about-journeys-card"
         style={{
           padding: '20px',
-          background: 'linear-gradient(165deg, hsl(270 7% 13% / 0.75), hsl(270 10% 9% / 0.85))',
-          border: '1px solid hsl(270 15% 22% / 0.35)',
+          background: 'linear-gradient(165deg, hsl(270 8% 14% / 0.7), hsl(270 10% 10% / 0.8))',
+          border: '1px solid hsl(270 12% 24% / 0.3)',
           borderRadius: '12px',
-          boxShadow: '0 4px 20px hsl(270 20% 2% / 0.5)',
+          backdropFilter: 'blur(16px)',
+          boxShadow: '0 4px 20px hsl(270 20% 2% / 0.4)',
         }}
       >
         <h3
