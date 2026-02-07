@@ -128,6 +128,38 @@ export function SessionSummary({
     }
   }, [session, stats, user, peakCoherence, stability, getPdfBlob]);
 
+  /** Build plain-text summary for email body */
+  const buildShareText = useCallback(() => {
+    const hrText = session.avgHeartRate != null ? `\nHeart Rate: ${Math.round(session.avgHeartRate)} bpm` : '';
+    const hrvText = session.avgHRV != null ? `\nHRV: ${Math.round(session.avgHRV)} ms` : '';
+    return `SoundBed Session Report\nUser: ${user.name}\nJourney: ${journeyName}\nDate: ${new Date(session.startTime).toLocaleString()}\nDuration: ${formatTime(stats.totalLength)} min\nCoherence: ${Math.round(stats.coherencePercent)}%\nPeak: ${Math.round(peakCoherence * 100)}%\nStability: ${stability}${hrText}${hrvText}`;
+  }, [session, stats, user, journeyName, peakCoherence, stability]);
+
+  /** Email share — opens mailto with session text */
+  const handleEmail = useCallback(() => {
+    const subject = encodeURIComponent(`SoundBed Session – ${journeyName} – ${new Date(session.startTime).toLocaleDateString()}`);
+    const body = encodeURIComponent(buildShareText());
+    window.open(`mailto:?subject=${subject}&body=${body}`, '_self');
+  }, [session, journeyName, buildShareText]);
+
+  /** Download PDF to device */
+  const handleDownloadPdf = useCallback(async () => {
+    setIsSharing(true);
+    try {
+      const blob = await getPdfBlob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `SoundBed-Session-${new Date(session.startTime).toISOString().slice(0, 10)}.pdf`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      console.error('PDF download failed:', e);
+    } finally {
+      setIsSharing(false);
+    }
+  }, [session, getPdfBlob]);
+
   /**
    * Draw timeline graph with 3 mental state zones and vertical color layering.
    * 
@@ -492,6 +524,28 @@ export function SessionSummary({
           </button>
           <button
             className="summary-action-btn"
+            onClick={handleEmail}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              padding: '8px 16px',
+              background: 'transparent',
+              border: '1px solid hsl(275 20% 25% / 0.35)',
+              borderRadius: '12px',
+              color: 'var(--text-primary)',
+              fontFamily: 'var(--font-sans)',
+              fontSize: '14px',
+              fontWeight: 400,
+              cursor: 'pointer',
+              transition: 'all 0.2s ease',
+            }}
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+            <span>Email</span>
+          </button>
+          <button
+            className="summary-action-btn"
             onClick={handleShare}
             disabled={isSharing}
             style={{
@@ -518,6 +572,29 @@ export function SessionSummary({
               <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
             </svg>
             <span>Share</span>
+          </button>
+          <button
+            className="summary-action-btn"
+            onClick={handleDownloadPdf}
+            disabled={isSharing}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              padding: '8px 16px',
+              background: 'transparent',
+              border: '1px solid hsl(275 20% 25% / 0.35)',
+              borderRadius: '12px',
+              color: isSharing ? 'var(--text-subtle)' : 'var(--text-primary)',
+              fontFamily: 'var(--font-sans)',
+              fontSize: '14px',
+              fontWeight: 400,
+              cursor: isSharing ? 'default' : 'pointer',
+              transition: 'all 0.2s ease',
+            }}
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            <span>PDF</span>
           </button>
         </div>
       </header>
@@ -624,7 +701,7 @@ export function SessionSummary({
                 filter="url(#ring-glow)"
               />
             </svg>
-            {/* Number overlay — centered independently so the number is dead-center */}
+            {/* Number overlay — number is dead-center, % positioned after it without affecting centering */}
             <div 
               className="coherence-ring-center"
               style={{
@@ -641,20 +718,25 @@ export function SessionSummary({
                 animate={{ opacity: 1 }}
                 transition={{ delay: 0.5 }}
                 style={{
-                  display: 'inline-flex',
-                  alignItems: 'baseline',
-                  justifyContent: 'center',
+                  position: 'relative',
                   fontFamily: 'var(--font-sans)',
                   fontSize: '44px',
                   fontWeight: 600,
                   color: 'var(--text-primary)',
                   lineHeight: 1,
-                  margin: 0,
-                  padding: 0,
                 }}
               >
                 {Math.round(stats.coherencePercent)}
-                <span style={{ fontSize: '18px', fontWeight: 400, marginLeft: '3px', opacity: 0.7 }}>%</span>
+                {/* % sign: absolutely positioned so it does NOT shift the number off-center */}
+                <span style={{
+                  position: 'absolute',
+                  left: '100%',
+                  top: '0.1em',
+                  fontSize: '18px',
+                  fontWeight: 400,
+                  marginLeft: '2px',
+                  opacity: 0.7,
+                }}>%</span>
               </motion.span>
             </div>
             {/* "Coherence" label — positioned below center, outside the number's centering context */}
@@ -693,7 +775,7 @@ export function SessionSummary({
         <div 
           className="summary-metrics-section"
           style={{
-            marginBottom: '16px',
+            marginBottom: '10px',
           }}
         >
           <h3 
@@ -883,7 +965,7 @@ export function SessionSummary({
         <div 
           className="summary-timeline-section"
           style={{
-            marginBottom: '16px',
+            marginBottom: '10px',
           }}
         >
           <h3 
@@ -906,7 +988,7 @@ export function SessionSummary({
               padding: '16px',
               backdropFilter: 'blur(20px)',
               boxShadow: '0 4px 20px hsl(270 20% 2% / 0.6)',
-              height: '200px',
+              height: '220px',
             }}
           >
             <canvas 

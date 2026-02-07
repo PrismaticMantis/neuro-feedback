@@ -55,16 +55,6 @@ interface CoherenceGraphProps {
   duration: number; // Current session duration in ms
 }
 
-function mapValueToY(
-  value: number,
-  height: number,
-  paddingTop: number = 0,
-  paddingBottom: number = 0
-): number {
-  const usableHeight = height - paddingTop - paddingBottom;
-  return paddingTop + usableHeight * (1 - value);
-}
-
 // Smoothing function for display (visual only, doesn't affect raw data)
 function smoothValue(current: number, previous: number, alpha: number = 0.3): number {
   return alpha * current + (1 - alpha) * previous;
@@ -119,50 +109,61 @@ export function CoherenceGraph({
     const width = rect.width;
     const height = rect.height;
 
+    // Padding — matches Summary chart layout for visual consistency
+    const paddingTop = 12;
+    const paddingBottom = 4;
+    const paddingLeft = 52;   // Room for zone labels on the left
+    const paddingRight = 8;
+    const chartWidth = width - paddingLeft - paddingRight;
+    const chartHeight = height - paddingTop - paddingBottom;
+    const chartX = paddingLeft;
+    const chartY = paddingTop;
+
     // Clear
     ctx.clearRect(0, 0, width, height);
 
-    // Draw zone bands (3 horizontal regions)
-    const coherenceY = mapValueToY(ZONE_THRESHOLDS.coherenceMin, height);
-    const stabilizingY = mapValueToY(ZONE_THRESHOLDS.stabilizingMin, height);
+    // Y positions for zone boundaries within the chart area
+    const coherenceLineY = chartY + chartHeight * (1 - ZONE_THRESHOLDS.coherenceMin);
+    const stabilizingLineY = chartY + chartHeight * (1 - ZONE_THRESHOLDS.stabilizingMin);
 
+    // Draw zone bands (3 horizontal regions within chart area)
     // Coherence zone (top) - subtle gold tint
     ctx.fillStyle = GRAPH_COLORS.zoneCoherence;
-    ctx.fillRect(0, 0, width, coherenceY);
+    ctx.fillRect(chartX, chartY, chartWidth, coherenceLineY - chartY);
 
     // Stabilizing zone (middle) - neutral
     ctx.fillStyle = GRAPH_COLORS.zoneStabilizing;
-    ctx.fillRect(0, coherenceY, width, stabilizingY - coherenceY);
+    ctx.fillRect(chartX, coherenceLineY, chartWidth, stabilizingLineY - coherenceLineY);
 
     // Active Mind zone (bottom) - subtle purple tint
     ctx.fillStyle = GRAPH_COLORS.zoneActiveMind;
-    ctx.fillRect(0, stabilizingY, width, height - stabilizingY);
+    ctx.fillRect(chartX, stabilizingLineY, chartWidth, chartY + chartHeight - stabilizingLineY);
 
-    // Draw zone boundary lines
+    // Draw zone boundary lines (dashed)
     ctx.strokeStyle = GRAPH_COLORS.zoneLine;
     ctx.lineWidth = 1;
     ctx.setLineDash([4, 6]);
 
     ctx.beginPath();
-    ctx.moveTo(0, coherenceY);
-    ctx.lineTo(width, coherenceY);
+    ctx.moveTo(chartX, coherenceLineY);
+    ctx.lineTo(chartX + chartWidth, coherenceLineY);
     ctx.stroke();
 
     ctx.beginPath();
-    ctx.moveTo(0, stabilizingY);
-    ctx.lineTo(width, stabilizingY);
+    ctx.moveTo(chartX, stabilizingLineY);
+    ctx.lineTo(chartX + chartWidth, stabilizingLineY);
     ctx.stroke();
 
     ctx.setLineDash([]);
 
-    // Draw zone labels (right-aligned, small)
+    // Draw zone labels (left-aligned, matching Summary chart)
     ctx.fillStyle = GRAPH_COLORS.zoneLabel;
     ctx.font = '10px Inter, sans-serif';
     ctx.textAlign = 'right';
     ctx.textBaseline = 'middle';
-    ctx.fillText('Coherence', width - 8, coherenceY / 2);
-    ctx.fillText('Settling', width - 8, (coherenceY + stabilizingY) / 2);
-    ctx.fillText('Active', width - 8, (stabilizingY + height) / 2);
+    ctx.fillText('Coherence', chartX - 6, (chartY + coherenceLineY) / 2);
+    ctx.fillText('Settling', chartX - 6, (coherenceLineY + stabilizingLineY) / 2);
+    ctx.fillText('Active', chartX - 6, (stabilizingLineY + chartY + chartHeight) / 2);
 
     // Draw coherence line (use smoothed history for visual smoothness)
     const historyToDraw = smoothedHistory.length > 0 ? smoothedHistory : coherenceHistory;
@@ -171,12 +172,12 @@ export function CoherenceGraph({
       const isTablet = window.innerWidth >= 768;
       const lineWidth = isTablet ? 3.5 : 2.5;
       
-      const pointSpacing = width / Math.max(historyToDraw.length - 1, 1);
+      const pointSpacing = chartWidth / Math.max(historyToDraw.length - 1, 1);
 
-      // Prepare points for bezier curve smoothing
+      // Prepare points for bezier curve smoothing (within chart area)
       const points: Array<{ x: number; y: number }> = historyToDraw.map((value, index) => ({
-        x: index * pointSpacing,
-        y: mapValueToY(value, height),
+        x: chartX + index * pointSpacing,
+        y: chartY + chartHeight * (1 - value),
       }));
 
       // Helper: draw the bezier path
@@ -201,23 +202,29 @@ export function CoherenceGraph({
       };
 
       if (points.length >= 2) {
+        // Clip drawing to chart area so fill doesn't bleed into label region
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(chartX, chartY, chartWidth, chartHeight);
+        ctx.clip();
+
         // Vertical gradient for fill (gold top, purple bottom)
         // Intentional deviation from Lovable: vertical layering yellow above purple.
-        const fillGradient = ctx.createLinearGradient(0, 0, 0, height);
+        const fillGradient = ctx.createLinearGradient(0, chartY, 0, chartY + chartHeight);
         fillGradient.addColorStop(0, GRAPH_COLORS.fillTop);
         fillGradient.addColorStop(1, GRAPH_COLORS.fillBottom);
 
         // Draw filled area under line
         ctx.beginPath();
         traceBezierPath();
-        ctx.lineTo(points[points.length - 1].x, height);
-        ctx.lineTo(0, height);
+        ctx.lineTo(points[points.length - 1].x, chartY + chartHeight);
+        ctx.lineTo(chartX, chartY + chartHeight);
         ctx.closePath();
         ctx.fillStyle = fillGradient;
         ctx.fill();
 
         // Vertical gradient for stroke (gold top, purple bottom)
-        const strokeGradient = ctx.createLinearGradient(0, 0, 0, height);
+        const strokeGradient = ctx.createLinearGradient(0, chartY, 0, chartY + chartHeight);
         strokeGradient.addColorStop(0, GRAPH_COLORS.lineTop);
         strokeGradient.addColorStop(1, GRAPH_COLORS.lineBottom);
 
@@ -232,6 +239,8 @@ export function CoherenceGraph({
         ctx.shadowColor = GRAPH_COLORS.lineGlow;
         ctx.stroke();
         ctx.shadowBlur = 0;
+
+        ctx.restore(); // Remove clip
       }
     }
   }, [coherenceHistory, smoothedHistory, duration]);

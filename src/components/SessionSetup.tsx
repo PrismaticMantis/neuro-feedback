@@ -165,7 +165,10 @@ export function SessionSetup({
         </div>
       </header>
 
-      {/* Two-Column Layout - Target 3/4: Left = Device Connection, Right = Settings */}
+      {/* Two-Column Grid — flat layout so paired cards align in the same row.
+         Row 1: Device Connection | Detection Settings
+         Row 2: Electrode Contact | Guidance Audio  (same row = aligned)
+         Row 3: (debug overlay)   | User Profile    (conditional) */}
       <div 
         className="setup-content"
         style={{
@@ -175,53 +178,130 @@ export function SessionSetup({
           alignItems: 'start',
         }}
       >
-        {/* Left Column: Device Connection + Electrode Status */}
-        <div 
-          className="setup-column-left"
+        {/* Row 1, Col 1: Device Connection */}
+        <ConnectionStatus
+          museConnected={museConnected}
+          museDeviceName={museDeviceName}
+          connectionQuality={connectionQuality}
+          onConnectBluetooth={onConnectBluetooth}
+          onConnectOSC={onConnectOSC}
+          onDisconnect={onDisconnect}
+          isBluetoothAvailable={isBluetoothAvailable}
+          error={connectionError}
+        />
+
+        {/* Row 1, Col 2: Detection Settings */}
+        <section 
+          className="setup-section"
           style={{
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '16px',
+            background: 'linear-gradient(165deg, hsl(270 7% 13% / 0.75), hsl(270 10% 9% / 0.85))',
+            border: '1px solid hsl(270 15% 22% / 0.35)',
+            borderRadius: '12px',
+            padding: '20px',
+            boxShadow: '0 4px 20px hsl(270 20% 2% / 0.5)',
           }}
         >
-          <ConnectionStatus
-            museConnected={museConnected}
-            museDeviceName={museDeviceName}
-            connectionQuality={connectionQuality}
-            onConnectBluetooth={onConnectBluetooth}
-            onConnectOSC={onConnectOSC}
-            onDisconnect={onDisconnect}
-            isBluetoothAvailable={isBluetoothAvailable}
-            error={connectionError}
-          />
-
-          {/* Debug Overlay (when enabled) */}
-          {DEBUG_ELECTRODES_OVERLAY && museConnected && (
-            <section 
-              className="setup-section debug-overlay"
-              style={{
-                background: 'hsl(270 10% 12% / 0.9)',
-                border: '2px solid var(--accent-primary)',
-                borderRadius: '12px',
-                padding: '16px',
-              }}
-            >
-              <h3 style={{ color: 'var(--accent-primary)', marginBottom: 12, fontSize: '14px' }}>🔍 Electrode Debug</h3>
-              <div style={{ fontFamily: 'monospace', fontSize: '11px', lineHeight: 1.6, color: 'var(--text-primary)' }}>
-                <div>connected: {String(museConnected)}</div>
-                <div>raw horseshoe: [{museHandler.getElectrodeQuality().join(', ')}]</div>
-                <div>electrodeStatus: {JSON.stringify(electrodeStatus)}</div>
-                <div>connectionQuality: {connectionQuality.toFixed(2)}</div>
-                <div>signalLabel: {(() => {
-                  const goodCount = [electrodeStatus.tp9, electrodeStatus.af7, electrodeStatus.af8, electrodeStatus.tp10].filter(q => q === 'good').length;
-                  return goodCount >= 3 ? 'Strong' : goodCount >= 1 ? 'Partial' : 'Poor';
-                })()}</div>
+          <h2 
+            style={{
+              fontFamily: 'var(--font-sans)',
+              fontSize: '16px',
+              fontWeight: 600,
+              color: 'var(--text-primary)',
+              margin: '0 0 16px 0',
+              lineHeight: 1.3,
+            }}
+          >
+            Detection Settings
+          </h2>
+          <div className="settings-group">
+            <div className="setting-row" style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              {/* Label Row - Target 3: "Coherence Sensitivity" with "Medium" value on right */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontFamily: 'var(--font-sans)', fontSize: '14px', fontWeight: 400, color: 'var(--text-primary)' }}>
+                  Coherence Sensitivity
+                </span>
+                <span style={{ fontFamily: 'var(--font-sans)', fontSize: '14px', fontWeight: 500, color: '#9B6BC8' }}>
+                  {thresholdSettings.coherenceSensitivity < 0.33 
+                    ? 'Easy' 
+                    : thresholdSettings.coherenceSensitivity < 0.67 
+                    ? 'Medium' 
+                    : 'Hard'}
+                </span>
               </div>
-            </section>
-          )}
+              
+              {/* Slider - Target 3: Purple/champagne filled slider */}
+              <input
+                type="range"
+                min="0"
+                max="1"
+                step="0.05"
+                value={thresholdSettings.coherenceSensitivity}
+                onChange={(e) =>
+                  onThresholdSettingsChange({
+                    ...thresholdSettings,
+                    coherenceSensitivity: parseFloat(e.target.value),
+                  })
+                }
+                className="setting-slider"
+                style={{
+                  width: '100%',
+                  height: '6px',
+                  borderRadius: '999px',
+                  appearance: 'none',
+                  background: `linear-gradient(to right, #D9C478 0%, #D9C478 ${thresholdSettings.coherenceSensitivity * 100}%, hsl(270 7% 20%) ${thresholdSettings.coherenceSensitivity * 100}%, hsl(270 7% 20%) 100%)`,
+                  cursor: 'pointer',
+                }}
+              />
+              
+              {/* Hint text - Target 3 */}
+              <p style={{ fontFamily: 'var(--font-sans)', fontSize: '12px', fontWeight: 400, color: 'var(--text-muted)', fontStyle: 'italic', margin: '4px 0 0 0' }}>
+                Controls how easy it is to enter coherence state
+              </p>
+              
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', marginTop: '8px' }}>
+                <p style={{ fontFamily: 'var(--font-sans)', fontSize: '12px', fontWeight: 400, color: 'var(--text-subtle)' }}>
+                  Current: Threshold {Math.round((0.2 + thresholdSettings.coherenceSensitivity * 0.7) * 100)}%, Time {Math.round((1 + thresholdSettings.coherenceSensitivity * 9) * 10) / 10}s
+                </p>
+                <p style={{ fontFamily: 'var(--font-sans)', fontSize: '12px', fontWeight: 400, color: 'var(--text-subtle)' }}>
+                  Easy (0.0): Threshold 20%, Time 1.0s
+                </p>
+                <p style={{ fontFamily: 'var(--font-sans)', fontSize: '12px', fontWeight: 400, color: 'var(--text-subtle)' }}>
+                  Hard (1.0): Threshold 90%, Time 10.0s
+                </p>
+              </div>
+            </div>
+          </div>
+        </section>
 
-          {/* Electrode Status Card - Target 4: ELECTRODE CONTACT with dots and battery */}
-          {museConnected && (
+        {/* Row 2, Col 1: Electrode Contact (or debug overlay when connected, placeholder when not) */}
+        {museConnected ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            {/* Debug Overlay (when enabled) */}
+            {DEBUG_ELECTRODES_OVERLAY && (
+              <section 
+                className="setup-section debug-overlay"
+                style={{
+                  background: 'hsl(270 10% 12% / 0.9)',
+                  border: '2px solid var(--accent-primary)',
+                  borderRadius: '12px',
+                  padding: '16px',
+                }}
+              >
+                <h3 style={{ color: 'var(--accent-primary)', marginBottom: 12, fontSize: '14px' }}>🔍 Electrode Debug</h3>
+                <div style={{ fontFamily: 'monospace', fontSize: '11px', lineHeight: 1.6, color: 'var(--text-primary)' }}>
+                  <div>connected: {String(museConnected)}</div>
+                  <div>raw horseshoe: [{museHandler.getElectrodeQuality().join(', ')}]</div>
+                  <div>electrodeStatus: {JSON.stringify(electrodeStatus)}</div>
+                  <div>connectionQuality: {connectionQuality.toFixed(2)}</div>
+                  <div>signalLabel: {(() => {
+                    const goodCount = [electrodeStatus.tp9, electrodeStatus.af7, electrodeStatus.af8, electrodeStatus.tp10].filter(q => q === 'good').length;
+                    return goodCount >= 3 ? 'Strong' : goodCount >= 1 ? 'Partial' : 'Poor';
+                  })()}</div>
+                </div>
+              </section>
+            )}
+
+            {/* Electrode Status Card — same styling as Guidance Audio */}
             <section 
               className="setup-section"
               style={{
@@ -271,230 +351,143 @@ export function SessionSetup({
                 </div>
               )}
             </section>
-          )}
-        </div>
+          </div>
+        ) : (
+          /* Empty placeholder to keep Guidance Audio in col 2 when Muse is not connected */
+          <div />
+        )}
 
-        {/* Right Column: Detection Settings + Guidance Audio - Target 3/4 */}
-        <div 
-          className="setup-column-right"
+        {/* Row 2, Col 2: Guidance Audio — aligned with Electrode Contact */}
+        <section 
+          className="setup-section"
           style={{
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '16px',
+            background: 'linear-gradient(165deg, hsl(270 7% 13% / 0.75), hsl(270 10% 9% / 0.85))',
+            border: '1px solid hsl(270 15% 22% / 0.35)',
+            borderRadius: '12px',
+            padding: '20px',
+            boxShadow: '0 4px 20px hsl(270 20% 2% / 0.5)',
           }}
         >
-          {/* Detection Settings Card - Target 3: Coherence Sensitivity slider */}
-          <section 
-            className="setup-section"
-            style={{
-              background: 'linear-gradient(165deg, hsl(270 7% 13% / 0.75), hsl(270 10% 9% / 0.85))',
-              border: '1px solid hsl(270 15% 22% / 0.35)',
-              borderRadius: '12px',
-              padding: '20px',
-              boxShadow: '0 4px 20px hsl(270 20% 2% / 0.5)',
-            }}
-          >
-            <h2 
+          {/* Header with title and toggle - Target 3 */}
+          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '12px' }}>
+            <div>
+              <h2 style={{ fontFamily: 'var(--font-sans)', fontSize: '16px', fontWeight: 600, color: 'var(--text-primary)', margin: '0 0 4px 0', lineHeight: 1.3 }}>
+                Guidance Audio
+              </h2>
+              <span style={{ fontFamily: 'var(--font-sans)', fontSize: '13px', fontWeight: 400, color: 'var(--text-muted)' }}>
+                Optional Entrainment
+              </span>
+            </div>
+            <label 
+              className="toggle"
               style={{
-                fontFamily: 'var(--font-sans)',
-                fontSize: '16px',
-                fontWeight: 600,
-                color: 'var(--text-primary)',
-                margin: '0 0 16px 0',
-                lineHeight: 1.3,
+                position: 'relative',
+                width: '44px',
+                height: '24px',
+                flexShrink: 0,
               }}
             >
-              Detection Settings
-            </h2>
-            <div className="settings-group">
-              <div className="setting-row" style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                {/* Label Row - Target 3: "Coherence Sensitivity" with "Medium" value on right */}
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span style={{ fontFamily: 'var(--font-sans)', fontSize: '14px', fontWeight: 400, color: 'var(--text-primary)' }}>
-                    Coherence Sensitivity
-                  </span>
-                  <span style={{ fontFamily: 'var(--font-sans)', fontSize: '14px', fontWeight: 500, color: '#9B6BC8' }}>
-                    {thresholdSettings.coherenceSensitivity < 0.33 
-                      ? 'Easy' 
-                      : thresholdSettings.coherenceSensitivity < 0.67 
-                      ? 'Medium' 
-                      : 'Hard'}
-                  </span>
+              <input
+                type="checkbox"
+                checked={entrainmentEnabled}
+                onChange={(e) => onEntrainmentEnabledChange(e.target.checked)}
+                style={{ opacity: 0, width: 0, height: 0 }}
+              />
+              <span 
+                className="toggle-slider"
+                style={{
+                  position: 'absolute',
+                  inset: 0,
+                  background: entrainmentEnabled ? '#D9C478' : 'hsl(270 7% 20%)',
+                  borderRadius: '24px',
+                  cursor: 'pointer',
+                  transition: 'background 0.2s ease',
+                }}
+              >
+                <span
+                  style={{
+                    position: 'absolute',
+                    width: '18px',
+                    height: '18px',
+                    left: entrainmentEnabled ? '23px' : '3px',
+                    bottom: '3px',
+                    background: entrainmentEnabled ? '#0c0a0e' : 'var(--text-muted)',
+                    borderRadius: '50%',
+                    transition: 'all 0.2s ease',
+                  }}
+                />
+              </span>
+            </label>
+          </div>
+
+          <div className={`audio-options ${!entrainmentEnabled ? 'disabled' : ''}`} style={{ opacity: entrainmentEnabled ? 1 : 0.5 }}>
+            {/* Binaural Presets (shown when guidance audio is enabled) */}
+            {entrainmentEnabled && (
+              <div className="binaural-settings" style={{ marginBottom: '16px', paddingTop: '12px', borderTop: '1px solid hsl(270 15% 22% / 0.3)' }}>
+                <h3 style={{ fontFamily: 'var(--font-sans)', fontSize: '13px', fontWeight: 500, color: 'var(--text-muted)', marginBottom: '10px' }}>Preset</h3>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '8px' }}>
+                  {(['delta', 'theta', 'alpha', 'beta'] as const).map((preset) => (
+                    <button
+                      key={preset}
+                      className={`preset-btn ${binauralPreset === preset ? 'active' : ''}`}
+                      onClick={() => onBinauralPresetChange(preset)}
+                      disabled={!entrainmentEnabled}
+                      style={{
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        padding: '10px',
+                        background: binauralPreset === preset ? 'hsl(45 55% 70% / 0.15)' : 'hsl(270 10% 14%)',
+                        border: binauralPreset === preset ? '1px solid hsl(45 55% 70% / 0.4)' : '1px solid transparent',
+                        borderRadius: '8px',
+                        cursor: 'pointer',
+                        textAlign: 'center',
+                      }}
+                    >
+                      <span style={{ fontFamily: 'var(--font-sans)', fontSize: '13px', fontWeight: 600, color: 'var(--text-primary)' }}>{BINAURAL_PRESETS[preset].label}</span>
+                      <span style={{ fontFamily: 'monospace', fontSize: '11px', color: '#D9C478' }}>{BINAURAL_PRESETS[preset].beatFrequency} Hz</span>
+                      <span style={{ fontFamily: 'var(--font-sans)', fontSize: '11px', color: 'var(--text-subtle)', marginTop: '2px' }}>{BINAURAL_PRESETS[preset].description}</span>
+                    </button>
+                  ))}
                 </div>
-                
-                {/* Slider - Target 3: Purple/champagne filled slider */}
+              </div>
+            )}
+
+            {entrainmentEnabled && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px' }}>
+                <svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18" style={{ color: 'var(--text-muted)', flexShrink: 0 }}>
+                  <path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z" />
+                </svg>
                 <input
                   type="range"
                   min="0"
                   max="1"
                   step="0.05"
-                  value={thresholdSettings.coherenceSensitivity}
-                  onChange={(e) =>
-                    onThresholdSettingsChange({
-                      ...thresholdSettings,
-                      coherenceSensitivity: parseFloat(e.target.value),
-                    })
-                  }
-                  className="setting-slider"
+                  value={entrainmentVolume}
+                  onChange={(e) => onEntrainmentVolumeChange(parseFloat(e.target.value))}
+                  disabled={!entrainmentEnabled}
                   style={{
-                    width: '100%',
-                    height: '6px',
-                    borderRadius: '999px',
+                    flex: 1,
+                    height: '4px',
+                    borderRadius: '2px',
                     appearance: 'none',
-                    background: `linear-gradient(to right, #D9C478 0%, #D9C478 ${thresholdSettings.coherenceSensitivity * 100}%, hsl(270 7% 20%) ${thresholdSettings.coherenceSensitivity * 100}%, hsl(270 7% 20%) 100%)`,
+                    background: `linear-gradient(to right, #D9C478 0%, #D9C478 ${entrainmentVolume * 100}%, hsl(270 7% 20%) ${entrainmentVolume * 100}%, hsl(270 7% 20%) 100%)`,
                     cursor: 'pointer',
                   }}
                 />
-                
-                {/* Hint text - Target 3 */}
-                <p style={{ fontFamily: 'var(--font-sans)', fontSize: '12px', fontWeight: 400, color: 'var(--text-muted)', fontStyle: 'italic', margin: '4px 0 0 0' }}>
-                  Controls how easy it is to enter coherence state
-                </p>
-                
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', marginTop: '8px' }}>
-                  <p style={{ fontFamily: 'var(--font-sans)', fontSize: '12px', fontWeight: 400, color: 'var(--text-subtle)' }}>
-                    Current: Threshold {Math.round((0.2 + thresholdSettings.coherenceSensitivity * 0.7) * 100)}%, Time {Math.round((1 + thresholdSettings.coherenceSensitivity * 9) * 10) / 10}s
-                  </p>
-                  <p style={{ fontFamily: 'var(--font-sans)', fontSize: '12px', fontWeight: 400, color: 'var(--text-subtle)' }}>
-                    Easy (0.0): Threshold 20%, Time 1.0s
-                  </p>
-                  <p style={{ fontFamily: 'var(--font-sans)', fontSize: '12px', fontWeight: 400, color: 'var(--text-subtle)' }}>
-                    Hard (1.0): Threshold 90%, Time 10.0s
-                  </p>
-                </div>
               </div>
-            </div>
-          </section>
+            )}
 
-          {/* Guidance Audio Card - Target 3: Toggle with helper text */}
-          <section 
-            className="setup-section"
-            style={{
-              background: 'linear-gradient(165deg, hsl(270 7% 13% / 0.75), hsl(270 10% 9% / 0.85))',
-              border: '1px solid hsl(270 15% 22% / 0.35)',
-              borderRadius: '12px',
-              padding: '20px',
-              boxShadow: '0 4px 20px hsl(270 20% 2% / 0.5)',
-            }}
-          >
-            {/* Header with title and toggle - Target 3 */}
-            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '12px' }}>
-              <div>
-                <h2 style={{ fontFamily: 'var(--font-sans)', fontSize: '16px', fontWeight: 600, color: 'var(--text-primary)', margin: '0 0 4px 0', lineHeight: 1.3 }}>
-                  Guidance Audio
-                </h2>
-                <span style={{ fontFamily: 'var(--font-sans)', fontSize: '13px', fontWeight: 400, color: 'var(--text-muted)' }}>
-                  Optional Entrainment
-                </span>
-              </div>
-              <label 
-                className="toggle"
-                style={{
-                  position: 'relative',
-                  width: '44px',
-                  height: '24px',
-                  flexShrink: 0,
-                }}
-              >
-                <input
-                  type="checkbox"
-                  checked={entrainmentEnabled}
-                  onChange={(e) => onEntrainmentEnabledChange(e.target.checked)}
-                  style={{ opacity: 0, width: 0, height: 0 }}
-                />
-                <span 
-                  className="toggle-slider"
-                  style={{
-                    position: 'absolute',
-                    inset: 0,
-                    background: entrainmentEnabled ? '#D9C478' : 'hsl(270 7% 20%)',
-                    borderRadius: '24px',
-                    cursor: 'pointer',
-                    transition: 'background 0.2s ease',
-                  }}
-                >
-                  <span
-                    style={{
-                      position: 'absolute',
-                      width: '18px',
-                      height: '18px',
-                      left: entrainmentEnabled ? '23px' : '3px',
-                      bottom: '3px',
-                      background: entrainmentEnabled ? '#0c0a0e' : 'var(--text-muted)',
-                      borderRadius: '50%',
-                      transition: 'all 0.2s ease',
-                    }}
-                  />
-                </span>
-              </label>
-            </div>
+            <p style={{ fontFamily: 'var(--font-sans)', fontSize: '12px', fontWeight: 400, color: 'var(--text-muted)', fontStyle: 'italic', margin: 0 }}>
+              These sounds gently guide your nervous system. They do not indicate success.
+            </p>
+          </div>
+        </section>
 
-            <div className={`audio-options ${!entrainmentEnabled ? 'disabled' : ''}`} style={{ opacity: entrainmentEnabled ? 1 : 0.5 }}>
-              {/* Binaural Presets (shown when guidance audio is enabled) */}
-              {entrainmentEnabled && (
-                <div className="binaural-settings" style={{ marginBottom: '16px', paddingTop: '12px', borderTop: '1px solid hsl(270 15% 22% / 0.3)' }}>
-                  <h3 style={{ fontFamily: 'var(--font-sans)', fontSize: '13px', fontWeight: 500, color: 'var(--text-muted)', marginBottom: '10px' }}>Preset</h3>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '8px' }}>
-                    {(['delta', 'theta', 'alpha', 'beta'] as const).map((preset) => (
-                      <button
-                        key={preset}
-                        className={`preset-btn ${binauralPreset === preset ? 'active' : ''}`}
-                        onClick={() => onBinauralPresetChange(preset)}
-                        disabled={!entrainmentEnabled}
-                        style={{
-                          display: 'flex',
-                          flexDirection: 'column',
-                          alignItems: 'center',
-                          padding: '10px',
-                          background: binauralPreset === preset ? 'hsl(45 55% 70% / 0.15)' : 'hsl(270 10% 14%)',
-                          border: binauralPreset === preset ? '1px solid hsl(45 55% 70% / 0.4)' : '1px solid transparent',
-                          borderRadius: '8px',
-                          cursor: 'pointer',
-                          textAlign: 'center',
-                        }}
-                      >
-                        <span style={{ fontFamily: 'var(--font-sans)', fontSize: '13px', fontWeight: 600, color: 'var(--text-primary)' }}>{BINAURAL_PRESETS[preset].label}</span>
-                        <span style={{ fontFamily: 'monospace', fontSize: '11px', color: '#D9C478' }}>{BINAURAL_PRESETS[preset].beatFrequency} Hz</span>
-                        <span style={{ fontFamily: 'var(--font-sans)', fontSize: '11px', color: 'var(--text-subtle)', marginTop: '2px' }}>{BINAURAL_PRESETS[preset].description}</span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {entrainmentEnabled && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px' }}>
-                  <svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18" style={{ color: 'var(--text-muted)', flexShrink: 0 }}>
-                    <path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z" />
-                  </svg>
-                  <input
-                    type="range"
-                    min="0"
-                    max="1"
-                    step="0.05"
-                    value={entrainmentVolume}
-                    onChange={(e) => onEntrainmentVolumeChange(parseFloat(e.target.value))}
-                    disabled={!entrainmentEnabled}
-                    style={{
-                      flex: 1,
-                      height: '4px',
-                      borderRadius: '2px',
-                      appearance: 'none',
-                      background: `linear-gradient(to right, #D9C478 0%, #D9C478 ${entrainmentVolume * 100}%, hsl(270 7% 20%) ${entrainmentVolume * 100}%, hsl(270 7% 20%) 100%)`,
-                      cursor: 'pointer',
-                    }}
-                  />
-                </div>
-              )}
-
-              <p style={{ fontFamily: 'var(--font-sans)', fontSize: '12px', fontWeight: 400, color: 'var(--text-muted)', fontStyle: 'italic', margin: 0 }}>
-                These sounds gently guide your nervous system. They do not indicate success.
-              </p>
-            </div>
-          </section>
-
-          {/* User Selection - Hidden in Lovable target, keeping minimal version */}
-          {!currentUser && (
+        {/* Row 3, Col 2: User Selection (only when no user is selected) */}
+        {!currentUser && (
+          <>
+            <div /> {/* Placeholder for col 1 to keep User Profile in col 2 */}
             <section 
               className="setup-section"
               style={{
@@ -571,8 +564,8 @@ export function SessionSetup({
                 </button>
               </div>
             </section>
-          )}
-        </div>
+          </>
+        )}
       </div>
 
       {/* Start Button Footer - Target 3/4: Centered gold button */}

@@ -124,12 +124,16 @@ function App() {
       museHandler.resetSessionPPG();
       
       // Wire movement detection -> audio cue playback (end-to-end pipeline)
-      // Flow: Muse accelerometer -> MovementDetector (EMA baseline) -> this callback -> playMovementCue()
+      // Flow: Muse 2 accelerometer -> MovementDetector (EMA baseline) -> this callback -> playMovementCue()
+      // NOTE: Uses ACCELEROMETER for head movement detection, NOT PPG.
+      // Muse 2 does not provide PPG like a smartwatch — PPG data (if any) is used only for HR/HRV.
       movementDetector.setOnMovement((movementDelta, source) => {
         if (DEBUG_MOVEMENT) {
           console.log('[Move] ▶ Callback fired, calling audioEngine.playMovementCue()' +
             ' source=' + source + ' delta=' + movementDelta.toFixed(4));
         }
+        // Belt-and-suspenders: try to resume AudioContext if it got suspended mid-session (iOS)
+        audioEngine.ensureContextRunning();
         const cueNumber = audioEngine.playMovementCue();
         if (DEBUG_MOVEMENT) {
           console.log('[Move] ▶ playMovementCue returned cue=' + cueNumber +

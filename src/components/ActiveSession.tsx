@@ -533,8 +533,8 @@ export function ActiveSession({
           className="session-timer-circle breathe-element"
           style={{
             position: 'relative',
-            width: '120px',
-            height: '120px',
+            width: '140px',
+            height: '140px',
             display: 'flex',
             flexDirection: 'column',
             alignItems: 'center',
@@ -542,9 +542,9 @@ export function ActiveSession({
           }}
           animate={{
             boxShadow: [
-              '0 0 20px hsl(270 15% 35% / 0.2)',
-              '0 0 35px hsl(270 15% 35% / 0.35)',
-              '0 0 20px hsl(270 15% 35% / 0.2)',
+              '0 0 24px hsl(270 15% 35% / 0.25)',
+              '0 0 40px hsl(270 15% 35% / 0.4)',
+              '0 0 24px hsl(270 15% 35% / 0.25)',
             ],
           }}
           transition={{ duration: 4, repeat: Infinity, ease: 'easeInOut' }}

@@ -1579,12 +1579,12 @@ h3 {
   }
 
   .session-timer-central {
-    margin: 0 0 2px !important;
+    margin: 0 !important;
   }
 
   .session-timer-circle {
-    width: 110px !important;
-    height: 110px !important;
+    width: 128px !important;
+    height: 128px !important;
   }
 
   .session-timer-remaining {
@@ -1601,7 +1601,7 @@ h3 {
   }
 
   .session-chart-card {
-    min-height: 150px !important;
+    min-height: 140px !important;
     padding: 8px !important;
   }
 
@@ -1664,7 +1664,7 @@ h3 {
   .summary-metrics-section,
   .summary-timeline-section,
   .summary-body-rhythm-section {
-    margin-bottom: 10px !important;
+    margin-bottom: 8px !important;
   }
 
   .summary-section-title {
@@ -1691,7 +1691,7 @@ h3 {
   }
 
   .summary-timeline-chart {
-    height: 130px !important;
+    height: 140px !important;
     padding: 10px !important;
   }
 
@@ -2329,6 +2329,14 @@ h3 {
   border: 1px solid var(--border-card-glass);
   border-radius: 50%;
   background: transparent;
+}
+
+/* Respect prefers-reduced-motion: disable pulsing glow, keep static glow */
+@media (prefers-reduced-motion: reduce) {
+  .session-timer-circle.breathe-element {
+    animation: none !important;
+    box-shadow: 0 0 24px hsl(270 15% 35% / 0.25) !important;
+  }
 }
 
 .session-timer-elapsed {
@@ -3300,7 +3308,7 @@ h3 {
     transparent 72%
   );
   z-index: -1;
-  animation: star-glow-pulse 8s ease-in-out infinite;
+  animation: star-glow-pulse 5.5s ease-in-out infinite;
   pointer-events: none;
 }
 

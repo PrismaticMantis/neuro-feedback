@@ -26,7 +26,7 @@ import { museHandler } from './muse-handler';
 // Debug flag for movement detection logging
 // Set to true to enable detailed movement event logging
 // To disable: set DEBUG_MOVEMENT = false
-export const DEBUG_MOVEMENT = true;
+export const DEBUG_MOVEMENT = false;
 
 /**
  * Movement Detection Configuration
@@ -244,10 +244,12 @@ export class MovementDetector {
         diagDelta = Math.abs(accX - this.baseX) + Math.abs(accY - this.baseY) + Math.abs(accZ - this.baseZ);
       }
 
+      const hasNonZero = accX !== 0 || accY !== 0 || accZ !== 0;
       console.log(
         '[Move] STATUS' +
         ' conn=' + isConnected +
         ' accelSub=' + isAccelSub +
+        ' hasData=' + hasNonZero +
         ' museAccSamples=' + museHandler.accelSampleCount +
         ' allZero=' + allZero +
         ' delta=' + diagDelta.toFixed(4) +
@@ -265,23 +267,27 @@ export class MovementDetector {
     }
     
     // ---- Primary: Check accelerometer ----
-    if (isConnected && isAccelSub) {
+    // IMPORTANT: We no longer gate on accelSubscribed — it can be stale or not set
+    // on some BLE implementations. Instead, checkAccelerometer() itself checks if
+    // non-zero data is present. We only need Muse connected OR data flowing.
+    const hasAccelData = museHandler.accX !== 0 || museHandler.accY !== 0 || museHandler.accZ !== 0;
+    if (isConnected || hasAccelData) {
       this.checkAccelerometer(now);
     } else {
       this.stats.gateFailures++;
       // Log gate failure (throttled — only every diagnosticIntervalMs)
-      // The STATUS log above already shows the gate values, so this is just a one-time alert
       if (this.stats.gateFailures === 1 || this.stats.gateFailures % 100 === 0) {
         if (DEBUG_MOVEMENT) {
           console.warn('[Move] ⚠️ GATE BLOCKED' +
-            ' connected=' + isConnected + ' accelSubscribed=' + isAccelSub +
+            ' connected=' + isConnected + ' hasAccelData=' + hasAccelData +
+            ' accelSubscribed=' + isAccelSub +
             ' (failure #' + this.stats.gateFailures + ')');
         }
       }
     }
     
     // ---- Fallback: EEG artifacts (only if accel not providing data) ----
-    if (isConnected && now - this.lastCueTrigger > MOVEMENT_CONFIG.cooldownMs) {
+    if (isConnected && !hasAccelData && now - this.lastCueTrigger > MOVEMENT_CONFIG.cooldownMs) {
       this.checkEegArtifacts(now);
     }
   }

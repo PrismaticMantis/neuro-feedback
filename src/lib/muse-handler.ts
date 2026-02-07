@@ -24,7 +24,7 @@ export const DEBUG_CONNECTION_HEALTH = true;
 // Debug flag for accelerometer/IMU diagnostic logging
 // When true, logs accelerometer subscription status, sample cadence, and sample values
 // To disable: set DEBUG_ACCEL = false
-export const DEBUG_ACCEL = true;
+export const DEBUG_ACCEL = false;
 
 type ConnectionMode = 'bluetooth' | 'osc' | null;
 type BrainState = 'disconnected' | 'deep' | 'meditative' | 'relaxed' | 'focused' | 'neutral';
@@ -173,6 +173,8 @@ export class MuseHandler {
   private ppgSubscription: { unsubscribe: () => void } | null = null; // PPG (heart rate) subscription
 
   // PPG (photoplethysmography) heart rate tracking (only if ENABLE_PPG_MODULATION is true)
+  // NOTE: PPG is used ONLY for HR/HRV metrics, NOT for movement detection.
+  // Movement detection uses the accelerometer stream (accX/accY/accZ).
   private ppgBuffer: Array<{ value: number; timestamp: number }> = []; // Ring buffer for PPG samples
   private ppgBufferMaxSize = 1000; // Store ~10 seconds at 100Hz
   private ppgPeakTimestamps: number[] = []; // Timestamps of detected peaks

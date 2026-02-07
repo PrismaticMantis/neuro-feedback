@@ -21,7 +21,7 @@ export const DEBUG_MOVEMENT_CUES = true;
 
 // Debug flag for movement cue AUDIO diagnostics (load/decode/play/gain chain)
 // Set to true to log every step of the audio playback pipeline
-export const DEBUG_MOVEMENT_AUDIO = true;
+export const DEBUG_MOVEMENT_AUDIO = false;
 
 /**
  * COHERENCE TRIGGER PARAMETERS
@@ -1918,14 +1918,16 @@ export class AudioEngine {
       return 0;
     }
 
-    // Step 2: Check session is active
-    if (!this.isSessionActive) {
-      if (DEBUG_MOVEMENT_AUDIO) console.warn('[MoveCue] BLOCKED step2: session not active');
-      return 0;
+    // Step 2: Log session state (DO NOT gate on isSessionActive — it can be stale
+    // if startSession() hit an early return due to missing baseline/coherence buffers,
+    // which leaves isSessionActive=false even though the session UI is visible and the
+    // movement detector is actively running. Movement cues must still play.)
+    if (DEBUG_MOVEMENT_AUDIO && !this.isSessionActive) {
+      console.warn('[MoveCue] NOTE: isSessionActive=false (session audio may have failed to start, but cues still play)');
     }
 
     // Step 3: Check context state — try resume if suspended (fire-and-forget for next poll)
-    if (this.ctx.state !== 'running') {
+    if ((this.ctx.state as string) !== 'running') {
       if (DEBUG_MOVEMENT_AUDIO) {
         console.warn('[MoveCue] BLOCKED step3: ctx.state=' + this.ctx.state + ' (firing resume for next attempt)');
       }
@@ -1940,24 +1942,39 @@ export class AudioEngine {
       return 0;
     }
 
-    // Step 5: Check buffer
-    const buffer = this.movementCueBuffers[this.movementCueIndex];
+    // Step 5: Check buffer — attempt on-the-fly reload if null
+    let buffer = this.movementCueBuffers[this.movementCueIndex];
     if (!buffer) {
       if (DEBUG_MOVEMENT_AUDIO) {
-        console.warn('[MoveCue] BLOCKED step5: buffer[' + this.movementCueIndex + '] is null', {
+        console.warn('[MoveCue] step5: buffer[' + this.movementCueIndex + '] is null — attempting on-the-fly load', {
           allBuffers: this.movementCueBuffers.map((b, i) =>
             b ? 'cue' + (i + 1) + ':' + b.duration.toFixed(2) + 's' : 'cue' + (i + 1) + ':null'
           ),
         });
       }
+      // Fire-and-forget async reload so future triggers have the buffer
+      this.reloadMovementCueBuffer(this.movementCueIndex);
       this.movementCueIndex = (this.movementCueIndex + 1) % 3;
       return 0;
     }
 
-    // Step 6: Check gain node
+    // Step 6: Check gain node (create on-the-fly if it was never initialized)
     if (!this.movementCueGain) {
-      if (DEBUG_MOVEMENT_AUDIO) console.warn('[MoveCue] BLOCKED step6: gain node is null');
-      return 0;
+      if (this.ctx && this.masterGain) {
+        if (DEBUG_MOVEMENT_AUDIO) console.warn('[MoveCue] step6: gain node was null — creating on-the-fly');
+        this.movementCueGain = this.ctx.createGain();
+        this.movementCueGain.gain.value = 0.5;
+        this.movementCueGain.connect(this.masterGain);
+      } else if (this.ctx) {
+        // No masterGain — connect directly to destination as a last resort
+        if (DEBUG_MOVEMENT_AUDIO) console.warn('[MoveCue] step6: gain+master null — connecting direct to destination');
+        this.movementCueGain = this.ctx.createGain();
+        this.movementCueGain.gain.value = 0.5;
+        this.movementCueGain.connect(this.ctx.destination);
+      } else {
+        if (DEBUG_MOVEMENT_AUDIO) console.warn('[MoveCue] BLOCKED step6: no ctx for gain creation');
+        return 0;
+      }
     }
 
     // All guards passed — play the cue (polyphonic: each call creates a fresh source)
@@ -2002,6 +2019,32 @@ export class AudioEngine {
 
     this.movementCueIndex = (this.movementCueIndex + 1) % 3;
     return cueNumber;
+  }
+
+  /**
+   * Attempt to reload a single movement cue buffer that was null.
+   * Fire-and-forget — logs results but doesn't block.
+   */
+  private async reloadMovementCueBuffer(index: number): Promise<void> {
+    if (!this.ctx) return;
+    const cueNum = index + 1;
+    const filename = `movement-cue-${cueNum}.mp3`;
+    try {
+      if (DEBUG_MOVEMENT_AUDIO) console.log('[MoveCue] Reloading ' + filename + '...');
+      const resp = await fetch(`/audio/${filename}`);
+      if (!resp.ok) {
+        console.warn('[MoveCue] Reload ' + filename + ' failed: HTTP ' + resp.status);
+        return;
+      }
+      const arrayBuffer = await resp.arrayBuffer();
+      this.movementCueBuffers[index] = await this.ctx.decodeAudioData(arrayBuffer);
+      if (DEBUG_MOVEMENT_AUDIO) {
+        console.log('[MoveCue] ✅ Reloaded ' + filename + ' duration=' +
+          this.movementCueBuffers[index]!.duration.toFixed(2) + 's');
+      }
+    } catch (err) {
+      console.warn('[MoveCue] Reload ' + filename + ' error:', err);
+    }
   }
 
   /**
