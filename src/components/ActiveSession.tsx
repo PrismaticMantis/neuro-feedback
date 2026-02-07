@@ -16,14 +16,6 @@ import { getJourneys, getLastJourneyId } from '../lib/session-storage';
 import { useSession } from '../hooks/useSession';
 import type { ElectrodeStatus as ElectrodeStatusType, BrainwaveBands, BrainwaveBandsDb, ConnectionHealthState } from '../types';
 
-// Journey icon colors per journey type
-const JOURNEY_ICONS: Record<string, { iconBg: string; iconColor: string }> = {
-  calm: { iconBg: '#5B8DEF', iconColor: '#ffffff' },
-  deepRest: { iconBg: '#9B6BC8', iconColor: '#ffffff' },
-  creativeFlow: { iconBg: '#D9C478', iconColor: '#0c0a0e' },
-  nightWindDown: { iconBg: '#9B6BC8', iconColor: '#ffffff' },
-};
-
 interface ActiveSessionProps {
   // Session data
   duration: number;
@@ -125,9 +117,6 @@ export function ActiveSession({
   const journeyDurationMs = journeyMinutes * 60 * 1000;
   const timeRemaining = Math.max(0, journeyDurationMs - duration);
   const timeRemainingFormatted = formatTime(timeRemaining);
-
-  // Get journey icon styling
-  const journeyIconStyle = JOURNEY_ICONS[journeyId] || JOURNEY_ICONS.creativeFlow;
 
   return (
     <motion.div
