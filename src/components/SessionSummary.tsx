@@ -624,16 +624,15 @@ export function SessionSummary({
                 filter="url(#ring-glow)"
               />
             </svg>
+            {/* Number overlay — centered independently so the number is dead-center */}
             <div 
               className="coherence-ring-center"
               style={{
                 position: 'absolute',
-                top: '50%',
-                left: '50%',
-                transform: 'translate(-50%, -50%)',
+                inset: 0,
                 display: 'flex',
-                flexDirection: 'column',
                 alignItems: 'center',
+                justifyContent: 'center',
               }}
             >
               <motion.span
@@ -650,22 +649,29 @@ export function SessionSummary({
                   fontWeight: 600,
                   color: 'var(--text-primary)',
                   lineHeight: 1,
+                  margin: 0,
+                  padding: 0,
                 }}
               >
                 {Math.round(stats.coherencePercent)}
                 <span style={{ fontSize: '18px', fontWeight: 400, marginLeft: '3px', opacity: 0.7 }}>%</span>
               </motion.span>
-              <span 
-                className="coherence-label"
-                style={{
-                  fontFamily: 'var(--font-sans)',
-                  fontSize: '12px',
-                  fontWeight: 400,
-                  color: 'var(--text-muted)',
-                  marginTop: '4px',
-                }}
-              >Coherence</span>
             </div>
+            {/* "Coherence" label — positioned below center, outside the number's centering context */}
+            <span 
+              className="coherence-label"
+              style={{
+                position: 'absolute',
+                left: 0,
+                right: 0,
+                bottom: '15%',
+                textAlign: 'center',
+                fontFamily: 'var(--font-sans)',
+                fontSize: '12px',
+                fontWeight: 400,
+                color: 'var(--text-muted)',
+              }}
+            >Coherence</span>
           </motion.div>
           <p 
             className="summary-interpretation"
@@ -705,7 +711,7 @@ export function SessionSummary({
             className="summary-metrics-grid"
             style={{
               display: 'grid',
-              gridTemplateColumns: 'repeat(2, 1fr)',
+              gridTemplateColumns: 'repeat(4, 1fr)',
               gap: '12px',
             }}
           >

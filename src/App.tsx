@@ -124,15 +124,23 @@ function App() {
       museHandler.resetSessionPPG();
       
       // Wire movement detection -> audio cue playback (end-to-end pipeline)
-      // Flow: Muse accelerometer -> MovementDetector (axis-delta) -> this callback -> playMovementCue()
+      // Flow: Muse accelerometer -> MovementDetector (EMA baseline) -> this callback -> playMovementCue()
       movementDetector.setOnMovement((movementDelta, source) => {
+        if (DEBUG_MOVEMENT) {
+          console.log('[Move] ▶ Callback fired, calling audioEngine.playMovementCue()' +
+            ' source=' + source + ' delta=' + movementDelta.toFixed(4));
+        }
         const cueNumber = audioEngine.playMovementCue();
         if (DEBUG_MOVEMENT) {
-          console.log('[Move] PLAY movement-cue-' + cueNumber + '.mp3 source=' + source +
-            ' delta=' + movementDelta.toFixed(4));
+          console.log('[Move] ▶ playMovementCue returned cue=' + cueNumber +
+            (cueNumber === 0 ? ' (BLOCKED — check [MoveCue] logs above)' : ' ✅ PLAYING'));
         }
       });
       movementDetector.start();
+      
+      if (DEBUG_MOVEMENT) {
+        console.log('[Move] ✅ Pipeline wired: detector -> callback -> audioEngine.playMovementCue()');
+      }
       
       session.startSession();
       navigate('/session');
