@@ -4,14 +4,23 @@
  * Detects head movement during meditation sessions and triggers gentle audio cues
  * to help users return to stillness for better EEG signal quality.
  * 
- * PRIMARY: Accelerometer-based detection (Muse 2) using per-axis delta
+ * PRIMARY: Accelerometer-based detection (Muse 2) using EMA baseline deviation
  * FALLBACK: EEG artifact detection (conservative, rarely triggers)
  * 
- * DETECTION METHOD:
- * Uses per-axis delta: delta = |x - prevX| + |y - prevY| + |z - prevZ|
- * This is superior to magnitude-based detection because head *rotation*
- * (e.g. turning/nodding) can keep magnitude near 1.0g while changing
- * individual axis values significantly. Per-axis delta catches rotations.
+ * DETECTION METHOD (v2 — EMA baseline):
+ * Maintains a slow-moving EMA baseline of accelerometer position.
+ * Movement = deviation of current reading from baseline.
+ *   delta = |x - baseX| + |y - baseY| + |z - baseZ|
+ * 
+ * WHY EMA BASELINE instead of per-sample delta:
+ * The detector polls at 20Hz. A smooth head nod over 200ms produces ~4 polls,
+ * each with a tiny per-sample delta (~0.04g) that individually falls below
+ * threshold. With EMA baseline, the baseline barely moves during a nod
+ * (time constant ~1s), so the FULL displacement is visible as a large delta.
+ * 
+ * WHY NOT magnitude-only:
+ * Head rotation changes axis distribution while keeping magnitude near 1.0g.
+ * Per-axis deviation from baseline catches rotations that magnitude misses.
  * 
  * UI Reference: This is an audio-only feature, no visual UI changes
  * 
@@ -20,7 +29,6 @@
  * - Verify cues are not spammy (cooldown enforced)
  * - Verify cue cycles 1-2-3-1
  * - Verify no interference with coherence layers and shimmer SFX
- * - Press DEBUG "Test Movement Cue" button to isolate audio from detection
  */
 
 import { museHandler } from './muse-handler';
@@ -33,23 +41,29 @@ export const DEBUG_MOVEMENT = true;
 /**
  * Movement Detection Configuration
  * 
- * AXIS-DELTA THRESHOLDS:
- * - axisDeltaThreshold: Sum of per-axis deltas to trigger movement event
- *   The Muse 2 accelerometer values are in g-force (scale 1/16384).
- *   At rest, values are roughly stable with gravity on one axis (~1.0g).
- *   A gentle head nod produces axis deltas of ~0.03-0.08 per axis.
- *   Sum of 3 axes: ~0.06 is a reasonable starting threshold.
+ * EMA BASELINE APPROACH:
+ * - baselineAlpha: How fast the baseline tracks the current position.
+ *   Lower = slower tracking = more sensitive to movement.
+ *   At 0.05 with 20Hz polling, time constant ≈ 1 second.
+ *   During a 200ms nod, baseline moves only ~10% toward peak,
+ *   so ~90% of the displacement is visible as delta.
+ * 
+ * - axisDeltaThreshold: Sum of per-axis deviations from baseline.
+ *   0.04 catches moderate head nods (5-10°) while ignoring
+ *   accelerometer noise at rest (~0.005-0.015 total).
  *   
  *   TUNING:
  *   - Increase if too sensitive (false positives from small tremors)
  *   - Decrease if missing real movements
- *   - Check console logs: [Move] delta=... threshold=...
+ *   - Check console logs: [Move] diagnostic delta=... every 3s
  * 
  * - debounceMs: Minimum time between movement event processing
- *   250ms prevents rapid-fire triggers from a single head motion
+ *   150ms allows fast detection without redundant triggers
  * 
  * - cooldownMs: Minimum time between audio cue playback
- *   2500ms (2.5s) allows double-shakes to trigger multiple cues while staying gentle
+ *   2000ms (2s) allows responsive cue triggering while staying gentle
+ * 
+ * - warmupSamples: Ignore first N samples to let baseline stabilize
  * 
  * EEG FALLBACK THRESHOLDS:
  * - eegArtifactThreshold: RMS spike multiplier to trigger
@@ -57,11 +71,13 @@ export const DEBUG_MOVEMENT = true;
  * - eegCooldownMs: Longer cooldown for fallback (10s)
  */
 const MOVEMENT_CONFIG = {
-  // Accelerometer-based detection (per-axis delta)
-  axisDeltaThreshold: 0.06,     // Sum of |dx|+|dy|+|dz| to trigger (tune via logs)
-  debounceMs: 250,              // Minimum ms between processing movement
-  cooldownMs: 2500,             // Minimum ms between cue playback (2.5 seconds)
-  warmupSamples: 5,             // Ignore first N samples to let prevAcc stabilize
+  // Accelerometer-based detection (EMA baseline deviation)
+  axisDeltaThreshold: 0.04,     // Sum of per-axis deviation from baseline to trigger
+  debounceMs: 150,              // Minimum ms between processing movement
+  cooldownMs: 2000,             // Minimum ms between cue playback (2 seconds)
+  warmupSamples: 3,             // Ignore first N samples to let baseline init
+  baselineAlpha: 0.05,          // EMA smoothing factor (lower = slower baseline, more sensitive)
+  diagnosticIntervalMs: 3000,   // Log diagnostic info every N ms (debug only)
   
   // EEG artifact fallback (conservative)
   eegArtifactThreshold: 3.0,    // RMS multiplier for artifact detection
@@ -84,29 +100,31 @@ export type MovementEventCallback = (movementDelta: number, source: 'acceleromet
  * accelerometer data is unavailable.
  * 
  * End-to-end pipeline:
- * Muse 2 BLE -> muse-handler (accX/accY/accZ) -> MovementDetector (axis-delta)
+ * Muse 2 BLE -> muse-handler (accX/accY/accZ) -> MovementDetector (EMA baseline deviation)
  *   -> onMovementCallback -> audioEngine.playMovementCue() -> audible cue
  */
 export class MovementDetector {
-  // Previous accelerometer values for axis-delta calculation
-  private prevAccX: number = 0;
-  private prevAccY: number = 0;
-  private prevAccZ: number = 0;
-  private hasPrevSample: boolean = false;
+  // EMA baseline for accelerometer position (slow-moving average)
+  private baseX = 0;
+  private baseY = 0;
+  private baseZ = 0;
+  private baseInitialized = false;
   
   // Debounce and cooldown tracking
-  private lastMovementEvent: number = 0;
-  private lastCueTrigger: number = 0;
+  private lastMovementEvent = 0;
+  private lastCueTrigger = 0;
   
   // EEG fallback tracking
   private eegRmsBaseline: number[] = [0, 0, 0, 0]; // Per-channel RMS baseline
-  private eegRmsAlpha: number = 0.1; // EMA for EEG baseline
-  private lastEegCueTrigger: number = 0;
+  private eegRmsAlpha = 0.1; // EMA for EEG baseline
+  private lastEegCueTrigger = 0;
   
   // Detection state
-  private isEnabled: boolean = false;
-  private hasAccelerometer: boolean = false;
+  private isEnabled = false;
   private updateInterval: ReturnType<typeof setInterval> | null = null;
+  
+  // Diagnostic logging
+  private lastDiagnosticLog = 0;
   
   // Callbacks
   private onMovementCallback: MovementEventCallback | null = null;
@@ -118,40 +136,6 @@ export class MovementDetector {
     cuesTriggered: 0,
     eegArtifacts: 0,
   };
-
-  constructor() {
-    // Check if accelerometer data is available from Muse handler
-    this.checkAccelerometerAvailability();
-  }
-
-  /**
-   * Check if accelerometer data is available from the Muse handler.
-   * 
-   * The muse-js library subscribes to GATT characteristic 273e000a (accelerometer)
-   * during connect(). We check:
-   * 1. museHandler.accelSubscribed — was the subscription created?
-   * 2. museHandler.accelSampleCount — is data actually arriving?
-   * 
-   * If not yet connected, we optimistically assume it will work (Muse 2 always
-   * exposes accelerometer). The fallback (EEG artifacts) activates automatically
-   * if accX/accY/accZ stay at 0.
-   */
-  private checkAccelerometerAvailability(): void {
-    const subscribed = museHandler.accelSubscribed;
-    const sampleCount = museHandler.accelSampleCount;
-    
-    // If connected and subscribed, or not yet connected (assume will be), mark as available
-    this.hasAccelerometer = subscribed || !museHandler.connected;
-    
-    if (DEBUG_MOVEMENT) {
-      console.log('[Move] Accelerometer availability check:', {
-        accelSubscribed: subscribed,
-        accelSampleCount: sampleCount,
-        museConnected: museHandler.connected,
-        hasAccelerometer: this.hasAccelerometer,
-      });
-    }
-  }
 
   /**
    * Set the callback for movement events.
@@ -173,11 +157,8 @@ export class MovementDetector {
       return;
     }
 
-    // Re-check accelerometer availability at session start
-    this.checkAccelerometerAvailability();
-
     this.isEnabled = true;
-    this.resetBaselines();
+    this.resetState();
     
     // Start update interval (poll accelerometer data at ~20Hz)
     this.updateInterval = setInterval(() => {
@@ -186,9 +167,9 @@ export class MovementDetector {
     
     if (DEBUG_MOVEMENT) {
       console.log('[Move] Started', {
-        hasAccelerometer: this.hasAccelerometer,
         accelSubscribed: museHandler.accelSubscribed,
         accelSampleCount: museHandler.accelSampleCount,
+        museConnected: museHandler.connected,
         config: MOVEMENT_CONFIG,
       });
     }
@@ -218,15 +199,16 @@ export class MovementDetector {
   }
 
   /**
-   * Reset baseline values (call when starting a new session)
+   * Reset all state for a fresh session
    */
-  private resetBaselines(): void {
-    this.prevAccX = 0;
-    this.prevAccY = 0;
-    this.prevAccZ = 0;
-    this.hasPrevSample = false;
+  private resetState(): void {
+    this.baseX = 0;
+    this.baseY = 0;
+    this.baseZ = 0;
+    this.baseInitialized = false;
     this.lastMovementEvent = 0;
     this.lastCueTrigger = 0;
+    this.lastDiagnosticLog = 0;
     this.eegRmsBaseline = [0, 0, 0, 0];
     this.lastEegCueTrigger = 0;
     this.stats = {
@@ -238,15 +220,18 @@ export class MovementDetector {
   }
 
   /**
-   * Main update loop - checks accelerometer and EEG for movement
+   * Main update loop - checks accelerometer and EEG for movement.
+   * 
+   * Dynamically checks museHandler.accelSubscribed each tick instead of
+   * caching a stale flag, so BLE reconnections are handled correctly.
    */
   private update(): void {
     if (!this.isEnabled) return;
     
     const now = Date.now();
     
-    // Primary: Check accelerometer (requires subscription AND Muse connected)
-    if (this.hasAccelerometer && museHandler.connected) {
+    // Primary: Check accelerometer (dynamically verify subscription is active)
+    if (museHandler.connected && museHandler.accelSubscribed) {
       this.checkAccelerometer(now);
     }
     
@@ -257,12 +242,16 @@ export class MovementDetector {
   }
 
   /**
-   * Check accelerometer data for movement using per-axis delta.
+   * Check accelerometer data for movement using EMA baseline deviation.
    * 
-   * Detection: delta = |x - prevX| + |y - prevY| + |z - prevZ|
-   * This catches rotations that magnitude-only detection misses,
-   * because rotating the head changes axis distribution while
-   * keeping total magnitude near 1.0g.
+   * The baseline is a slow-moving EMA of accelerometer position.
+   * When the head is still, baseline ≈ current → delta ≈ 0.
+   * When the head moves, baseline lags behind → delta is large.
+   * 
+   * With alpha=0.05 at 20Hz, the baseline time constant is ~1 second.
+   * A 200ms head nod produces ~90% of its displacement as delta.
+   * This is far more reliable than per-sample delta, which fragments
+   * smooth movements into tiny per-poll increments.
    */
   private checkAccelerometer(now: number): void {
     const accX = museHandler.accX;
@@ -276,57 +265,75 @@ export class MovementDetector {
     
     this.stats.accelSamples++;
     
-    // If this is our first valid sample, store it and wait for the next
-    if (!this.hasPrevSample) {
-      this.prevAccX = accX;
-      this.prevAccY = accY;
-      this.prevAccZ = accZ;
-      this.hasPrevSample = true;
+    // Initialize baseline on first valid sample
+    if (!this.baseInitialized) {
+      this.baseX = accX;
+      this.baseY = accY;
+      this.baseZ = accZ;
+      this.baseInitialized = true;
       if (DEBUG_MOVEMENT) {
-        console.log('[Accel] First sample received, initializing prev values', {
+        console.log('[Accel] Baseline initialized', {
           x: accX.toFixed(4), y: accY.toFixed(4), z: accZ.toFixed(4),
         });
       }
       return;
     }
     
-    // Skip warmup period to let values stabilize
+    // Skip warmup period to let baseline stabilize
     if (this.stats.accelSamples < MOVEMENT_CONFIG.warmupSamples) {
-      this.prevAccX = accX;
-      this.prevAccY = accY;
-      this.prevAccZ = accZ;
+      // Update baseline during warmup (fast tracking)
+      this.baseX += 0.3 * (accX - this.baseX);
+      this.baseY += 0.3 * (accY - this.baseY);
+      this.baseZ += 0.3 * (accZ - this.baseZ);
       return;
     }
     
-    // Calculate per-axis delta (sum of absolute differences)
-    const dx = Math.abs(accX - this.prevAccX);
-    const dy = Math.abs(accY - this.prevAccY);
-    const dz = Math.abs(accZ - this.prevAccZ);
+    // Calculate per-axis deviation from baseline
+    const dx = Math.abs(accX - this.baseX);
+    const dy = Math.abs(accY - this.baseY);
+    const dz = Math.abs(accZ - this.baseZ);
     const axisDelta = dx + dy + dz;
     
-    // Update previous values for next iteration
-    this.prevAccX = accX;
-    this.prevAccY = accY;
-    this.prevAccZ = accZ;
+    // Update baseline with EMA (slow tracking — this is the key to sensitivity)
+    const alpha = MOVEMENT_CONFIG.baselineAlpha;
+    this.baseX += alpha * (accX - this.baseX);
+    this.baseY += alpha * (accY - this.baseY);
+    this.baseZ += alpha * (accZ - this.baseZ);
     
-    // Check debounce
+    // Periodic diagnostic log (every N seconds, even if below threshold)
+    if (DEBUG_MOVEMENT && now - this.lastDiagnosticLog > MOVEMENT_CONFIG.diagnosticIntervalMs) {
+      this.lastDiagnosticLog = now;
+      const cooldownLeft = Math.max(0, MOVEMENT_CONFIG.cooldownMs - (now - this.lastCueTrigger));
+      console.log(
+        '[Move] diagnostic' +
+        ' delta=' + axisDelta.toFixed(4) +
+        ' thr=' + MOVEMENT_CONFIG.axisDeltaThreshold +
+        ' cd=' + cooldownLeft + 'ms' +
+        ' samples=' + this.stats.accelSamples +
+        ' triggers=' + this.stats.cuesTriggered +
+        ' acc=[' + accX.toFixed(3) + ',' + accY.toFixed(3) + ',' + accZ.toFixed(3) + ']' +
+        ' base=[' + this.baseX.toFixed(3) + ',' + this.baseY.toFixed(3) + ',' + this.baseZ.toFixed(3) + ']'
+      );
+    }
+    
+    // Check debounce (minimum interval between movement event processing)
     if (now - this.lastMovementEvent < MOVEMENT_CONFIG.debounceMs) {
       return;
     }
     
-    // Check if axis-delta exceeds threshold
+    // Check if deviation from baseline exceeds threshold
     if (axisDelta > MOVEMENT_CONFIG.axisDeltaThreshold) {
       this.lastMovementEvent = now;
       this.stats.movementEvents++;
       
       if (DEBUG_MOVEMENT) {
         const cooldownRemaining = Math.max(0, MOVEMENT_CONFIG.cooldownMs - (now - this.lastCueTrigger));
-        console.log('[Move] delta=' + axisDelta.toFixed(4) +
-          ' threshold=' + MOVEMENT_CONFIG.axisDeltaThreshold +
-          ' cooldownRemaining=' + cooldownRemaining + 'ms', {
-          dx: dx.toFixed(4), dy: dy.toFixed(4), dz: dz.toFixed(4),
-          accX: accX.toFixed(4), accY: accY.toFixed(4), accZ: accZ.toFixed(4),
-        });
+        console.log(
+          '[Move] DETECTED delta=' + axisDelta.toFixed(4) +
+          ' thr=' + MOVEMENT_CONFIG.axisDeltaThreshold +
+          ' cooldown=' + cooldownRemaining + 'ms' +
+          ' dx=' + dx.toFixed(4) + ' dy=' + dy.toFixed(4) + ' dz=' + dz.toFixed(4)
+        );
       }
       
       // Check cooldown before triggering cue
@@ -334,7 +341,7 @@ export class MovementDetector {
         this.triggerMovementCue(axisDelta, 'accelerometer');
       } else if (DEBUG_MOVEMENT) {
         const remaining = MOVEMENT_CONFIG.cooldownMs - (now - this.lastCueTrigger);
-        console.log('[Move] Movement detected but cooldown active, remaining=' + remaining + 'ms');
+        console.log('[Move] Cooldown active, remaining=' + remaining + 'ms');
       }
     }
   }
@@ -433,10 +440,10 @@ export class MovementDetector {
   }
 
   /**
-   * Check if accelerometer is available
+   * Check if accelerometer is available (dynamic — checks muse-handler live)
    */
   get accelerometerAvailable(): boolean {
-    return this.hasAccelerometer;
+    return museHandler.accelSubscribed;
   }
 }
 

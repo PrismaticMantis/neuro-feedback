@@ -1512,15 +1512,28 @@ h3 {
 
 /* ============ iPad / Tablet Viewport Condensation ============ */
 /* Fit Session + Summary pages in one iPad viewport without scrolling.
-   Targets tablets and compact viewports (≥768px wide, ≤1024px tall).
+   Targets tablets (≥768px). No max-height restriction — iPad portrait
+   is ~1080px CSS height so a max-height guard would miss it entirely.
    Uses !important to override inline styles set in components. */
 
-@media (min-width: 768px) and (max-height: 1024px) {
+@media (min-width: 768px) {
+
+  /* ---- Shared: strip .screen padding + min-height on tablet ---- */
+  .screen.session-summary {
+    padding: 0 !important;
+    min-height: auto !important;
+  }
+
+  .screen.active-session {
+    padding: 0 16px 4px !important;
+    min-height: 100dvh !important;
+  }
 
   /* ---- Session page ---- */
 
   .active-session {
-    padding-bottom: 8px !important;
+    padding-bottom: 4px !important;
+    min-height: 100dvh !important;
   }
 
   .session-header-lovable {
@@ -1528,34 +1541,54 @@ h3 {
   }
 
   .session-top-cards {
-    margin-bottom: 6px !important;
+    gap: 8px !important;
+    margin-bottom: 4px !important;
+  }
+
+  .session-card {
+    padding: 10px !important;
   }
 
   .session-journey-card {
-    padding: 10px 14px !important;
-    margin-bottom: 6px !important;
+    padding: 8px 12px !important;
+    margin-bottom: 4px !important;
   }
 
   .session-timer-central {
-    margin: 0 0 6px !important;
+    margin: 0 0 4px !important;
   }
 
   .session-timer-circle {
-    width: 100px !important;
-    height: 100px !important;
+    width: 90px !important;
+    height: 90px !important;
+  }
+
+  .session-timer-remaining {
+    margin-top: 2px !important;
+  }
+
+  .session-timer-remaining-value {
+    font-size: 15px !important;
+    margin-top: 0 !important;
   }
 
   .session-main-lovable {
-    margin-bottom: 8px !important;
+    margin-bottom: 4px !important;
   }
 
   .session-chart-card {
-    min-height: 180px !important;
-    padding: 12px !important;
+    min-height: 160px !important;
+    padding: 10px !important;
   }
 
   .session-footer-lovable {
-    padding-bottom: 6px !important;
+    padding-bottom: 4px !important;
+    padding-top: 0 !important;
+    gap: 12px !important;
+  }
+
+  .session-end-btn {
+    padding: 12px 32px !important;
   }
 
   /* ---- Summary page ---- */
@@ -1576,62 +1609,77 @@ h3 {
   }
 
   .summary-hero {
-    padding: 20px 16px !important;
-    margin-bottom: 12px !important;
+    padding: 16px 16px !important;
+    margin-bottom: 10px !important;
   }
 
   .summary-complete-label {
-    margin-bottom: 4px !important;
+    margin-bottom: 2px !important;
   }
 
   .summary-journey-name {
-    margin-bottom: 8px !important;
+    margin-bottom: 6px !important;
+    font-size: 20px !important;
   }
 
   .summary-coherence-ring {
-    width: 120px !important;
-    height: 120px !important;
-    margin-bottom: 8px !important;
+    width: 110px !important;
+    height: 110px !important;
+    margin-bottom: 6px !important;
+  }
+
+  .coherence-percentage {
+    font-size: 36px !important;
   }
 
   .summary-interpretation {
-    margin-top: 4px !important;
+    margin-top: 2px !important;
+    font-size: 13px !important;
   }
 
   .summary-metrics-section,
   .summary-timeline-section,
   .summary-body-rhythm-section {
-    margin-bottom: 12px !important;
+    margin-bottom: 10px !important;
   }
 
   .summary-section-title {
-    margin-bottom: 8px !important;
-    font-size: 16px !important;
+    margin-bottom: 6px !important;
+    font-size: 15px !important;
   }
 
   .summary-metrics-grid {
-    gap: 10px !important;
+    gap: 8px !important;
   }
 
   .summary-metric-card {
-    padding: 14px !important;
-  }
-
-  .summary-timeline-chart {
-    height: 140px !important;
     padding: 12px !important;
   }
 
+  .summary-metric-label {
+    margin-bottom: 4px !important;
+    font-size: 12px !important;
+  }
+
+  .summary-metric-value {
+    font-size: 20px !important;
+  }
+
+  .summary-timeline-chart {
+    height: 130px !important;
+    padding: 10px !important;
+  }
+
   .summary-body-rhythm-grid {
-    gap: 10px !important;
+    gap: 8px !important;
   }
 
   .summary-body-rhythm-card {
-    padding: 14px !important;
+    padding: 12px !important;
   }
 
   .summary-footer {
-    padding-top: 8px !important;
+    padding-top: 6px !important;
   }
 }
 

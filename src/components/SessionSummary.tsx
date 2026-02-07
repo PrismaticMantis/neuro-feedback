@@ -423,8 +423,8 @@ export function SessionSummary({
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: -20 }}
       style={{
-        padding: '0 24px 20px',
-        maxWidth: '600px',
+        padding: '0 24px 16px',
+        maxWidth: '800px',
         margin: '0 auto',
       }}
     >
