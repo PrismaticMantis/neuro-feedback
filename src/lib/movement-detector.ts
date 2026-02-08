@@ -26,7 +26,7 @@ import { museHandler } from './muse-handler';
 // Debug flag for movement detection logging
 // Set to true to enable detailed movement event logging
 // To disable: set DEBUG_MOVEMENT = false
-export const DEBUG_MOVEMENT = false;
+export const DEBUG_MOVEMENT = true;
 
 /**
  * Movement Detection Configuration
@@ -50,11 +50,11 @@ export const DEBUG_MOVEMENT = false;
  */
 const MOVEMENT_CONFIG = {
   // Accelerometer-based detection (EMA baseline deviation)
-  axisDeltaThreshold: 0.035,    // Sum of per-axis deviation from baseline to trigger (raised ~20% from 0.029; filters micro-jitter while catching intentional nods)
-  debounceMs: 200,              // Minimum ms between processing movement events (prevents micro-jitter spam)
-  cooldownMs: 1500,             // Minimum ms between cue playback (lowered from 2250 — let threshold filter, not cooldown)
-  warmupSamples: 3,             // Ignore first N samples to let baseline init
-  baselineAlpha: 0.05,          // EMA smoothing factor (lower = slower baseline, more sensitive)
+  axisDeltaThreshold: 0.055,    // Sum of per-axis deviation from baseline to trigger. Tuned so micro-jitter (0.01-0.03) and posture shifts (0.02-0.04) don't fire, but intentional nods/shakes (0.06+) do.
+  debounceMs: 100,              // Tiny debounce to collapse a single movement spike into one event. Short enough that two distinct shakes 150ms+ apart both fire.
+  armingDelayMs: 5000,          // Ignore all triggers for the first 5 seconds after session start (baseline settling + user getting comfortable).
+  warmupSamples: 5,             // Ignore first N accel samples to let EMA baseline initialise properly
+  baselineAlpha: 0.04,          // EMA smoothing (slightly slower than 0.05 for a more stable baseline → fewer false positives)
   diagnosticIntervalMs: 3000,   // Log diagnostic info every N ms (debug only)
   
   // EEG artifact fallback (conservative)
@@ -84,9 +84,11 @@ export class MovementDetector {
   private baseZ = 0;
   private baseInitialized = false;
   
-  // Debounce and cooldown tracking
+  // Debounce tracking (no cooldown — every distinct movement should fire)
   private lastMovementEvent = 0;
-  private lastCueTrigger = 0;
+  
+  // Arming delay: no cues for the first N ms after session start
+  private sessionStartTs = 0;
   
   // EEG fallback tracking
   private eegRmsBaseline: number[] = [0, 0, 0, 0];
@@ -200,7 +202,7 @@ export class MovementDetector {
     this.baseZ = 0;
     this.baseInitialized = false;
     this.lastMovementEvent = 0;
-    this.lastCueTrigger = 0;
+    this.sessionStartTs = Date.now();
     this.lastDiagnosticLog = 0;
     this.zeroAccelCount = 0;
     this.eegRmsBaseline = [0, 0, 0, 0];
@@ -213,6 +215,9 @@ export class MovementDetector {
       gateFailures: 0,
       callbackCalls: 0,
     };
+    if (DEBUG_MOVEMENT) {
+      console.log('[Move] Session armed — cues blocked for ' + MOVEMENT_CONFIG.armingDelayMs + 'ms');
+    }
   }
 
   /**
@@ -236,7 +241,7 @@ export class MovementDetector {
       const accY = museHandler.accY;
       const accZ = museHandler.accZ;
       const allZero = accX === 0 && accY === 0 && accZ === 0;
-      const cooldownLeft = Math.max(0, MOVEMENT_CONFIG.cooldownMs - (now - this.lastCueTrigger));
+      const armingLeft = Math.max(0, MOVEMENT_CONFIG.armingDelayMs - (now - this.sessionStartTs));
 
       // Compute current delta for diagnostic even if we haven't initialized baseline
       let diagDelta = 0;
@@ -254,7 +259,7 @@ export class MovementDetector {
         ' allZero=' + allZero +
         ' delta=' + diagDelta.toFixed(4) +
         ' thr=' + MOVEMENT_CONFIG.axisDeltaThreshold +
-        ' cd=' + cooldownLeft + 'ms' +
+        ' arm=' + armingLeft + 'ms' +
         ' mySamples=' + this.stats.accelSamples +
         ' triggers=' + this.stats.cuesTriggered +
         ' callbacks=' + this.stats.callbackCalls +
@@ -286,8 +291,8 @@ export class MovementDetector {
       }
     }
     
-    // ---- Fallback: EEG artifacts (only if accel not providing data) ----
-    if (isConnected && !hasAccelData && now - this.lastCueTrigger > MOVEMENT_CONFIG.cooldownMs) {
+    // ---- Fallback: EEG artifacts (only if accel not providing data AND arming delay passed) ----
+    if (isConnected && !hasAccelData && (now - this.sessionStartTs >= MOVEMENT_CONFIG.armingDelayMs)) {
       this.checkEegArtifacts(now);
     }
   }
@@ -353,7 +358,7 @@ export class MovementDetector {
     this.baseY += alpha * (accY - this.baseY);
     this.baseZ += alpha * (accZ - this.baseZ);
     
-    // Check debounce (minimum interval between movement event processing)
+    // Check debounce — prevents a single movement spike from double-firing
     if (now - this.lastMovementEvent < MOVEMENT_CONFIG.debounceMs) {
       return;
     }
@@ -363,23 +368,29 @@ export class MovementDetector {
       this.lastMovementEvent = now;
       this.stats.movementEvents++;
       
+      const timeSinceStart = now - this.sessionStartTs;
+      const armed = timeSinceStart >= MOVEMENT_CONFIG.armingDelayMs;
+      
       if (DEBUG_MOVEMENT) {
-        const cooldownRemaining = Math.max(0, MOVEMENT_CONFIG.cooldownMs - (now - this.lastCueTrigger));
         console.log(
           '[Move] DETECTED delta=' + axisDelta.toFixed(4) +
           ' thr=' + MOVEMENT_CONFIG.axisDeltaThreshold +
-          ' cooldown=' + cooldownRemaining + 'ms' +
+          ' t=' + (timeSinceStart / 1000).toFixed(1) + 's' +
+          ' armed=' + armed +
           ' dx=' + dx.toFixed(4) + ' dy=' + dy.toFixed(4) + ' dz=' + dz.toFixed(4)
         );
       }
       
-      // Check cooldown before triggering cue
-      if (now - this.lastCueTrigger >= MOVEMENT_CONFIG.cooldownMs) {
-        this.triggerMovementCue(axisDelta, 'accelerometer');
-      } else if (DEBUG_MOVEMENT) {
-        const remaining = MOVEMENT_CONFIG.cooldownMs - (now - this.lastCueTrigger);
-        console.log('[Move] Cooldown active, remaining=' + remaining + 'ms');
+      // Arming delay: block triggers in the first N seconds after session start
+      if (!armed) {
+        if (DEBUG_MOVEMENT) {
+          console.log('[Move] BLOCKED (arming delay) — ' + ((MOVEMENT_CONFIG.armingDelayMs - timeSinceStart) / 1000).toFixed(1) + 's remaining');
+        }
+        return;
       }
+      
+      // No cooldown — every threshold-exceeding event fires immediately
+      this.triggerMovementCue(axisDelta, 'accelerometer');
     }
   }
 
@@ -436,9 +447,7 @@ export class MovementDetector {
         });
       }
       
-      if (now - this.lastCueTrigger >= MOVEMENT_CONFIG.cooldownMs) {
-        this.triggerMovementCue(powerRatio, 'eeg_artifact');
-      }
+      this.triggerMovementCue(powerRatio, 'eeg_artifact');
     }
   }
 
@@ -446,8 +455,6 @@ export class MovementDetector {
    * Trigger a movement cue callback
    */
   private triggerMovementCue(movementDelta: number, source: 'accelerometer' | 'eeg_artifact'): void {
-    const now = Date.now();
-    this.lastCueTrigger = now;
     this.stats.cuesTriggered++;
     
     if (DEBUG_MOVEMENT) {

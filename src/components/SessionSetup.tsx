@@ -165,21 +165,21 @@ export function SessionSetup({
         </div>
       </header>
 
-      {/* Two-Column Grid — flat layout so paired cards align in the same row.
-         Row 1: Device Connection | Detection Settings
-         Row 2: Electrode Contact | Guidance Audio  (same row = aligned)
-         Row 3: (debug overlay)   | User Profile    (conditional)
-         Uniform 16px gap keeps all rows equidistant. */}
+      {/* Card Grid — layout changes based on connection state:
+         Not connected: 3 equal columns → all 3 cards in one row
+         Connected:     2 columns, 2 rows → tight 2×2 grid
+         alignContent: start prevents rows from stretching to fill the container. */}
       <div 
         className="setup-content"
         style={{
           display: 'grid',
-          gridTemplateColumns: 'repeat(2, 1fr)',
+          gridTemplateColumns: museConnected ? 'repeat(2, 1fr)' : 'repeat(3, 1fr)',
           gap: '16px',
           alignItems: 'start',
+          alignContent: 'start',
         }}
       >
-        {/* Row 1, Col 1: Device Connection */}
+        {/* Device Connection */}
         <ConnectionStatus
           museConnected={museConnected}
           museDeviceName={museDeviceName}
@@ -191,7 +191,7 @@ export function SessionSetup({
           error={connectionError}
         />
 
-        {/* Row 1, Col 2: Detection Settings */}
+        {/* Detection Settings */}
         <section 
           className="setup-section"
           style={{
@@ -216,7 +216,6 @@ export function SessionSetup({
           </h2>
           <div className="settings-group">
             <div className="setting-row" style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-              {/* Label Row - Target 3: "Coherence Sensitivity" with "Medium" value on right */}
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <span style={{ fontFamily: 'var(--font-sans)', fontSize: '14px', fontWeight: 400, color: 'var(--text-primary)' }}>
                   Coherence Sensitivity
@@ -230,7 +229,6 @@ export function SessionSetup({
                 </span>
               </div>
               
-              {/* Slider - Target 3: Purple/champagne filled slider */}
               <input
                 type="range"
                 min="0"
@@ -254,7 +252,6 @@ export function SessionSetup({
                 }}
               />
               
-              {/* Hint text - Target 3 */}
               <p style={{ fontFamily: 'var(--font-sans)', fontSize: '12px', fontWeight: 400, color: 'var(--text-muted)', fontStyle: 'italic', margin: '4px 0 0 0' }}>
                 Controls how easy it is to enter coherence state
               </p>
@@ -274,8 +271,8 @@ export function SessionSetup({
           </div>
         </section>
 
-        {/* Row 2, Col 1: Electrode Contact (or empty placeholder when not connected) */}
-        {museConnected ? (
+        {/* Electrode Contact — only when Muse connected (row 2 in 2-col mode) */}
+        {museConnected && (
           <section 
             className="setup-section"
             style={{
@@ -325,40 +322,9 @@ export function SessionSetup({
               </div>
             )}
           </section>
-        ) : (
-          /* Empty placeholder to keep Guidance Audio in col 2 when Muse is not connected */
-          <div />
         )}
 
-        {/* Debug Electrode Overlay — only when enabled and connected, spans col 1 below Electrode Contact */}
-        {museConnected && DEBUG_ELECTRODES_OVERLAY && (
-          <>
-            <section 
-              className="setup-section debug-overlay"
-              style={{
-                background: 'hsl(270 10% 12% / 0.9)',
-                border: '2px solid var(--accent-primary)',
-                borderRadius: '12px',
-                padding: '16px',
-              }}
-            >
-              <h3 style={{ color: 'var(--accent-primary)', marginBottom: 12, fontSize: '14px' }}>Electrode Debug</h3>
-              <div style={{ fontFamily: 'monospace', fontSize: '11px', lineHeight: 1.6, color: 'var(--text-primary)' }}>
-                <div>connected: {String(museConnected)}</div>
-                <div>raw horseshoe: [{museHandler.getElectrodeQuality().join(', ')}]</div>
-                <div>electrodeStatus: {JSON.stringify(electrodeStatus)}</div>
-                <div>connectionQuality: {connectionQuality.toFixed(2)}</div>
-                <div>signalLabel: {(() => {
-                  const goodCount = [electrodeStatus.tp9, electrodeStatus.af7, electrodeStatus.af8, electrodeStatus.tp10].filter(q => q === 'good').length;
-                  return goodCount >= 3 ? 'Strong' : goodCount >= 1 ? 'Partial' : 'Poor';
-                })()}</div>
-              </div>
-            </section>
-            <div /> {/* Keep grid alignment for col 2 */}
-          </>
-        )}
-
-        {/* Row 2, Col 2: Guidance Audio — aligned with Electrode Contact */}
+        {/* Guidance Audio — col 3 in 3-col mode (not connected), or row 2 col 2 in 2-col mode (connected) */}
         <section 
           className="setup-section"
           style={{
@@ -369,7 +335,6 @@ export function SessionSetup({
             boxShadow: '0 4px 20px hsl(270 20% 2% / 0.5)',
           }}
         >
-          {/* Header with title and toggle - Target 3 */}
           <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '12px' }}>
             <div>
               <h2 style={{ fontFamily: 'var(--font-sans)', fontSize: '16px', fontWeight: 600, color: 'var(--text-primary)', margin: '0 0 4px 0', lineHeight: 1.3 }}>
@@ -422,7 +387,6 @@ export function SessionSetup({
           </div>
 
           <div className={`audio-options ${!entrainmentEnabled ? 'disabled' : ''}`} style={{ opacity: entrainmentEnabled ? 1 : 0.5 }}>
-            {/* Binaural Presets (shown when guidance audio is enabled) */}
             {entrainmentEnabled && (
               <div className="binaural-settings" style={{ marginBottom: '16px', paddingTop: '12px', borderTop: '1px solid hsl(270 15% 22% / 0.3)' }}>
                 <h3 style={{ fontFamily: 'var(--font-sans)', fontSize: '13px', fontWeight: 500, color: 'var(--text-muted)', marginBottom: '10px' }}>Preset</h3>
@@ -485,87 +449,112 @@ export function SessionSetup({
           </div>
         </section>
 
-        {/* Row 3, Col 2: User Selection (only when no user is selected) */}
+        {/* Debug Electrode Overlay — only when enabled and connected */}
+        {museConnected && DEBUG_ELECTRODES_OVERLAY && (
+          <section 
+            className="setup-section debug-overlay"
+            style={{
+              gridColumn: '1 / -1',
+              background: 'hsl(270 10% 12% / 0.9)',
+              border: '2px solid var(--accent-primary)',
+              borderRadius: '12px',
+              padding: '16px',
+            }}
+          >
+            <h3 style={{ color: 'var(--accent-primary)', marginBottom: 12, fontSize: '14px' }}>Electrode Debug</h3>
+            <div style={{ fontFamily: 'monospace', fontSize: '11px', lineHeight: 1.6, color: 'var(--text-primary)' }}>
+              <div>connected: {String(museConnected)}</div>
+              <div>raw horseshoe: [{museHandler.getElectrodeQuality().join(', ')}]</div>
+              <div>electrodeStatus: {JSON.stringify(electrodeStatus)}</div>
+              <div>connectionQuality: {connectionQuality.toFixed(2)}</div>
+              <div>signalLabel: {(() => {
+                const goodCount = [electrodeStatus.tp9, electrodeStatus.af7, electrodeStatus.af8, electrodeStatus.tp10].filter(q => q === 'good').length;
+                return goodCount >= 3 ? 'Strong' : goodCount >= 1 ? 'Partial' : 'Poor';
+              })()}</div>
+            </div>
+          </section>
+        )}
+
+        {/* User Selection (only when no user is selected) — spans full width */}
         {!currentUser && (
-          <>
-            <div /> {/* Placeholder for col 1 to keep User Profile in col 2 */}
-            <section 
-              className="setup-section"
-              style={{
-                background: 'linear-gradient(165deg, hsl(270 7% 13% / 0.75), hsl(270 10% 9% / 0.85))',
-                border: '1px solid hsl(270 15% 22% / 0.35)',
-                borderRadius: '12px',
-                padding: '20px',
-                boxShadow: '0 4px 20px hsl(270 20% 2% / 0.5)',
-              }}
-            >
-              <h2 style={{ fontFamily: 'var(--font-sans)', fontSize: '16px', fontWeight: 600, color: 'var(--text-primary)', margin: '0 0 12px 0', lineHeight: 1.3 }}>
-                User Profile
-              </h2>
-              <p style={{ fontFamily: 'var(--font-sans)', fontSize: '13px', fontWeight: 400, color: 'var(--text-muted)', marginBottom: '12px' }}>
-                Select or create a user to track your sessions
-              </p>
-              {users.length > 0 && (
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '12px' }}>
-                  {users.map((user) => (
-                    <button
-                      key={user.id}
-                      onClick={() => onSelectUser(user.id)}
-                      style={{
-                        padding: '8px 14px',
-                        background: 'hsl(270 10% 14%)',
-                        border: '1px solid transparent',
-                        borderRadius: '8px',
-                        color: 'var(--text-muted)',
-                        fontFamily: 'var(--font-sans)',
-                        fontSize: '13px',
-                        cursor: 'pointer',
-                      }}
-                    >
-                      {user.name}
-                    </button>
-                  ))}
-                </div>
-              )}
-              <div style={{ display: 'flex', gap: '8px' }}>
-                <input
-                  type="text"
-                  placeholder="Enter name..."
-                  value={newUserName}
-                  onChange={(e) => setNewUserName(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && handleCreateUser()}
-                  style={{
-                    flex: 1,
-                    padding: '10px 14px',
-                    background: 'hsl(270 10% 14%)',
-                    border: '1px solid hsl(270 15% 22% / 0.3)',
-                    borderRadius: '8px',
-                    color: 'var(--text-primary)',
-                    fontFamily: 'var(--font-sans)',
-                    fontSize: '14px',
-                  }}
-                />
-                <button
-                  onClick={handleCreateUser}
-                  disabled={!newUserName.trim()}
-                  style={{
-                    padding: '10px 18px',
-                    background: 'hsl(270 10% 14%)',
-                    border: '1px solid hsl(270 15% 25% / 0.4)',
-                    borderRadius: '8px',
-                    color: 'var(--text-primary)',
-                    fontFamily: 'var(--font-sans)',
-                    fontSize: '14px',
-                    fontWeight: 500,
-                    cursor: 'pointer',
-                    opacity: newUserName.trim() ? 1 : 0.5,
-                  }}
-                >
-                  Create
-                </button>
+          <section 
+            className="setup-section"
+            style={{
+              gridColumn: '1 / -1',
+              background: 'linear-gradient(165deg, hsl(270 7% 13% / 0.75), hsl(270 10% 9% / 0.85))',
+              border: '1px solid hsl(270 15% 22% / 0.35)',
+              borderRadius: '12px',
+              padding: '20px',
+              boxShadow: '0 4px 20px hsl(270 20% 2% / 0.5)',
+              maxWidth: '480px',
+            }}
+          >
+            <h2 style={{ fontFamily: 'var(--font-sans)', fontSize: '16px', fontWeight: 600, color: 'var(--text-primary)', margin: '0 0 12px 0', lineHeight: 1.3 }}>
+              User Profile
+            </h2>
+            <p style={{ fontFamily: 'var(--font-sans)', fontSize: '13px', fontWeight: 400, color: 'var(--text-muted)', marginBottom: '12px' }}>
+              Select or create a user to track your sessions
+            </p>
+            {users.length > 0 && (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '12px' }}>
+                {users.map((user) => (
+                  <button
+                    key={user.id}
+                    onClick={() => onSelectUser(user.id)}
+                    style={{
+                      padding: '8px 14px',
+                      background: 'hsl(270 10% 14%)',
+                      border: '1px solid transparent',
+                      borderRadius: '8px',
+                      color: 'var(--text-muted)',
+                      fontFamily: 'var(--font-sans)',
+                      fontSize: '13px',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    {user.name}
+                  </button>
+                ))}
               </div>
-            </section>
-          </>
+            )}
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <input
+                type="text"
+                placeholder="Enter name..."
+                value={newUserName}
+                onChange={(e) => setNewUserName(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleCreateUser()}
+                style={{
+                  flex: 1,
+                  padding: '10px 14px',
+                  background: 'hsl(270 10% 14%)',
+                  border: '1px solid hsl(270 15% 22% / 0.3)',
+                  borderRadius: '8px',
+                  color: 'var(--text-primary)',
+                  fontFamily: 'var(--font-sans)',
+                  fontSize: '14px',
+                }}
+              />
+              <button
+                onClick={handleCreateUser}
+                disabled={!newUserName.trim()}
+                style={{
+                  padding: '10px 18px',
+                  background: 'hsl(270 10% 14%)',
+                  border: '1px solid hsl(270 15% 25% / 0.4)',
+                  borderRadius: '8px',
+                  color: 'var(--text-primary)',
+                  fontFamily: 'var(--font-sans)',
+                  fontSize: '14px',
+                  fontWeight: 500,
+                  cursor: 'pointer',
+                  opacity: newUserName.trim() ? 1 : 0.5,
+                }}
+              >
+                Create
+              </button>
+            </div>
+          </section>
         )}
       </div>
 

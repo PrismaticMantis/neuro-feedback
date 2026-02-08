@@ -174,7 +174,7 @@ export class AudioEngine {
   private movementCueGain: GainNode | null = null;
   private movementCueIndex: number = 0; // Cycles 0 -> 1 -> 2 -> 0...
   private lastMovementCueTime: number = 0; // Timestamp of last cue start (anti-spam)
-  private static readonly MOVEMENT_CUE_MIN_INTERVAL_MS = 150; // Minimum ms between cues (low to allow polyphonic overlap on quick shakes)
+  private static readonly MOVEMENT_CUE_MIN_INTERVAL_MS = 100; // Minimum ms between cues — must be shorter than detector debounce (100ms) so audio never gates a legitimate trigger
 
   // Shimmer limiter
   private shimmerLimiter: DynamicsCompressorNode | null = null;
