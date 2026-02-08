@@ -50,9 +50,9 @@ export const DEBUG_MOVEMENT = false;
  */
 const MOVEMENT_CONFIG = {
   // Accelerometer-based detection (EMA baseline deviation)
-  axisDeltaThreshold: 0.029,    // Sum of per-axis deviation from baseline to trigger (raised ~15% from 0.025 to reduce false positives)
-  debounceMs: 175,              // Minimum ms between processing movement (raised ~15% from 150)
-  cooldownMs: 2250,             // Minimum ms between cue playback (raised ~12% from 2000)
+  axisDeltaThreshold: 0.035,    // Sum of per-axis deviation from baseline to trigger (raised ~20% from 0.029; filters micro-jitter while catching intentional nods)
+  debounceMs: 200,              // Minimum ms between processing movement events (prevents micro-jitter spam)
+  cooldownMs: 1500,             // Minimum ms between cue playback (lowered from 2250 — let threshold filter, not cooldown)
   warmupSamples: 3,             // Ignore first N samples to let baseline init
   baselineAlpha: 0.05,          // EMA smoothing factor (lower = slower baseline, more sensitive)
   diagnosticIntervalMs: 3000,   // Log diagnostic info every N ms (debug only)

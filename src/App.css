@@ -470,20 +470,19 @@ h3 {
 
 /* ============ Setup Sections ============ */
 
+/* Grid properties set inline in SessionSetup.tsx for precise control.
+   CSS provides fallback + mobile override only. */
 .setup-content {
   flex: 1;
   overflow-y: auto;
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: var(--space-card-gap);
-  align-items: start;
 }
 
+/* Legacy classes — kept for safety, no longer rendered */
 .setup-column-left,
 .setup-column-right {
   display: flex;
   flex-direction: column;
-  gap: var(--space-card-gap);
+  gap: 16px;
 }
 
 @media (max-width: 768px) {
@@ -1691,7 +1690,7 @@ h3 {
   }
 
   .summary-timeline-chart {
-    height: 140px !important;
+    height: 170px !important;
     padding: 10px !important;
   }
 
@@ -1700,7 +1699,7 @@ h3 {
   }
 
   .summary-body-rhythm-card {
-    padding: 12px !important;
+    padding: 10px !important;
   }
 
   .summary-footer {

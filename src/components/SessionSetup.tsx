@@ -99,7 +99,7 @@ export function SessionSetup({
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: -20 }}
       style={{
-        padding: '0 24px 100px',
+        padding: '0 24px 80px',
         maxWidth: '960px',
         margin: '0 auto',
       }}
@@ -111,7 +111,7 @@ export function SessionSetup({
           display: 'flex',
           alignItems: 'flex-start',
           gap: '12px',
-          padding: '24px 0 28px',
+          padding: '20px 0 16px',
         }}
       >
         <Link 
@@ -168,13 +168,14 @@ export function SessionSetup({
       {/* Two-Column Grid — flat layout so paired cards align in the same row.
          Row 1: Device Connection | Detection Settings
          Row 2: Electrode Contact | Guidance Audio  (same row = aligned)
-         Row 3: (debug overlay)   | User Profile    (conditional) */}
+         Row 3: (debug overlay)   | User Profile    (conditional)
+         Uniform 16px gap keeps all rows equidistant. */}
       <div 
         className="setup-content"
         style={{
           display: 'grid',
           gridTemplateColumns: 'repeat(2, 1fr)',
-          gap: '20px',
+          gap: '16px',
           alignItems: 'start',
         }}
       >
@@ -273,88 +274,88 @@ export function SessionSetup({
           </div>
         </section>
 
-        {/* Row 2, Col 1: Electrode Contact (or debug overlay when connected, placeholder when not) */}
+        {/* Row 2, Col 1: Electrode Contact (or empty placeholder when not connected) */}
         {museConnected ? (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-            {/* Debug Overlay (when enabled) */}
-            {DEBUG_ELECTRODES_OVERLAY && (
-              <section 
-                className="setup-section debug-overlay"
+          <section 
+            className="setup-section"
+            style={{
+              background: 'linear-gradient(165deg, hsl(270 7% 13% / 0.75), hsl(270 10% 9% / 0.85))',
+              border: '1px solid hsl(270 15% 22% / 0.35)',
+              borderRadius: '12px',
+              padding: '20px',
+              boxShadow: '0 4px 20px hsl(270 20% 2% / 0.5)',
+            }}
+          >
+            <ElectrodeStatus status={electrodeStatus} />
+            {batteryLevel >= 0 && (
+              <div 
+                className={`battery-display ${batteryLevel <= 20 ? 'low' : ''}`}
                 style={{
-                  background: 'hsl(270 10% 12% / 0.9)',
-                  border: '2px solid var(--accent-primary)',
-                  borderRadius: '12px',
-                  padding: '16px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  marginTop: '16px',
+                  padding: '8px 12px',
+                  background: 'hsl(270 10% 16% / 0.6)',
+                  borderRadius: '8px',
                 }}
               >
-                <h3 style={{ color: 'var(--accent-primary)', marginBottom: 12, fontSize: '14px' }}>🔍 Electrode Debug</h3>
-                <div style={{ fontFamily: 'monospace', fontSize: '11px', lineHeight: 1.6, color: 'var(--text-primary)' }}>
-                  <div>connected: {String(museConnected)}</div>
-                  <div>raw horseshoe: [{museHandler.getElectrodeQuality().join(', ')}]</div>
-                  <div>electrodeStatus: {JSON.stringify(electrodeStatus)}</div>
-                  <div>connectionQuality: {connectionQuality.toFixed(2)}</div>
-                  <div>signalLabel: {(() => {
-                    const goodCount = [electrodeStatus.tp9, electrodeStatus.af7, electrodeStatus.af8, electrodeStatus.tp10].filter(q => q === 'good').length;
-                    return goodCount >= 3 ? 'Strong' : goodCount >= 1 ? 'Partial' : 'Poor';
-                  })()}</div>
-                </div>
-              </section>
-            )}
-
-            {/* Electrode Status Card — same styling as Guidance Audio */}
-            <section 
-              className="setup-section"
-              style={{
-                background: 'linear-gradient(165deg, hsl(270 7% 13% / 0.75), hsl(270 10% 9% / 0.85))',
-                border: '1px solid hsl(270 15% 22% / 0.35)',
-                borderRadius: '12px',
-                padding: '20px',
-                boxShadow: '0 4px 20px hsl(270 20% 2% / 0.5)',
-              }}
-            >
-              <ElectrodeStatus status={electrodeStatus} />
-              {batteryLevel >= 0 && (
-                <div 
-                  className={`battery-display ${batteryLevel <= 20 ? 'low' : ''}`}
+                <svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18" style={{ color: batteryLevel <= 20 ? '#c73c3c' : '#D9C478' }}>
+                  {batteryLevel > 75 ? (
+                    <path d="M15.67 4H14V2h-4v2H8.33C7.6 4 7 4.6 7 5.33v15.33C7 21.4 7.6 22 8.33 22h7.33c.74 0 1.34-.6 1.34-1.33V5.33C17 4.6 16.4 4 15.67 4z" />
+                  ) : batteryLevel > 50 ? (
+                    <path d="M15.67 4H14V2h-4v2H8.33C7.6 4 7 4.6 7 5.33v15.33C7 21.4 7.6 22 8.33 22h7.33c.74 0 1.34-.6 1.34-1.33V5.33C17 4.6 16.4 4 15.67 4zM13 18H11V9h2v9z" />
+                  ) : batteryLevel > 25 ? (
+                    <path d="M15.67 4H14V2h-4v2H8.33C7.6 4 7 4.6 7 5.33v15.33C7 21.4 7.6 22 8.33 22h7.33c.74 0 1.34-.6 1.34-1.33V5.33C17 4.6 16.4 4 15.67 4zM13 18H11V13h2v5z" />
+                  ) : (
+                    <path d="M15.67 4H14V2h-4v2H8.33C7.6 4 7 4.6 7 5.33v15.33C7 21.4 7.6 22 8.33 22h7.33c.74 0 1.34-.6 1.34-1.33V5.33C17 4.6 16.4 4 15.67 4zM13 18H11V16h2v2z" />
+                  )}
+                </svg>
+                <span 
+                  className="battery-text"
                   style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '8px',
-                    marginTop: '16px',
-                    padding: '8px 12px',
-                    background: 'hsl(270 10% 16% / 0.6)',
-                    borderRadius: '8px',
+                    fontFamily: 'var(--font-sans)',
+                    fontSize: '13px',
+                    fontWeight: 500,
+                    color: batteryLevel <= 20 ? '#c73c3c' : 'var(--text-muted)',
                   }}
                 >
-                  <svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18" style={{ color: batteryLevel <= 20 ? '#c73c3c' : '#D9C478' }}>
-                    {batteryLevel > 75 ? (
-                      <path d="M15.67 4H14V2h-4v2H8.33C7.6 4 7 4.6 7 5.33v15.33C7 21.4 7.6 22 8.33 22h7.33c.74 0 1.34-.6 1.34-1.33V5.33C17 4.6 16.4 4 15.67 4z" />
-                    ) : batteryLevel > 50 ? (
-                      <path d="M15.67 4H14V2h-4v2H8.33C7.6 4 7 4.6 7 5.33v15.33C7 21.4 7.6 22 8.33 22h7.33c.74 0 1.34-.6 1.34-1.33V5.33C17 4.6 16.4 4 15.67 4zM13 18H11V9h2v9z" />
-                    ) : batteryLevel > 25 ? (
-                      <path d="M15.67 4H14V2h-4v2H8.33C7.6 4 7 4.6 7 5.33v15.33C7 21.4 7.6 22 8.33 22h7.33c.74 0 1.34-.6 1.34-1.33V5.33C17 4.6 16.4 4 15.67 4zM13 18H11V13h2v5z" />
-                    ) : (
-                      <path d="M15.67 4H14V2h-4v2H8.33C7.6 4 7 4.6 7 5.33v15.33C7 21.4 7.6 22 8.33 22h7.33c.74 0 1.34-.6 1.34-1.33V5.33C17 4.6 16.4 4 15.67 4zM13 18H11V16h2v2z" />
-                    )}
-                  </svg>
-                  <span 
-                    className="battery-text"
-                    style={{
-                      fontFamily: 'var(--font-sans)',
-                      fontSize: '13px',
-                      fontWeight: 500,
-                      color: batteryLevel <= 20 ? '#c73c3c' : 'var(--text-muted)',
-                    }}
-                  >
-                    {batteryLevel}%
-                  </span>
-                </div>
-              )}
-            </section>
-          </div>
+                  {batteryLevel}%
+                </span>
+              </div>
+            )}
+          </section>
         ) : (
           /* Empty placeholder to keep Guidance Audio in col 2 when Muse is not connected */
           <div />
+        )}
+
+        {/* Debug Electrode Overlay — only when enabled and connected, spans col 1 below Electrode Contact */}
+        {museConnected && DEBUG_ELECTRODES_OVERLAY && (
+          <>
+            <section 
+              className="setup-section debug-overlay"
+              style={{
+                background: 'hsl(270 10% 12% / 0.9)',
+                border: '2px solid var(--accent-primary)',
+                borderRadius: '12px',
+                padding: '16px',
+              }}
+            >
+              <h3 style={{ color: 'var(--accent-primary)', marginBottom: 12, fontSize: '14px' }}>Electrode Debug</h3>
+              <div style={{ fontFamily: 'monospace', fontSize: '11px', lineHeight: 1.6, color: 'var(--text-primary)' }}>
+                <div>connected: {String(museConnected)}</div>
+                <div>raw horseshoe: [{museHandler.getElectrodeQuality().join(', ')}]</div>
+                <div>electrodeStatus: {JSON.stringify(electrodeStatus)}</div>
+                <div>connectionQuality: {connectionQuality.toFixed(2)}</div>
+                <div>signalLabel: {(() => {
+                  const goodCount = [electrodeStatus.tp9, electrodeStatus.af7, electrodeStatus.af8, electrodeStatus.tp10].filter(q => q === 'good').length;
+                  return goodCount >= 3 ? 'Strong' : goodCount >= 1 ? 'Partial' : 'Poor';
+                })()}</div>
+              </div>
+            </section>
+            <div /> {/* Keep grid alignment for col 2 */}
+          </>
         )}
 
         {/* Row 2, Col 2: Guidance Audio — aligned with Electrode Contact */}
@@ -576,7 +577,7 @@ export function SessionSetup({
           flexDirection: 'column',
           alignItems: 'center',
           gap: '12px',
-          paddingTop: '32px',
+          paddingTop: '20px',
         }}
       >
         <motion.button

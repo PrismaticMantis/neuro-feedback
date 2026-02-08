@@ -739,14 +739,14 @@ export function SessionSummary({
                 }}>%</span>
               </motion.span>
             </div>
-            {/* "Coherence" label — positioned below center, outside the number's centering context */}
+            {/* "Coherence" label — sits inside the ring below the number, high enough to avoid ring edge */}
             <span 
               className="coherence-label"
               style={{
                 position: 'absolute',
                 left: 0,
                 right: 0,
-                bottom: '15%',
+                bottom: '19%',
                 textAlign: 'center',
                 fontFamily: 'var(--font-sans)',
                 fontSize: '12px',
@@ -988,7 +988,7 @@ export function SessionSummary({
               padding: '16px',
               backdropFilter: 'blur(20px)',
               boxShadow: '0 4px 20px hsl(270 20% 2% / 0.6)',
-              height: '220px',
+              height: '250px',
             }}
           >
             <canvas 
@@ -1002,11 +1002,11 @@ export function SessionSummary({
           </div>
         </div>
 
-        {/* Body Rhythm Section — Metric Card spec */}
+        {/* Body Rhythm Section — compact to reclaim vertical space for timeline */}
         <div 
           className="summary-body-rhythm-section"
           style={{
-            marginBottom: '16px',
+            marginBottom: '10px',
           }}
         >
           <h3 
@@ -1016,7 +1016,7 @@ export function SessionSummary({
               fontSize: '20px',
               fontWeight: 500,
               color: 'var(--text-primary)',
-              margin: '0 0 10px',
+              margin: '0 0 8px',
               lineHeight: 1.3,
             }}
           >Body Rhythm</h3>
@@ -1025,26 +1025,26 @@ export function SessionSummary({
             style={{
               display: 'grid',
               gridTemplateColumns: 'repeat(3, 1fr)',
-              gap: '12px',
+              gap: '10px',
             }}
           >
-            {/* Heart Rate Card — Metric Card spec */}
+            {/* Heart Rate Card */}
             <div 
               className="summary-body-rhythm-card"
               style={{
                 display: 'flex',
                 alignItems: 'center',
-                gap: '12px',
+                gap: '10px',
                 background: 'hsl(270 10% 8% / 0.8)',
                 border: '1px solid hsl(270 10% 22% / 0.4)',
                 borderRadius: '12px',
-                padding: '16px',
+                padding: '12px',
               }}
             >
               <div
                 style={{
-                  width: '40px',
-                  height: '40px',
+                  width: '34px',
+                  height: '34px',
                   borderRadius: '50%',
                   background: 'hsl(350 70% 45% / 0.2)',
                   display: 'flex',
@@ -1053,50 +1053,50 @@ export function SessionSummary({
                   flexShrink: 0,
                 }}
               >
-                <svg viewBox="0 0 24 24" fill="none" stroke="hsl(350 55% 55%)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="20" height="20">
+                <svg viewBox="0 0 24 24" fill="none" stroke="hsl(350 55% 55%)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="17" height="17">
                   <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
                 </svg>
               </div>
               <div style={{ display: 'flex', flexDirection: 'column' }}>
                 <span style={{
                   fontFamily: 'var(--font-sans)',
-                  fontSize: '14px',
+                  fontSize: '13px',
                   fontWeight: 400,
                   color: 'var(--text-muted)',
-                  lineHeight: 1.5,
+                  lineHeight: 1.4,
                 }}>Heart Rate</span>
                 <span style={{
                   fontFamily: 'var(--font-sans)',
-                  fontSize: '20px',
+                  fontSize: '18px',
                   fontWeight: 500,
                   color: 'var(--text-primary)',
-                  lineHeight: 1.3,
+                  lineHeight: 1.25,
                 }}>
                   {session.avgHeartRate != null ? session.avgHeartRate : '—'}
                   {session.avgHeartRate != null && (
-                    <span style={{ fontSize: '12px', fontWeight: 400, marginLeft: '4px', opacity: 0.7 }}>bpm</span>
+                    <span style={{ fontSize: '11px', fontWeight: 400, marginLeft: '3px', opacity: 0.7 }}>bpm</span>
                   )}
                 </span>
               </div>
             </div>
             
-            {/* HRV Card — Metric Card spec */}
+            {/* HRV Card */}
             <div 
               className="summary-body-rhythm-card"
               style={{
                 display: 'flex',
                 alignItems: 'center',
-                gap: '12px',
+                gap: '10px',
                 background: 'hsl(270 10% 8% / 0.8)',
                 border: '1px solid hsl(270 10% 22% / 0.4)',
                 borderRadius: '12px',
-                padding: '16px',
+                padding: '12px',
               }}
             >
               <div
                 style={{
-                  width: '40px',
-                  height: '40px',
+                  width: '34px',
+                  height: '34px',
                   borderRadius: '50%',
                   background: 'hsl(45 30% 50% / 0.12)',
                   display: 'flex',
@@ -1105,50 +1105,50 @@ export function SessionSummary({
                   flexShrink: 0,
                 }}
               >
-                <svg viewBox="0 0 24 24" fill="none" stroke="hsl(45 35% 72%)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="20" height="20">
+                <svg viewBox="0 0 24 24" fill="none" stroke="hsl(45 35% 72%)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="17" height="17">
                   <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
                 </svg>
               </div>
               <div style={{ display: 'flex', flexDirection: 'column' }}>
                 <span style={{
                   fontFamily: 'var(--font-sans)',
-                  fontSize: '14px',
+                  fontSize: '13px',
                   fontWeight: 400,
                   color: 'var(--text-muted)',
-                  lineHeight: 1.5,
+                  lineHeight: 1.4,
                 }}>HRV</span>
                 <span style={{
                   fontFamily: 'var(--font-sans)',
-                  fontSize: '20px',
+                  fontSize: '18px',
                   fontWeight: 500,
                   color: 'var(--text-primary)',
-                  lineHeight: 1.3,
+                  lineHeight: 1.25,
                 }}>
                   {session.avgHRV != null ? session.avgHRV : '—'}
                   {session.avgHRV != null && (
-                    <span style={{ fontSize: '12px', fontWeight: 400, marginLeft: '4px', opacity: 0.7 }}>ms</span>
+                    <span style={{ fontSize: '11px', fontWeight: 400, marginLeft: '3px', opacity: 0.7 }}>ms</span>
                   )}
                 </span>
               </div>
             </div>
             
-            {/* Recovery Card — Metric Card spec */}
+            {/* Recovery Card */}
             <div 
               className="summary-body-rhythm-card"
               style={{
                 display: 'flex',
                 alignItems: 'center',
-                gap: '12px',
+                gap: '10px',
                 background: 'hsl(270 10% 8% / 0.8)',
                 border: '1px solid hsl(270 10% 22% / 0.4)',
                 borderRadius: '12px',
-                padding: '16px',
+                padding: '12px',
               }}
             >
               <div
                 style={{
-                  width: '40px',
-                  height: '40px',
+                  width: '34px',
+                  height: '34px',
                   borderRadius: '50%',
                   background: 'hsl(270 40% 55% / 0.2)',
                   display: 'flex',
@@ -1157,7 +1157,7 @@ export function SessionSummary({
                   flexShrink: 0,
                 }}
               >
-                <svg viewBox="0 0 24 24" fill="none" stroke="hsl(270 35% 60%)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="20" height="20">
+                <svg viewBox="0 0 24 24" fill="none" stroke="hsl(270 35% 60%)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="17" height="17">
                   <polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/>
                   <polyline points="17 6 23 6 23 12"/>
                 </svg>
@@ -1165,21 +1165,21 @@ export function SessionSummary({
               <div style={{ display: 'flex', flexDirection: 'column' }}>
                 <span style={{
                   fontFamily: 'var(--font-sans)',
-                  fontSize: '14px',
+                  fontSize: '13px',
                   fontWeight: 400,
                   color: 'var(--text-muted)',
-                  lineHeight: 1.5,
+                  lineHeight: 1.4,
                 }}>Recovery</span>
                 <span style={{
                   fontFamily: 'var(--font-sans)',
-                  fontSize: '20px',
+                  fontSize: '18px',
                   fontWeight: 500,
                   color: 'var(--success)',
-                  lineHeight: 1.3,
+                  lineHeight: 1.25,
                 }}>
                   {session.recoveryPoints != null ? '+' + session.recoveryPoints : '—'}
                   {session.recoveryPoints != null && (
-                    <span style={{ fontSize: '12px', fontWeight: 400, marginLeft: '4px', opacity: 0.7, color: 'var(--text-primary)' }}>pts</span>
+                    <span style={{ fontSize: '11px', fontWeight: 400, marginLeft: '3px', opacity: 0.7, color: 'var(--text-primary)' }}>pts</span>
                   )}
                 </span>
               </div>
