@@ -550,8 +550,9 @@ export class AudioEngine {
   }
 
   /**
-   * Load MP3 audio files from /public/audio
-   * iPhone-safe: loads sequentially to avoid memory spikes
+   * Load all audio buffer files needed for session audio.
+   * All 7 files are fetched + decoded in parallel for fast startup (~1s vs ~5s sequential).
+   * Each file is independent — a single failure won't block the others.
    */
   private async loadAudioFiles(): Promise<void> {
     if (!this.ctx) throw new Error('AudioContext not initialized');
@@ -559,118 +560,70 @@ export class AudioEngine {
     // Single-flight guard: if already loading, wait for existing load
     if (this.isLoadingAudio) {
       console.warn('[AudioEngine] ⚠️ Audio loading already in progress, waiting...');
-      // Wait for existing load to complete (polling approach)
       while (this.isLoadingAudio) {
         await new Promise(resolve => setTimeout(resolve, 100));
       }
       return;
     }
 
-    // Check if buffers are already loaded
+    // Check if all buffers are already loaded
     if (this.baselineBuffer && this.coherenceBuffer && this.shimmerBuffer && this.sustainedCoherenceBuffer) {
       console.warn('[AudioEngine] ⚠️ Audio buffers already loaded, skipping loadAudioFiles');
       return;
     }
 
     this.isLoadingAudio = true;
-    console.warn('[AudioEngine] ===== LOAD AUDIO FILES START =====');
+    const t0 = performance.now();
+    console.warn('[AudioEngine] ===== LOAD AUDIO FILES START (parallel) =====');
+
+    /** Helper: fetch + decode a single audio file. Returns null on any failure. */
+    const loadOne = async (path: string, label: string): Promise<AudioBuffer | null> => {
+      try {
+        const resp = await fetch(path);
+        if (!resp.ok) {
+          console.warn(`[AudioEngine] ⚠️ ${label} fetch failed: ${resp.status}`);
+          return null;
+        }
+        const buf = await this.ctx!.decodeAudioData(await resp.arrayBuffer());
+        console.warn(`[AudioEngine] ✅ ${label} loaded (${buf.duration.toFixed(1)}s)`);
+        return buf;
+      } catch (err) {
+        console.warn(`[AudioEngine] ⚠️ ${label} error:`, err);
+        return null;
+      }
+    };
+
+    /** Shimmer has mp3 → wav fallback */
+    const loadShimmer = async (): Promise<AudioBuffer | null> => {
+      const mp3 = await loadOne('/audio/shimmer.mp3', 'shimmer.mp3');
+      if (mp3) return mp3;
+      return loadOne('/audio/shimmer.wav', 'shimmer.wav');
+    };
 
     try {
-      // Load baseline.mp3 (sequential, not parallel)
-      if (!this.baselineBuffer) {
-        console.warn('[AudioEngine] [1/4] Fetching baseline.mp3...');
-        const baselineResponse = await fetch('/audio/baseline.mp3');
-        if (!baselineResponse.ok) {
-          throw new Error(`Failed to fetch baseline.mp3: ${baselineResponse.status} ${baselineResponse.statusText}`);
-        }
-        console.warn('[AudioEngine] [1/4] ✅ baseline.mp3 fetched, decoding...');
-        const baselineArrayBuffer = await baselineResponse.arrayBuffer();
-        this.baselineBuffer = await this.ctx.decodeAudioData(baselineArrayBuffer);
-        console.warn('[AudioEngine] [1/4] ✅ baseline.mp3 decoded, duration:', this.baselineBuffer.duration.toFixed(2), 's');
-      } else {
-        console.warn('[AudioEngine] [1/4] ⚠️ baseline buffer already loaded, skipping');
-      }
+      // Fire ALL fetches in parallel — each is independent, no memory issues on modern devices
+      const [baseline, coherence, shimmer, sustained, cue1, cue2, cue3] =
+        await Promise.all([
+          this.baselineBuffer             ? Promise.resolve(this.baselineBuffer)             : loadOne('/audio/baseline.mp3', 'baseline'),
+          this.coherenceBuffer            ? Promise.resolve(this.coherenceBuffer)            : loadOne('/audio/coherence-v3.mp3', 'coherence'),
+          this.shimmerBuffer              ? Promise.resolve(this.shimmerBuffer)              : loadShimmer(),
+          this.sustainedCoherenceBuffer   ? Promise.resolve(this.sustainedCoherenceBuffer)   : loadOne('/audio/sustained-coherence.mp3', 'sustained-coherence'),
+          this.movementCueBuffers[0]      ? Promise.resolve(this.movementCueBuffers[0])      : loadOne('/audio/movement-cue-1.mp3', 'movement-cue-1'),
+          this.movementCueBuffers[1]      ? Promise.resolve(this.movementCueBuffers[1])      : loadOne('/audio/movement-cue-2.mp3', 'movement-cue-2'),
+          this.movementCueBuffers[2]      ? Promise.resolve(this.movementCueBuffers[2])      : loadOne('/audio/movement-cue-3.mp3', 'movement-cue-3'),
+        ]);
 
-      // Load coherence-v3.mp3
-      if (!this.coherenceBuffer) {
-        console.warn('[AudioEngine] [2/4] Fetching coherence-v3.mp3...');
-        const coherenceResponse = await fetch('/audio/coherence-v3.mp3');
-        if (!coherenceResponse.ok) {
-          throw new Error(`Failed to fetch coherence-v3.mp3: ${coherenceResponse.status} ${coherenceResponse.statusText}`);
-        }
-        console.warn('[AudioEngine] [2/4] ✅ coherence-v3.mp3 fetched, decoding...');
-        const coherenceArrayBuffer = await coherenceResponse.arrayBuffer();
-        this.coherenceBuffer = await this.ctx.decodeAudioData(coherenceArrayBuffer);
-        console.warn('[AudioEngine] [2/4] ✅ coherence-v3.mp3 decoded, duration:', this.coherenceBuffer.duration.toFixed(2), 's');
-      } else {
-        console.warn('[AudioEngine] [2/4] ⚠️ coherence buffer already loaded, skipping');
-      }
+      // Assign results (null = that file failed, non-critical)
+      if (baseline)  this.baselineBuffer = baseline;
+      if (coherence) this.coherenceBuffer = coherence;
+      if (shimmer)   this.shimmerBuffer = shimmer;
+      if (sustained) this.sustainedCoherenceBuffer = sustained;
+      if (cue1) this.movementCueBuffers[0] = cue1;
+      if (cue2) this.movementCueBuffers[1] = cue2;
+      if (cue3) this.movementCueBuffers[2] = cue3;
 
-      // Load shimmer (try .mp3 first, fallback to .wav)
-      if (!this.shimmerBuffer) {
-        console.warn('[AudioEngine] [3/4] Fetching shimmer audio...');
-        let shimmerResponse: Response;
-        try {
-          shimmerResponse = await fetch('/audio/shimmer.mp3');
-          if (!shimmerResponse.ok) throw new Error('shimmer.mp3 not found');
-          console.warn('[AudioEngine] [3/4] ✅ shimmer.mp3 found');
-        } catch {
-          console.warn('[AudioEngine] [3/4] ⚠️ shimmer.mp3 not found, trying shimmer.wav...');
-          shimmerResponse = await fetch('/audio/shimmer.wav');
-          if (!shimmerResponse.ok) {
-            throw new Error(`Failed to fetch shimmer audio: ${shimmerResponse.status} ${shimmerResponse.statusText}`);
-          }
-          console.warn('[AudioEngine] [3/4] ✅ shimmer.wav found');
-        }
-        console.warn('[AudioEngine] [3/4] Decoding shimmer audio...');
-        const shimmerArrayBuffer = await shimmerResponse.arrayBuffer();
-        this.shimmerBuffer = await this.ctx.decodeAudioData(shimmerArrayBuffer);
-        console.warn('[AudioEngine] [3/4] ✅ shimmer decoded, duration:', this.shimmerBuffer.duration.toFixed(2), 's');
-      } else {
-        console.warn('[AudioEngine] [3/4] ⚠️ shimmer buffer already loaded, skipping');
-      }
-
-      // Load sustained-coherence.mp3
-      if (!this.sustainedCoherenceBuffer) {
-        console.warn('[AudioEngine] [4/7] Fetching sustained-coherence.mp3...');
-        const sustainedResponse = await fetch('/audio/sustained-coherence.mp3');
-        if (!sustainedResponse.ok) {
-          throw new Error(`Failed to fetch sustained-coherence.mp3: ${sustainedResponse.status} ${sustainedResponse.statusText}`);
-        }
-        console.warn('[AudioEngine] [4/7] ✅ sustained-coherence.mp3 fetched, decoding...');
-        const sustainedArrayBuffer = await sustainedResponse.arrayBuffer();
-        this.sustainedCoherenceBuffer = await this.ctx.decodeAudioData(sustainedArrayBuffer);
-        console.warn('[AudioEngine] [4/7] ✅ sustained-coherence.mp3 decoded, duration:', this.sustainedCoherenceBuffer.duration.toFixed(2), 's');
-      } else {
-        console.warn('[AudioEngine] [4/7] ⚠️ sustained-coherence buffer already loaded, skipping');
-      }
-
-      // Load movement cue audio files (3 alternating cues)
-      // Files: movement-cue-1.mp3, movement-cue-2.mp3, movement-cue-3.mp3
-      for (let i = 0; i < 3; i++) {
-        if (!this.movementCueBuffers[i]) {
-          const cueNum = i + 1;
-          const filename = `movement-cue-${cueNum}.mp3`;
-          console.warn(`[AudioEngine] [${5 + i}/7] Fetching ${filename}...`);
-          try {
-            const cueResponse = await fetch(`/audio/${filename}`);
-            if (!cueResponse.ok) {
-              console.warn(`[AudioEngine] [${5 + i}/7] ⚠️ ${filename} not found (${cueResponse.status}), skipping`);
-              continue;
-            }
-            console.warn(`[AudioEngine] [${5 + i}/7] ✅ ${filename} fetched, decoding...`);
-            const cueArrayBuffer = await cueResponse.arrayBuffer();
-            this.movementCueBuffers[i] = await this.ctx.decodeAudioData(cueArrayBuffer);
-            console.warn(`[AudioEngine] [${5 + i}/7] ✅ ${filename} decoded, duration:`, this.movementCueBuffers[i]!.duration.toFixed(2), 's');
-          } catch (error) {
-            console.warn(`[AudioEngine] [${5 + i}/7] ⚠️ Failed to load ${filename}:`, error);
-          }
-        } else {
-          console.warn(`[AudioEngine] [${5 + i}/7] ⚠️ movement-cue-${i + 1} buffer already loaded, skipping`);
-        }
-      }
-
-      console.warn('[AudioEngine] ✅ ===== LOAD AUDIO FILES COMPLETE =====', {
+      const elapsed = (performance.now() - t0).toFixed(0);
+      console.warn(`[AudioEngine] ✅ ===== LOAD AUDIO FILES COMPLETE (${elapsed}ms) =====`, {
         baseline: !!this.baselineBuffer,
         coherence: !!this.coherenceBuffer,
         shimmer: !!this.shimmerBuffer,
@@ -678,14 +631,7 @@ export class AudioEngine {
         movementCues: this.movementCueBuffers.map(b => !!b),
       });
     } catch (error) {
-      console.error('[AudioEngine] ❌ ===== LOAD AUDIO FILES FAILED =====');
-      console.error('[AudioEngine] Error:', error);
-      if (error instanceof Error) {
-        console.error('[AudioEngine] Error message:', error.message);
-        console.error('[AudioEngine] Error stack:', error.stack);
-      }
-      // Don't throw - allow graceful degradation
-      // Set a flag so we know some buffers failed
+      console.error('[AudioEngine] ❌ ===== LOAD AUDIO FILES FAILED =====', error);
       console.warn('[AudioEngine] ⚠️ Continuing with partial audio load (some buffers may be missing)');
     } finally {
       this.isLoadingAudio = false;
