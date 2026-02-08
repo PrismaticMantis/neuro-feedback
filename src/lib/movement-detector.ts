@@ -29,38 +29,53 @@ import { museHandler } from './muse-handler';
 export const DEBUG_MOVEMENT = true;
 
 /**
- * Movement Detection Configuration
+ * Movement Detection Configuration  (v4 — one-shot trigger with refractory + re-arm)
  * 
  * EMA BASELINE APPROACH:
  * - baselineAlpha: How fast the baseline tracks the current position.
  *   Lower = slower tracking = more sensitive to movement.
- *   At 0.05 with 20Hz polling, time constant ≈ 1 second.
- *   During a 200ms nod, baseline moves only ~10% toward peak,
- *   so ~90% of the displacement is visible as delta.
+ *   At 0.04 with 20Hz polling, time constant ≈ 1.25s.
  * 
- * - axisDeltaThreshold: Sum of per-axis deviations from baseline.
- *   0.025 catches gentle head nods (3-5°) while ignoring
- *   accelerometer noise at rest (~0.005-0.015 total).
- *   
- *   TUNING (check [Move] diagnostic logs every 3s):
+ * ONE-SHOT TRIGGER MODEL:
+ * A single head movement must produce exactly ONE cue.
+ * After firing:
+ *   1) Refractory period (refractoryMs): hard block — no triggers at all.
+ *   2) Re-arm condition: delta must drop below rearmThreshold for
+ *      rearmSettleMs before the detector can fire again.
+ * This prevents "peak wobble" from machine-gunning while still
+ * allowing distinct separate movements to produce distinct cues.
+ *
+ * TUNING (check [Move] diagnostic logs every 3s):
  *   - At rest, delta should be ~0.002-0.015 (noise floor)
- *   - A gentle nod produces delta ~0.05-0.20
- *   - Increase threshold if too sensitive (false positives)
- *   - Decrease if missing real movements
+ *   - A gentle nod produces delta ~0.05-0.15
+ *   - A deliberate shake produces delta ~0.15-0.40
+ *   - axisDeltaThreshold is set HIGH so only deliberate moves fire
  */
 const MOVEMENT_CONFIG = {
-  // Accelerometer-based detection (EMA baseline deviation)
-  axisDeltaThreshold: 0.055,    // Sum of per-axis deviation from baseline to trigger. Tuned so micro-jitter (0.01-0.03) and posture shifts (0.02-0.04) don't fire, but intentional nods/shakes (0.06+) do.
-  debounceMs: 100,              // Tiny debounce to collapse a single movement spike into one event. Short enough that two distinct shakes 150ms+ apart both fire.
-  armingDelayMs: 5000,          // Ignore all triggers for the first 5 seconds after session start (baseline settling + user getting comfortable).
-  warmupSamples: 5,             // Ignore first N accel samples to let EMA baseline initialise properly
-  baselineAlpha: 0.04,          // EMA smoothing (slightly slower than 0.05 for a more stable baseline → fewer false positives)
-  diagnosticIntervalMs: 3000,   // Log diagnostic info every N ms (debug only)
-  
-  // EEG artifact fallback (conservative)
-  eegArtifactThreshold: 3.0,    // RMS multiplier for artifact detection
-  eegCooldownMs: 10000,         // Longer cooldown for EEG fallback (10 seconds)
-  eegMinChannelsAffected: 3,    // Must affect 3+ channels to trigger
+  // ── Trigger threshold ──
+  axisDeltaThreshold: 0.14,     // Only deliberate head movement fires. Rest noise ~0.01, posture drift ~0.03-0.05, gentle nod ~0.06-0.10, deliberate nod/shake ~0.15+.
+
+  // ── Refractory (hard block after a trigger) ──
+  refractoryMs: 600,            // After firing, block ALL triggers for 600ms. Prevents the same motion peak from multi-firing.
+
+  // ── Re-arm (require motion to settle before allowing next trigger) ──
+  rearmThreshold: 0.07,         // Delta must drop below this (~50% of trigger threshold) …
+  rearmSettleMs: 120,           // … and stay below for this long before the detector re-arms.
+
+  // ── Session start arming delay ──
+  armingDelayMs: 5000,          // Ignore all triggers for first 5s (baseline settling + user getting comfortable).
+
+  // ── Baseline ──
+  warmupSamples: 5,             // Ignore first N accel samples to let EMA baseline init
+  baselineAlpha: 0.04,          // EMA smoothing factor (lower = slower baseline = more sensitive to movement)
+
+  // ── Debug ──
+  diagnosticIntervalMs: 3000,   // Log status every N ms
+
+  // ── EEG artifact fallback (conservative) ──
+  eegArtifactThreshold: 3.0,
+  eegCooldownMs: 10000,
+  eegMinChannelsAffected: 3,
 };
 
 /**
@@ -84,8 +99,13 @@ export class MovementDetector {
   private baseZ = 0;
   private baseInitialized = false;
   
-  // Debounce tracking (no cooldown — every distinct movement should fire)
-  private lastMovementEvent = 0;
+  // One-shot trigger state machine:
+  //   'ready'      → delta > threshold → FIRE, transition to 'refractory'
+  //   'refractory' → hard block for refractoryMs, then transition to 'rearming'
+  //   'rearming'   → wait for delta < rearmThreshold for rearmSettleMs, then → 'ready'
+  private triggerState: 'ready' | 'refractory' | 'rearming' = 'ready';
+  private lastTriggerTs = 0;          // When the last cue fired
+  private rearmBelowSince = 0;        // When delta first dropped below rearmThreshold (0 = not yet)
   
   // Arming delay: no cues for the first N ms after session start
   private sessionStartTs = 0;
@@ -201,7 +221,9 @@ export class MovementDetector {
     this.baseY = 0;
     this.baseZ = 0;
     this.baseInitialized = false;
-    this.lastMovementEvent = 0;
+    this.triggerState = 'ready';
+    this.lastTriggerTs = 0;
+    this.rearmBelowSince = 0;
     this.sessionStartTs = Date.now();
     this.lastDiagnosticLog = 0;
     this.zeroAccelCount = 0;
@@ -255,17 +277,13 @@ export class MovementDetector {
         ' conn=' + isConnected +
         ' accelSub=' + isAccelSub +
         ' hasData=' + hasNonZero +
-        ' museAccSamples=' + museHandler.accelSampleCount +
         ' allZero=' + allZero +
         ' delta=' + diagDelta.toFixed(4) +
         ' thr=' + MOVEMENT_CONFIG.axisDeltaThreshold +
+        ' state=' + this.triggerState +
         ' arm=' + armingLeft + 'ms' +
-        ' mySamples=' + this.stats.accelSamples +
         ' triggers=' + this.stats.cuesTriggered +
         ' callbacks=' + this.stats.callbackCalls +
-        ' gateFails=' + this.stats.gateFailures +
-        ' baseInit=' + this.baseInitialized +
-        ' hasCb=' + !!this.onMovementCallback +
         ' acc=[' + accX.toFixed(3) + ',' + accY.toFixed(3) + ',' + accZ.toFixed(3) + ']' +
         ' base=[' + this.baseX.toFixed(3) + ',' + this.baseY.toFixed(3) + ',' + this.baseZ.toFixed(3) + ']'
       );
@@ -299,6 +317,11 @@ export class MovementDetector {
 
   /**
    * Check accelerometer data for movement using EMA baseline deviation.
+   * 
+   * ONE-SHOT STATE MACHINE:
+   *   'ready'      → delta > threshold → FIRE → 'refractory'
+   *   'refractory' → wait refractoryMs → 'rearming'
+   *   'rearming'   → delta < rearmThreshold for rearmSettleMs → 'ready'
    */
   private checkAccelerometer(now: number): void {
     const accX = museHandler.accX;
@@ -308,16 +331,13 @@ export class MovementDetector {
     // Skip if no data (all zeros = no subscription or no data yet)
     if (accX === 0 && accY === 0 && accZ === 0) {
       this.zeroAccelCount++;
-      // Warn if we've been getting zeros for a while (5 seconds = 100 polls)
       if (this.zeroAccelCount === 100 && DEBUG_MOVEMENT) {
-        console.warn('[Move] ⚠️ Accelerometer values have been 0,0,0 for 5 seconds.' +
-          ' museAccSamples=' + museHandler.accelSampleCount +
+        console.warn('[Move] ⚠️ Accelerometer 0,0,0 for 5s.' +
           ' accelSubscribed=' + museHandler.accelSubscribed);
       }
       return;
     }
     
-    // Reset zero counter once we get non-zero data
     this.zeroAccelCount = 0;
     this.stats.accelSamples++;
     
@@ -328,18 +348,13 @@ export class MovementDetector {
       this.baseZ = accZ;
       this.baseInitialized = true;
       if (DEBUG_MOVEMENT) {
-        const mag = Math.sqrt(accX * accX + accY * accY + accZ * accZ);
-        console.log('[Accel] ✅ Baseline initialized', {
-          x: accX.toFixed(4), y: accY.toFixed(4), z: accZ.toFixed(4),
-          magnitude: mag.toFixed(4),
-        });
+        console.log('[Accel] ✅ Baseline initialized x=' + accX.toFixed(4) + ' y=' + accY.toFixed(4) + ' z=' + accZ.toFixed(4));
       }
       return;
     }
     
-    // Skip warmup period to let baseline stabilize
+    // Warmup: fast-track baseline
     if (this.stats.accelSamples < MOVEMENT_CONFIG.warmupSamples) {
-      // Update baseline during warmup (fast tracking)
       this.baseX += 0.3 * (accX - this.baseX);
       this.baseY += 0.3 * (accY - this.baseY);
       this.baseZ += 0.3 * (accZ - this.baseZ);
@@ -352,45 +367,74 @@ export class MovementDetector {
     const dz = Math.abs(accZ - this.baseZ);
     const axisDelta = dx + dy + dz;
     
-    // Update baseline with EMA (slow tracking — this is the key to sensitivity)
+    // Update baseline with EMA (slow tracking)
     const alpha = MOVEMENT_CONFIG.baselineAlpha;
     this.baseX += alpha * (accX - this.baseX);
     this.baseY += alpha * (accY - this.baseY);
     this.baseZ += alpha * (accZ - this.baseZ);
     
-    // Check debounce — prevents a single movement spike from double-firing
-    if (now - this.lastMovementEvent < MOVEMENT_CONFIG.debounceMs) {
-      return;
+    // ── Arming delay: block all triggers for first N seconds ──
+    const timeSinceStart = now - this.sessionStartTs;
+    if (timeSinceStart < MOVEMENT_CONFIG.armingDelayMs) {
+      return; // silent — diagnostic log already shows arming countdown
     }
     
-    // Check if deviation from baseline exceeds threshold
-    if (axisDelta > MOVEMENT_CONFIG.axisDeltaThreshold) {
-      this.lastMovementEvent = now;
-      this.stats.movementEvents++;
+    // ── One-shot state machine ──
+    switch (this.triggerState) {
       
-      const timeSinceStart = now - this.sessionStartTs;
-      const armed = timeSinceStart >= MOVEMENT_CONFIG.armingDelayMs;
-      
-      if (DEBUG_MOVEMENT) {
-        console.log(
-          '[Move] DETECTED delta=' + axisDelta.toFixed(4) +
-          ' thr=' + MOVEMENT_CONFIG.axisDeltaThreshold +
-          ' t=' + (timeSinceStart / 1000).toFixed(1) + 's' +
-          ' armed=' + armed +
-          ' dx=' + dx.toFixed(4) + ' dy=' + dy.toFixed(4) + ' dz=' + dz.toFixed(4)
-        );
-      }
-      
-      // Arming delay: block triggers in the first N seconds after session start
-      if (!armed) {
-        if (DEBUG_MOVEMENT) {
-          console.log('[Move] BLOCKED (arming delay) — ' + ((MOVEMENT_CONFIG.armingDelayMs - timeSinceStart) / 1000).toFixed(1) + 's remaining');
+      case 'ready': {
+        // Only fire if delta exceeds trigger threshold
+        if (axisDelta > MOVEMENT_CONFIG.axisDeltaThreshold) {
+          this.stats.movementEvents++;
+          
+          if (DEBUG_MOVEMENT) {
+            console.log(
+              '[Move] 🎯 FIRE delta=' + axisDelta.toFixed(4) +
+              ' thr=' + MOVEMENT_CONFIG.axisDeltaThreshold +
+              ' t=' + (timeSinceStart / 1000).toFixed(1) + 's'
+            );
+          }
+          
+          this.triggerState = 'refractory';
+          this.lastTriggerTs = now;
+          this.rearmBelowSince = 0;
+          this.triggerMovementCue(axisDelta, 'accelerometer');
         }
-        return;
+        break;
       }
       
-      // No cooldown — every threshold-exceeding event fires immediately
-      this.triggerMovementCue(axisDelta, 'accelerometer');
+      case 'refractory': {
+        // Hard block — wait for refractory period to pass
+        if (now - this.lastTriggerTs >= MOVEMENT_CONFIG.refractoryMs) {
+          this.triggerState = 'rearming';
+          this.rearmBelowSince = 0;
+          if (DEBUG_MOVEMENT) {
+            console.log('[Move] Refractory done → rearming (delta=' + axisDelta.toFixed(4) + ')');
+          }
+        }
+        break;
+      }
+      
+      case 'rearming': {
+        // Wait for motion to settle before allowing next trigger
+        if (axisDelta < MOVEMENT_CONFIG.rearmThreshold) {
+          // Delta is below re-arm threshold — start or continue settle timer
+          if (this.rearmBelowSince === 0) {
+            this.rearmBelowSince = now;
+          }
+          // Check if settled long enough
+          if (now - this.rearmBelowSince >= MOVEMENT_CONFIG.rearmSettleMs) {
+            this.triggerState = 'ready';
+            if (DEBUG_MOVEMENT) {
+              console.log('[Move] ✅ Re-armed (settled for ' + MOVEMENT_CONFIG.rearmSettleMs + 'ms, delta=' + axisDelta.toFixed(4) + ')');
+            }
+          }
+        } else {
+          // Delta still high — reset settle timer
+          this.rearmBelowSince = 0;
+        }
+        break;
+      }
     }
   }
 

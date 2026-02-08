@@ -336,12 +336,12 @@ h3 {
 /* ============ Connection Status ============ */
 
 /* device-card / card-glass - docs/lovable-spec.md Session Setup */
+/* NOTE: margin-bottom removed — grid gap handles spacing. */
 .connection-status {
   background: var(--bg-card-glass);
   border: var(--border-card-glass);
   border-radius: var(--radius-card-glass);
   padding: var(--padding-card-glass);
-  margin-bottom: var(--space-card-gap);
   backdrop-filter: var(--bg-card-glass-backdrop);
   box-shadow: var(--shadow-card-glass);
 }
@@ -485,19 +485,21 @@ h3 {
   gap: 16px;
 }
 
-@media (max-width: 768px) {
+/* Single-column on phones only. iPad portrait (810px) and above keep 3 columns. */
+@media (max-width: 640px) {
   .setup-content {
     grid-template-columns: 1fr !important;
   }
 }
 
 /* electrode-card / card-glass - docs/lovable-spec.md Session Setup */
+/* NOTE: margin-bottom removed — grid gap on .setup-content handles spacing.
+   Leaving margin here caused double-spacing and layout misalignment. */
 .setup-section {
   background: var(--bg-card-glass);
   border: var(--border-card-glass);
   border-radius: var(--radius-card-glass);
   padding: var(--padding-card-glass);
-  margin-bottom: var(--space-card-gap);
   backdrop-filter: var(--bg-card-glass-backdrop);
   box-shadow: var(--shadow-card-glass);
 }

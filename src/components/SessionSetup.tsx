@@ -100,7 +100,7 @@ export function SessionSetup({
       exit={{ opacity: 0, y: -20 }}
       style={{
         padding: '0 24px 80px',
-        maxWidth: '960px',
+        maxWidth: '1080px',
         margin: '0 auto',
       }}
     >
@@ -165,17 +165,16 @@ export function SessionSetup({
         </div>
       </header>
 
-      {/* Card Grid — layout changes based on connection state:
-         Not connected: 3 equal columns → all 3 cards in one row
-         Connected:     2 columns, 2 rows → tight 2×2 grid
-         alignContent: start prevents rows from stretching to fill the container. */}
+      {/* Card Grid — 3 equal columns when not connected, 2×2 when connected.
+         alignItems: stretch → all cards in a row share the same height.
+         alignContent: start → rows don't stretch to fill the whole container. */}
       <div 
         className="setup-content"
         style={{
           display: 'grid',
           gridTemplateColumns: museConnected ? 'repeat(2, 1fr)' : 'repeat(3, 1fr)',
           gap: '16px',
-          alignItems: 'start',
+          alignItems: 'stretch',
           alignContent: 'start',
         }}
       >

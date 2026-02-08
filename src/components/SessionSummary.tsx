@@ -746,7 +746,7 @@ export function SessionSummary({
                 position: 'absolute',
                 left: 0,
                 right: 0,
-                bottom: '19%',
+                bottom: '23%',
                 textAlign: 'center',
                 fontFamily: 'var(--font-sans)',
                 fontSize: '12px',
