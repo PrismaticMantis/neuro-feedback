@@ -439,7 +439,7 @@ export class AudioEngine {
         // Create movement cue gain node (only if not already created)
         if (!this.movementCueGain && this.masterGain) {
           this.movementCueGain = this.ctx.createGain();
-          this.movementCueGain.gain.value = 0.25; // –6 dB from previous 0.5 — subtle, non-intrusive cue level
+          this.movementCueGain.gain.value = 0.125; // –12 dB from original 0.5 (another –6 dB from 0.25)
           this.movementCueGain.connect(this.masterGain);
           console.warn('[AudioEngine] ✅ Movement cue gain node created');
         }
@@ -1873,13 +1873,13 @@ export class AudioEngine {
       if (this.ctx && this.masterGain) {
         if (DEBUG_MOVEMENT_AUDIO) console.warn('[MoveCue] step6: gain node was null — creating on-the-fly');
         this.movementCueGain = this.ctx.createGain();
-        this.movementCueGain.gain.value = 0.25;
+        this.movementCueGain.gain.value = 0.125;
         this.movementCueGain.connect(this.masterGain);
       } else if (this.ctx) {
         // No masterGain — connect directly to destination as a last resort
         if (DEBUG_MOVEMENT_AUDIO) console.warn('[MoveCue] step6: gain+master null — connecting direct to destination');
         this.movementCueGain = this.ctx.createGain();
-        this.movementCueGain.gain.value = 0.25;
+        this.movementCueGain.gain.value = 0.125;
         this.movementCueGain.connect(this.ctx.destination);
       } else {
         if (DEBUG_MOVEMENT_AUDIO) console.warn('[MoveCue] BLOCKED step6: no ctx for gain creation');
@@ -2014,7 +2014,7 @@ export class AudioEngine {
     if (!this.movementCueGain) {
       console.log('[MoveCue] Creating missing gain node...');
       this.movementCueGain = this.ctx.createGain();
-      this.movementCueGain.gain.value = 0.25;
+      this.movementCueGain.gain.value = 0.125;
       if (this.masterGain) {
         this.movementCueGain.connect(this.masterGain);
         console.log('[MoveCue] Gain node connected to masterGain');

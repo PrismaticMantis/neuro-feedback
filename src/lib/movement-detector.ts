@@ -53,7 +53,7 @@ export const DEBUG_MOVEMENT = true;
  */
 const MOVEMENT_CONFIG = {
   // ── Trigger threshold ──
-  axisDeltaThreshold: 0.14,     // Only deliberate head movement fires. Rest noise ~0.01, posture drift ~0.03-0.05, gentle nod ~0.06-0.10, deliberate nod/shake ~0.15+.
+  axisDeltaThreshold: 0.18,     // Only deliberate head movement fires. Rest noise ~0.01, posture drift ~0.03-0.05, gentle nod ~0.06-0.10, deliberate nod/shake ~0.15+. (raised from 0.14)
 
   // ── Refractory (hard block after a trigger) ──
   refractoryMs: 600,            // After firing, block ALL triggers for 600ms. Prevents the same motion peak from multi-firing.

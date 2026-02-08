@@ -471,10 +471,20 @@ h3 {
 /* ============ Setup Sections ============ */
 
 /* Grid properties set inline in SessionSetup.tsx for precise control.
-   CSS provides fallback + mobile override only. */
+   CSS provides fallback + mobile override only.
+   NOTE: flex: 1 / overflow-y: auto REMOVED — they caused the grid to stretch
+   the full viewport height, creating a huge gap between cards and the button. */
 .setup-content {
-  flex: 1;
-  overflow-y: auto;
+  /* Layout is fully controlled by inline grid styles in SessionSetup.tsx.
+     flex: 1 and overflow-y: auto were removed — they caused the grid
+     to stretch the full viewport height, creating a gap between cards and button. */
+  box-sizing: border-box;
+}
+
+/* Session Setup: override .screen's min-height/flex so the page does NOT
+   stretch to fill the viewport — cards + button sit near the top. */
+.screen.session-setup {
+  min-height: auto;
 }
 
 /* Legacy classes — kept for safety, no longer rendered */
@@ -485,9 +495,10 @@ h3 {
   gap: 16px;
 }
 
-/* Lovable spec: single-column below 1024px (mobile + iPad portrait).
-   iPad landscape (1024px+) and desktop get the 2-column grid. */
-@media (max-width: 1023px) {
+/* Single-column on phones only (< 768px).
+   iPad portrait (810px+), iPad landscape (1024px+), and desktop all get
+   the multi-column grid set by inline styles in SessionSetup.tsx. */
+@media (max-width: 767px) {
   .setup-content {
     grid-template-columns: 1fr !important;
   }

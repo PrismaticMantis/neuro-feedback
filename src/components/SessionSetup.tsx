@@ -165,24 +165,24 @@ export function SessionSetup({
         </div>
       </header>
 
-      {/* Card Grid — Lovable spec: 2-column grid (lg:grid-cols-2), gap 24px.
-         Not connected: Device Connection spans both rows on the left;
-           Detection Settings + Guidance Audio stack on the right.
-         Connected: 2×2 grid — all 4 cards in natural flow. */}
+      {/* Card Grid —
+         NOT connected: 3 equal columns (Device Connection | Detection Settings | Guidance Audio).
+         Connected: 2×2 grid (Device Connection | Detection Settings, Electrode Contact | Guidance Audio).
+         alignItems: stretch → all cards in a row share the tallest card's height.
+         alignContent: start → rows pack to the top, no vertical stretch. */}
       <div 
         className="setup-content"
         style={{
           display: 'grid',
-          gridTemplateColumns: 'repeat(2, 1fr)',
-          gap: '24px',
+          gridTemplateColumns: museConnected ? 'repeat(2, 1fr)' : 'repeat(3, 1fr)',
+          gap: '20px',
           alignItems: 'stretch',
           alignContent: 'start',
           marginTop: '24px',
         }}
       >
-        {/* Device Connection — spans 2 rows when not connected (full left column).
-           Wrapped in a div for grid placement since ConnectionStatus doesn't accept style. */}
-        <div style={!museConnected ? { gridRow: '1 / 3', height: '100%' } : undefined}>
+        {/* Device Connection — equal-width column alongside other cards */}
+        <div style={{ height: '100%' }}>
           <ConnectionStatus
             museConnected={museConnected}
             museDeviceName={museDeviceName}
@@ -328,7 +328,7 @@ export function SessionSetup({
           </section>
         )}
 
-        {/* Guidance Audio — col 3 in 3-col mode (not connected), or row 2 col 2 in 2-col mode (connected) */}
+        {/* Guidance Audio — col 3 when disconnected (3-col), or row 2 col 2 when connected (2-col) */}
         <section 
           className="setup-section"
           style={{
