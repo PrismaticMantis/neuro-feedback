@@ -15,6 +15,10 @@ import { ENABLE_PPG_MODULATION, DEBUG_PPG } from './muse-handler';
 // Set to true to enable detailed coherence event logging
 export const DEBUG_COHERENCE_EVENTS = true;
 
+// Debug flag for SHIMMER trigger diagnostics (throttled, every 2s)
+// Logs: coherence value, mental state, shimmer state machine, cooldown, reason for fire/block
+export const DEBUG_SHIMMER = true;
+
 // Debug flag for movement cue events
 // Set to true to enable detailed movement cue logging
 export const DEBUG_MOVEMENT_CUES = true;
@@ -26,30 +30,24 @@ export const DEBUG_MOVEMENT_AUDIO = false;
 /**
  * COHERENCE TRIGGER PARAMETERS
  * 
- * Centralized parameters for shimmer and sustained layer activation.
- * These are tuned for real-world use where ~60%+ coherence is common.
+ * Centralized parameters for sustained coherence layer (and shimmer).
+ * Shimmer is now strictly tied to the sustained coherence state —
+ * it fades in when sustained activates and fades out when it deactivates.
+ * No independent shimmer thresholds, hold times, or cooldowns remain.
  * 
- * SHIMMER LOGIC:
- * - Triggers when coherence crosses ABOVE shimmerTriggerThreshold
- * - OR when coherence stays above threshold for shimmerHoldMs
- * - Cooldown prevents spam (shimmerCooldownMs between triggers)
- * 
- * SUSTAINED LAYER LOGIC:
+ * SUSTAINED LAYER + SHIMMER LOGIC:
  * - Activates after sustainedHoldMs ABOVE sustainedThreshold
  * - Hysteresis: won't exit until coherence falls BELOW sustainedExitThreshold
  *   for sustainedExitHoldMs (prevents flickering)
+ * - On activate: fadeInSustainedCoherence + fadeInShimmer
+ * - On deactivate: fadeOutSustainedCoherence + fadeOutShimmer
  * 
- * DEBUG: Enable DEBUG_COHERENCE_EVENTS above for detailed logging
+ * DEBUG: Enable DEBUG_COHERENCE_EVENTS / DEBUG_SHIMMER above for detailed logging
  */
 const COHERENCE_TRIGGER_PARAMS = {
-  // Shimmer trigger parameters
-  shimmerTriggerThreshold: 0.55,    // Coherence % to trigger shimmer (lowered from implicit 0.75)
-  shimmerHoldMs: 3000,              // Hold time above threshold before shimmer (3s)
-  shimmerCooldownMs: 20000,         // Cooldown between shimmer triggers (20s, was 45s)
-  
-  // Sustained layer parameters
-  sustainedThreshold: 0.58,         // Coherence % for sustained layer (lowered for achievability)
-  sustainedHoldMs: 12000,           // Hold time above threshold to activate (12s, was 25s)
+  // Sustained layer parameters (shimmer is now tied to the same state — no separate shimmer params)
+  sustainedThreshold: 0.58,         // Coherence % for sustained layer + shimmer activation
+  sustainedHoldMs: 12000,           // Hold time above threshold to activate (12s)
   sustainedExitThreshold: 0.48,     // Must fall below this to exit (hysteresis)
   sustainedExitHoldMs: 5000,        // Must stay below exit threshold for this long (5s)
 };
@@ -67,10 +65,7 @@ const CROSSFADE_CONSTANTS = {
   SHIMMER_FADE_OUT_SECONDS: 8.0,  // Shorter fade-out (was 10.0)
   SHIMMER_FADE_OUT_DELAY_SECONDS: 1.0, // Delay before starting fade-out (hysteresis)
   SHIMMER_UPDATE_SMOOTH_SECONDS: 0.8, // Smooth update time for shimmer gain changes
-  // Legacy constants (now controlled by COHERENCE_TRIGGER_PARAMS)
-  SHIMMER_SUSTAIN_SECONDS: COHERENCE_TRIGGER_PARAMS.shimmerHoldMs / 1000,
-  SHIMMER_COOLDOWN_SECONDS: COHERENCE_TRIGGER_PARAMS.shimmerCooldownMs / 1000,
-  // Sustained coherence layer constants (now controlled by COHERENCE_TRIGGER_PARAMS)
+  // Sustained coherence layer constants (shimmer now shares these)
   SUSTAINED_COHERENCE_SECONDS: COHERENCE_TRIGGER_PARAMS.sustainedHoldMs / 1000,
   SUSTAINED_ATTACK_SECONDS: 4.0, // Faster fade-in (was 5.5)
   SUSTAINED_RELEASE_SECONDS: 5.0, // Faster fade-out (was 6.0)
@@ -227,8 +222,9 @@ export class AudioEngine {
   
   // Shimmer tracking (based on direct coherence value)
   private shimmerEnabled: boolean = false; // Whether shimmer is currently enabled
-  private shimmerLastTriggerTime: number | null = null; // When shimmer last triggered (for cooldown)
-  private coherenceAboveShimmerSince: number | null = null; // When coherence first went above shimmer threshold
+  // (shimmerLastTriggerTime and coherenceAboveShimmerSince removed — shimmer now follows sustained coherence state)
+  private lastShimmerDebugLog: number = 0; // Throttle DEBUG_SHIMMER logs
+  private sessionStartedAt: number = 0; // Timestamp when session started (for debug timing)
   
   // Sustained coherence tracking (with hysteresis)
   private sustainedCoherenceLastFadeOutTime: number | null = null; // When sustained layer last faded out (for cooldown)
@@ -443,7 +439,7 @@ export class AudioEngine {
         // Create movement cue gain node (only if not already created)
         if (!this.movementCueGain && this.masterGain) {
           this.movementCueGain = this.ctx.createGain();
-          this.movementCueGain.gain.value = 0.5; // Subtle volume for cues
+          this.movementCueGain.gain.value = 0.25; // –6 dB from previous 0.5 — subtle, non-intrusive cue level
           this.movementCueGain.connect(this.masterGain);
           console.warn('[AudioEngine] ✅ Movement cue gain node created');
         }
@@ -747,11 +743,10 @@ export class AudioEngine {
     // Reset state machine
     this.coherenceStateMachine.reset();
     this.currentCoherentStreakStart = null;
-    // Reset shimmer tracking
+    // Reset shimmer + sustained coherence tracking (shimmer follows sustained state)
     this.shimmerEnabled = false;
-    this.shimmerLastTriggerTime = null;
-    this.coherenceAboveShimmerSince = null;
-    // Reset sustained coherence tracking
+    this.lastShimmerDebugLog = 0;
+    this.sessionStartedAt = Date.now();
     this.sustainedCoherenceLastFadeOutTime = null;
     this.sustainedCoherenceEnabled = false;
     this.sustainedExitStartTime = null;
@@ -948,11 +943,8 @@ export class AudioEngine {
     // Reset fog tracking
     this.activeMindEnteredAt = null;
     this.fogEnabled = false;
-    // Reset shimmer tracking
+    // Reset shimmer + sustained coherence tracking (shimmer follows sustained state)
     this.shimmerEnabled = false;
-    this.shimmerLastTriggerTime = null;
-    this.coherenceAboveShimmerSince = null;
-    // Reset sustained coherence tracking
     this.sustainedCoherenceLastFadeOutTime = null;
     this.sustainedCoherenceEnabled = false;
     this.sustainedExitStartTime = null;
@@ -1036,76 +1028,34 @@ export class AudioEngine {
     }
     
     // ============================================
-    // SHIMMER TRIGGER LOGIC (based on direct coherence value, not state machine)
+    // SHIMMER — strictly tied to Sustained Coherence layer (no independent triggers)
+    // Shimmer fades in/out are handled below inside the sustained layer logic.
+    // Here we only update adaptive shimmer gain while it's active.
     // ============================================
     const shimmerParams = COHERENCE_TRIGGER_PARAMS;
     const coherencePercent = coherence; // Already 0-1
-    
-    // Check if coherence is above shimmer trigger threshold
-    if (coherencePercent >= shimmerParams.shimmerTriggerThreshold) {
-      // Track when we first went above threshold
-      if (this.coherenceAboveShimmerSince === null) {
-        this.coherenceAboveShimmerSince = currentTime;
-        if (DEBUG_COHERENCE_EVENTS) {
-          console.log(`[AudioEngine] ✨ Coherence above shimmer threshold (${(coherencePercent * 100).toFixed(1)}% >= ${(shimmerParams.shimmerTriggerThreshold * 100).toFixed(0)}%)`);
-        }
-      }
-      
-      // Check hold time and cooldown
-      const aboveThresholdMs = currentTime - this.coherenceAboveShimmerSince;
-      const cooldownOk = this.shimmerLastTriggerTime === null || 
-        (currentTime - this.shimmerLastTriggerTime) >= shimmerParams.shimmerCooldownMs;
-      
-      if (aboveThresholdMs >= shimmerParams.shimmerHoldMs && cooldownOk && !this.shimmerEnabled) {
-        // Enable shimmer!
-        this.shimmerEnabled = true;
-        this.shimmerLastTriggerTime = currentTime;
-        console.log(`[AudioEngine] ✨ SHIMMER TRIGGERED after ${(aboveThresholdMs / 1000).toFixed(1)}s above threshold (coherence: ${(coherencePercent * 100).toFixed(1)}%)`);
-        // Initial shimmer fade-in (use longer fade time for smooth entry)
-        this.fadeInShimmer(now);
-      } else if (this.shimmerEnabled) {
-        // Update shimmer gain while enabled (adaptive to coherence strength)
-        this.updateShimmerGain(now);
-      }
-      
-      // Log progress toward shimmer (throttled)
-      if (DEBUG_COHERENCE_EVENTS && !this.shimmerEnabled && aboveThresholdMs > 0) {
-        const progressPercent = Math.min(100, (aboveThresholdMs / shimmerParams.shimmerHoldMs) * 100);
-        const logInterval = 1000; // Log every 1s
-        if (aboveThresholdMs % logInterval < 100) {
-          console.log(`[AudioEngine] ✨ Shimmer progress: ${progressPercent.toFixed(0)}% (${(aboveThresholdMs / 1000).toFixed(1)}s / ${(shimmerParams.shimmerHoldMs / 1000).toFixed(0)}s)`, 
-            cooldownOk ? '' : `[cooldown: ${((shimmerParams.shimmerCooldownMs - (currentTime - (this.shimmerLastTriggerTime || 0))) / 1000).toFixed(0)}s remaining]`);
-        }
-      }
-    } else {
-      // Coherence dropped below shimmer threshold
-      if (this.coherenceAboveShimmerSince !== null) {
-        if (DEBUG_COHERENCE_EVENTS) {
-          console.log(`[AudioEngine] ✨ Coherence dropped below shimmer threshold (${(coherencePercent * 100).toFixed(1)}% < ${(shimmerParams.shimmerTriggerThreshold * 100).toFixed(0)}%)`);
-        }
-        this.coherenceAboveShimmerSince = null;
-      }
-      
-      // Fade out shimmer if enabled
-      if (this.shimmerEnabled) {
-        this.shimmerEnabled = false;
-        console.log('[AudioEngine] ✨ Shimmer fading out (coherence dropped below threshold)');
-        // Explicitly fade out shimmer (don't rely on state machine)
-        if (this.shimmerGain && this.ctx) {
-          const shimmerNow = this.ctx.currentTime;
-          const currentShimmerGain = Math.max(0.001, this.shimmerGain.gain.value);
-          this.shimmerGain.gain.cancelScheduledValues(shimmerNow);
-          this.shimmerGain.gain.setValueAtTime(currentShimmerGain, shimmerNow);
-          this.shimmerGain.gain.linearRampToValueAtTime(
-            0.001,
-            shimmerNow + CROSSFADE_CONSTANTS.SHIMMER_FADE_OUT_SECONDS
-          );
-        }
-      }
+
+    if (this.shimmerEnabled) {
+      this.updateShimmerGain(now);
     }
-    
-    // Calculate coherence strength for adaptive shimmer gain
-    const strength = Math.max(0, Math.min(1, (coherencePercent - shimmerParams.shimmerTriggerThreshold) / (1 - shimmerParams.shimmerTriggerThreshold)));
+
+    // ── DEBUG_SHIMMER: throttled status log (every 2s) ──
+    if (DEBUG_SHIMMER && currentTime - this.lastShimmerDebugLog >= 2000) {
+      this.lastShimmerDebugLog = currentTime;
+      const sessionSec = this.sessionStartedAt ? ((currentTime - this.sessionStartedAt) / 1000).toFixed(1) : '?';
+      console.log(
+        '[Shimmer] t=' + sessionSec + 's' +
+        ' coh=' + (coherencePercent * 100).toFixed(1) + '%' +
+        ' sustainedActive=' + this.sustainedCoherenceEnabled +
+        ' shimOn=' + this.shimmerEnabled +
+        ' susThr=' + (shimmerParams.sustainedThreshold * 100).toFixed(0) + '%' +
+        ' susHold=' + (shimmerParams.sustainedHoldMs / 1000).toFixed(0) + 's' +
+        ' gain=' + (this.shimmerGain?.gain?.value ?? 0).toFixed(3)
+      );
+    }
+
+    // Calculate coherence strength for adaptive shimmer gain (used by updateShimmerGain)
+    const strength = Math.max(0, Math.min(1, (coherencePercent - shimmerParams.sustainedThreshold) / (1 - shimmerParams.sustainedThreshold)));
     this.smoothedCoherenceStrength = this.smoothedCoherenceStrength * 0.9 + strength * 0.1;
     
     // ============================================
@@ -1131,10 +1081,12 @@ export class AudioEngine {
         (currentTime - this.sustainedCoherenceLastFadeOutTime) >= CROSSFADE_CONSTANTS.SUSTAINED_COHERENCE_COOLDOWN_SECONDS * 1000;
       
       if (aboveThresholdMs >= shimmerParams.sustainedHoldMs && cooldownOk && !this.sustainedCoherenceEnabled) {
-        // Enable sustained layer!
+        // Enable sustained layer + shimmer together
         this.sustainedCoherenceEnabled = true;
-        console.log(`[AudioEngine] 🎯 SUSTAINED LAYER ACTIVATED after ${(aboveThresholdMs / 1000).toFixed(1)}s above threshold (coherence: ${(coherencePercent * 100).toFixed(1)}%)`);
+        this.shimmerEnabled = true;
+        console.log(`[AudioEngine] 🎯 SUSTAINED LAYER + SHIMMER ACTIVATED after ${(aboveThresholdMs / 1000).toFixed(1)}s above threshold (coherence: ${(coherencePercent * 100).toFixed(1)}%)`);
         this.fadeInSustainedCoherence(now);
+        this.fadeInShimmer(now);
       }
       
       // Log progress toward sustained (throttled)
@@ -1160,13 +1112,22 @@ export class AudioEngine {
         // Check if we've been below exit threshold long enough (hysteresis)
         const belowExitMs = currentTime - this.sustainedExitStartTime;
         if (belowExitMs >= shimmerParams.sustainedExitHoldMs) {
-          // Disable sustained layer (hysteresis complete)
+          // Disable sustained layer + shimmer together (hysteresis complete)
           this.sustainedCoherenceEnabled = false;
           this.sustainedCoherenceLastFadeOutTime = currentTime;
           this.coherenceAboveSustainedSince = null;
           this.sustainedExitStartTime = null;
-          console.log(`[AudioEngine] 🎯 SUSTAINED LAYER DEACTIVATED after ${(belowExitMs / 1000).toFixed(1)}s below exit threshold`);
+          console.log(`[AudioEngine] 🎯 SUSTAINED LAYER + SHIMMER DEACTIVATED after ${(belowExitMs / 1000).toFixed(1)}s below exit threshold`);
           this.fadeOutSustainedCoherence(now);
+          // Fade out shimmer
+          this.shimmerEnabled = false;
+          if (this.shimmerGain && this.ctx) {
+            const sNow = this.ctx.currentTime;
+            const curGain = Math.max(0.001, this.shimmerGain.gain.value);
+            this.shimmerGain.gain.cancelScheduledValues(sNow);
+            this.shimmerGain.gain.setValueAtTime(curGain, sNow);
+            this.shimmerGain.gain.linearRampToValueAtTime(0.001, sNow + CROSSFADE_CONSTANTS.SHIMMER_FADE_OUT_SECONDS);
+          }
         } else if (DEBUG_COHERENCE_EVENTS && belowExitMs > 0) {
           // Log hysteresis progress
           const exitProgress = (belowExitMs / shimmerParams.sustainedExitHoldMs * 100).toFixed(0);
@@ -1909,13 +1870,13 @@ export class AudioEngine {
       if (this.ctx && this.masterGain) {
         if (DEBUG_MOVEMENT_AUDIO) console.warn('[MoveCue] step6: gain node was null — creating on-the-fly');
         this.movementCueGain = this.ctx.createGain();
-        this.movementCueGain.gain.value = 0.5;
+        this.movementCueGain.gain.value = 0.25;
         this.movementCueGain.connect(this.masterGain);
       } else if (this.ctx) {
         // No masterGain — connect directly to destination as a last resort
         if (DEBUG_MOVEMENT_AUDIO) console.warn('[MoveCue] step6: gain+master null — connecting direct to destination');
         this.movementCueGain = this.ctx.createGain();
-        this.movementCueGain.gain.value = 0.5;
+        this.movementCueGain.gain.value = 0.25;
         this.movementCueGain.connect(this.ctx.destination);
       } else {
         if (DEBUG_MOVEMENT_AUDIO) console.warn('[MoveCue] BLOCKED step6: no ctx for gain creation');
@@ -2050,7 +2011,7 @@ export class AudioEngine {
     if (!this.movementCueGain) {
       console.log('[MoveCue] Creating missing gain node...');
       this.movementCueGain = this.ctx.createGain();
-      this.movementCueGain.gain.value = 0.5;
+      this.movementCueGain.gain.value = 0.25;
       if (this.masterGain) {
         this.movementCueGain.connect(this.masterGain);
         console.log('[MoveCue] Gain node connected to masterGain');

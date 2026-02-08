@@ -99,8 +99,8 @@ export function SessionSetup({
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: -20 }}
       style={{
-        padding: '0 24px 80px',
-        maxWidth: '1080px',
+        padding: '0 32px 96px',
+        maxWidth: '1152px',
         margin: '0 auto',
       }}
     >
@@ -111,7 +111,7 @@ export function SessionSetup({
           display: 'flex',
           alignItems: 'flex-start',
           gap: '12px',
-          padding: '20px 0 16px',
+          padding: '24px 0 0',
         }}
       >
         <Link 
@@ -165,30 +165,35 @@ export function SessionSetup({
         </div>
       </header>
 
-      {/* Card Grid — 3 equal columns when not connected, 2×2 when connected.
-         alignItems: stretch → all cards in a row share the same height.
-         alignContent: start → rows don't stretch to fill the whole container. */}
+      {/* Card Grid — Lovable spec: 2-column grid (lg:grid-cols-2), gap 24px.
+         Not connected: Device Connection spans both rows on the left;
+           Detection Settings + Guidance Audio stack on the right.
+         Connected: 2×2 grid — all 4 cards in natural flow. */}
       <div 
         className="setup-content"
         style={{
           display: 'grid',
-          gridTemplateColumns: museConnected ? 'repeat(2, 1fr)' : 'repeat(3, 1fr)',
-          gap: '16px',
-          alignItems: 'stretch',
+          gridTemplateColumns: 'repeat(2, 1fr)',
+          gap: '24px',
+          alignItems: 'start',
           alignContent: 'start',
+          marginTop: '24px',
         }}
       >
-        {/* Device Connection */}
-        <ConnectionStatus
-          museConnected={museConnected}
-          museDeviceName={museDeviceName}
-          connectionQuality={connectionQuality}
-          onConnectBluetooth={onConnectBluetooth}
-          onConnectOSC={onConnectOSC}
-          onDisconnect={onDisconnect}
-          isBluetoothAvailable={isBluetoothAvailable}
-          error={connectionError}
-        />
+        {/* Device Connection — spans 2 rows when not connected (full left column).
+           Wrapped in a div for grid placement since ConnectionStatus doesn't accept style. */}
+        <div style={!museConnected ? { gridRow: '1 / 3' } : undefined}>
+          <ConnectionStatus
+            museConnected={museConnected}
+            museDeviceName={museDeviceName}
+            connectionQuality={connectionQuality}
+            onConnectBluetooth={onConnectBluetooth}
+            onConnectOSC={onConnectOSC}
+            onDisconnect={onDisconnect}
+            isBluetoothAvailable={isBluetoothAvailable}
+            error={connectionError}
+          />
+        </div>
 
         {/* Detection Settings */}
         <section 
@@ -565,7 +570,7 @@ export function SessionSetup({
           flexDirection: 'column',
           alignItems: 'center',
           gap: '12px',
-          paddingTop: '20px',
+          paddingTop: '32px',
         }}
       >
         <motion.button

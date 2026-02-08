@@ -485,8 +485,9 @@ h3 {
   gap: 16px;
 }
 
-/* Single-column on phones only. iPad portrait (810px) and above keep 3 columns. */
-@media (max-width: 640px) {
+/* Lovable spec: single-column below 1024px (mobile + iPad portrait).
+   iPad landscape (1024px+) and desktop get the 2-column grid. */
+@media (max-width: 1023px) {
   .setup-content {
     grid-template-columns: 1fr !important;
   }
