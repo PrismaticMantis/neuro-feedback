@@ -56,6 +56,8 @@ export function ConnectionStatus({
         borderRadius: '12px',
         padding: '20px',
         boxShadow: '0 4px 20px hsl(270 20% 2% / 0.5)',
+        height: '100%',
+        boxSizing: 'border-box',
       }}
     >
       {/* Section Title - Target 3: "Device Connection" */}

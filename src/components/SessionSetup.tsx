@@ -175,14 +175,14 @@ export function SessionSetup({
           display: 'grid',
           gridTemplateColumns: 'repeat(2, 1fr)',
           gap: '24px',
-          alignItems: 'start',
+          alignItems: 'stretch',
           alignContent: 'start',
           marginTop: '24px',
         }}
       >
         {/* Device Connection — spans 2 rows when not connected (full left column).
            Wrapped in a div for grid placement since ConnectionStatus doesn't accept style. */}
-        <div style={!museConnected ? { gridRow: '1 / 3' } : undefined}>
+        <div style={!museConnected ? { gridRow: '1 / 3', height: '100%' } : undefined}>
           <ConnectionStatus
             museConnected={museConnected}
             museDeviceName={museDeviceName}
@@ -574,7 +574,7 @@ export function SessionSetup({
         }}
       >
         <motion.button
-          className="btn btn-primary btn-large"
+          className="btn btn-primary"
           onClick={onStartSession}
           disabled={!canStartSession}
           whileHover={{ scale: canStartSession ? 1.02 : 1, y: canStartSession ? -2 : 0 }}

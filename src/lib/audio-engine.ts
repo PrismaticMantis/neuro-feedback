@@ -1602,10 +1602,9 @@ export class AudioEngine {
   private startCrossfadeToCoherence(now: number): void {
     if (!this.baselineGain || !this.coherenceGain || !this.shimmerGain) return;
 
-    // Cancel any existing scheduled changes
+    // Cancel any existing scheduled changes on baseline/coherence
     this.baselineGain.gain.cancelScheduledValues(now);
     this.coherenceGain.gain.cancelScheduledValues(now);
-    this.shimmerGain.gain.cancelScheduledValues(now);
 
     const currentBaseline = this.baselineGain.gain.value;
     const currentCoherence = this.coherenceGain.gain.value;
@@ -1617,15 +1616,20 @@ export class AudioEngine {
     this.coherenceGain.gain.setValueAtTime(currentCoherence, now);
     this.coherenceGain.gain.linearRampToValueAtTime(1.0, now + CROSSFADE_CONSTANTS.ATTACK_SECONDS);
 
-    // Shimmer will be handled separately after sustain period (see updateCoherence)
-    // Don't start shimmer here - wait for sustain requirement
+    // SHIMMER: only touch shimmer gain to ensure it's SILENT when sustained is inactive.
+    // If sustained coherence is active (shimmerEnabled), leave shimmer gain alone.
+    // Otherwise force shimmer to 0 so a canceled mid-fade doesn't leave it audible.
+    if (!this.shimmerEnabled) {
+      this.shimmerGain.gain.cancelScheduledValues(now);
+      this.shimmerGain.gain.setValueAtTime(0.001, now);
+      this.shimmerGain.gain.linearRampToValueAtTime(0, now + 0.05); // snap to zero
+    }
 
     console.log('[AudioEngine] 🎵 CROSSFADING TO COHERENCE 🎵', {
       baselineGain: `${currentBaseline.toFixed(3)} -> 0.000`,
       coherenceGain: `${currentCoherence.toFixed(3)} -> 1.000`,
       attackSeconds: CROSSFADE_CONSTANTS.ATTACK_SECONDS,
-      bothTracksPlaying: true,
-      note: 'Both baseline and coherence tracks are playing simultaneously during crossfade',
+      shimmerForced: !this.shimmerEnabled ? 'zeroed (sustained inactive)' : 'left alone (sustained active)',
     });
   }
 
@@ -1651,8 +1655,9 @@ export class AudioEngine {
     this.coherenceGain.gain.setValueAtTime(currentCoherence, now);
     this.coherenceGain.gain.linearRampToValueAtTime(0, now + CROSSFADE_CONSTANTS.RELEASE_SECONDS);
 
-    // Smooth fade out shimmer (not abrupt)
-    this.shimmerGain.gain.cancelScheduledValues(now);
+    // ALWAYS fade shimmer out when leaving coherent state (safety net).
+    // Also mark shimmerEnabled false — sustained coherence logic will re-enable if needed.
+    this.shimmerEnabled = false;
     const currentShimmerGain = Math.max(0.001, currentShimmer);
     this.shimmerGain.gain.setValueAtTime(currentShimmerGain, now);
     this.shimmerGain.gain.linearRampToValueAtTime(
@@ -1660,13 +1665,11 @@ export class AudioEngine {
       now + CROSSFADE_CONSTANTS.SHIMMER_FADE_OUT_SECONDS
     );
     
-    console.log('[AudioEngine] Shimmer fading out smoothly', {
-      from: currentShimmerGain.toFixed(3),
-      to: 0,
-      duration: CROSSFADE_CONSTANTS.SHIMMER_FADE_OUT_SECONDS,
+    console.log('[AudioEngine] 🎵 CROSSFADING TO BASELINE 🎵', {
+      baselineGain: `${currentBaseline.toFixed(3)} -> 1.000`,
+      coherenceGain: `${currentCoherence.toFixed(3)} -> 0.000`,
+      shimmerGain: `${currentShimmerGain.toFixed(3)} -> 0.001`,
     });
-
-    console.log('[AudioEngine] Crossfading to baseline');
   }
 
   /**
