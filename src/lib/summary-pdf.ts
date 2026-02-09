@@ -1,14 +1,20 @@
 /**
- * Session Summary PDF generation for Share and Email.
- * Content and metric hierarchy align with design/targets/6 - Summary.png.
- * Produces a single-page PDF artifact with session data.
+ * Session Summary PDF generation.
+ *
+ * Two modes:
+ *  1. **Snapshot PDF** (preferred) – captures a live DOM node as a retina image
+ *     and embeds it into a single-page A4 PDF.  Uses `html-to-image` + `jsPDF`.
+ *  2. **deriveRecoveryPoints** – pure utility, kept for use elsewhere.
+ *
+ * The old text-report `generateSummaryPdfBlob` has been removed.
  */
 
 import { jsPDF } from 'jspdf';
-import type { Session, SessionStats, User } from '../types';
-import { formatTime } from './storage';
+import { toPng } from 'html-to-image';
 
-/** Derive recovery points (6–15) from coherence and stability. Non-competitive, represents nervous system recovery capacity. */
+// ── Re-exported utility (used by App.tsx, SessionDetail.tsx) ──────────────
+
+/** Derive recovery points (6–15) from coherence and stability. */
 export function deriveRecoveryPoints(coherencePercent: number, stability: string): number {
   const stabilityScore = stability === 'High' ? 4 : stability === 'Medium' ? 2 : 0;
   const coherenceTier = coherencePercent >= 70 ? 5 : coherencePercent >= 50 ? 3 : coherencePercent >= 30 ? 2 : 1;
@@ -16,89 +22,84 @@ export function deriveRecoveryPoints(coherencePercent: number, stability: string
   return Math.min(15, Math.max(6, raw));
 }
 
-export interface SummaryPdfOptions {
-  session: Session;
-  stats: SessionStats;
-  user: User;
-  journeyName: string;
-  peakCoherence: number;
-  stability: string;
-  /** Optional; show "—" if not available */
-  avgHeartRate?: number | null;
-  /** Optional; show "—" if not available */
-  avgHRV?: number | null;
-}
+// ── Snapshot PDF ──────────────────────────────────────────────────────────
+
+/** A4 dimensions in mm */
+const A4_WIDTH_MM = 210;
+const A4_HEIGHT_MM = 297;
+
+/** Margin inside the page (mm) */
+const PAGE_MARGIN_MM = 10;
 
 /**
- * Generate a single-page PDF with session summary data.
- * Includes: sessionName, coherenceScore, sessionDuration, sessionTime, avgHeartRate, avgHRV, recoveryPoints.
+ * Capture a DOM node as a high-fidelity PNG and embed it in a single-page
+ * A4 PDF.  The image is scaled to fit within the page margins while
+ * maintaining its aspect ratio.
+ *
+ * @param node  The DOM element to capture (the summary screen root).
+ * @returns     A PDF Blob ready for download / share / email attachment.
  */
-export async function generateSummaryPdfBlob(options: SummaryPdfOptions): Promise<Blob> {
-  const {
-    session,
-    stats,
-    user,
-    journeyName,
-    peakCoherence,
-    stability,
-    avgHeartRate,
-    avgHRV,
-  } = options;
+export async function exportSummarySnapshotPdf(node: HTMLElement): Promise<Blob> {
+  // ── 1. Capture the DOM as a retina PNG ──────────────────────────────
+  const pixelRatio = Math.min(window.devicePixelRatio || 2, 3); // cap at 3×
 
-  const recoveryPoints = deriveRecoveryPoints(stats.coherencePercent, stability);
-  const sessionTime = new Date(session.startTime).toLocaleString();
-  const durationStr = `${formatTime(session.duration)} min`;
-  const coherenceScore = Math.round(stats.coherencePercent);
-  const peakPct = Math.round(peakCoherence * 100);
-
-  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
-  const pageWidth = doc.internal.pageSize.getWidth();
-  const margin = 20;
-  let y = margin;
-
-  // Title
-  doc.setFontSize(22);
-  doc.setTextColor(79, 168, 122); // champagne/gold-ish from spec
-  doc.text('SoundBed Session Summary', pageWidth / 2, y, { align: 'center' });
-  y += 14;
-
-  doc.setFontSize(11);
-  doc.setTextColor(100, 100, 100);
-  doc.text(`${user.name} · ${sessionTime}`, pageWidth / 2, y, { align: 'center' });
-  y += 20;
-
-  // Session name (journey)
-  doc.setFontSize(16);
-  doc.setTextColor(50, 50, 50);
-  doc.text(journeyName, margin, y);
-  y += 10;
-
-  // Key metrics
-  doc.setFontSize(11);
-  doc.setTextColor(80, 80, 80);
-  const metrics = [
-    ['Coherence score', `${coherenceScore}%`],
-    ['Peak coherence', `${peakPct}%`],
-    ['Duration', durationStr],
-    ['Session time', sessionTime],
-    ['Avg. heart rate', avgHeartRate != null ? `${Math.round(avgHeartRate)} bpm` : '—'],
-    ['Avg. HRV', avgHRV != null ? `${Math.round(avgHRV)} ms` : '—'],
-    ['Recovery points', String(recoveryPoints)],
-  ];
-  const fontName = doc.getFont().fontName;
-  metrics.forEach(([label, value]) => {
-    doc.text(label + ': ', margin, y);
-    doc.setFont(fontName, 'bold');
-    doc.text(value, margin + doc.getTextWidth(label + ': ') + 2, y);
-    doc.setFont(fontName, 'normal');
-    y += 8;
+  const dataUrl = await toPng(node, {
+    // Dark background – must match the app's main bg so there's no
+    // white/transparent bleed.
+    backgroundColor: '#0c0a0e', // bg.primary from design tokens
+    pixelRatio,
+    // Ensure full scroll height is captured, not clipped to viewport.
+    height: node.scrollHeight,
+    width: node.scrollWidth,
+    // Skip elements marked data-export-ignore (e.g. share buttons)
+    filter: (domNode: Node) => {
+      if (domNode instanceof HTMLElement && domNode.dataset.exportIgnore !== undefined) {
+        return false;
+      }
+      return true;
+    },
+    // Cache-bust external images (fonts are usually inlined by html-to-image)
+    cacheBust: true,
   });
 
-  y += 10;
-  doc.setFontSize(9);
-  doc.setTextColor(120, 120, 120);
-  doc.text('Generated by SoundBed · Your body remembers. Small shifts compound.', pageWidth / 2, y, { align: 'center' });
+  // ── 2. Load the image to read its natural dimensions ────────────────
+  const img = new Image();
+  await new Promise<void>((resolve, reject) => {
+    img.onload = () => resolve();
+    img.onerror = () => reject(new Error('Failed to load captured image'));
+    img.src = dataUrl;
+  });
 
-  const blob = doc.output('blob');
-  return blob;
+  const imgWidthPx = img.naturalWidth;
+  const imgHeightPx = img.naturalHeight;
+
+  // ── 3. Build the PDF ────────────────────────────────────────────────
+  const usableW = A4_WIDTH_MM - PAGE_MARGIN_MM * 2;
+  const usableH = A4_HEIGHT_MM - PAGE_MARGIN_MM * 2;
+
+  // Scale to fit within the usable area, preserving aspect ratio.
+  const aspect = imgWidthPx / imgHeightPx;
+  let pdfImgW = usableW;
+  let pdfImgH = pdfImgW / aspect;
+
+  if (pdfImgH > usableH) {
+    // Image is taller than one page – scale down to fit.
+    pdfImgH = usableH;
+    pdfImgW = pdfImgH * aspect;
+  }
+
+  // Center horizontally on the page.
+  const xOffset = (A4_WIDTH_MM - pdfImgW) / 2;
+  const yOffset = PAGE_MARGIN_MM;
+
+  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+
+  // Fill the entire page with the dark bg so there's no white border.
+  doc.setFillColor(12, 10, 14); // #0c0a0e
+  doc.rect(0, 0, A4_WIDTH_MM, A4_HEIGHT_MM, 'F');
+
+  // Place the captured image.
+  doc.addImage(dataUrl, 'PNG', xOffset, yOffset, pdfImgW, pdfImgH);
+
+  return doc.output('blob');
 }

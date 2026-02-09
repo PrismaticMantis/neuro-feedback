@@ -165,23 +165,23 @@ export function SessionSetup({
         </div>
       </header>
 
-      {/* Card Grid —
-         NOT connected: 3 equal columns (Device Connection | Detection Settings | Guidance Audio).
-         Connected: 2×2 grid (Device Connection | Detection Settings, Electrode Contact | Guidance Audio).
-         alignItems: stretch → all cards in a row share the tallest card's height.
-         alignContent: start → rows pack to the top, no vertical stretch. */}
+      {/* Card Grid — always 2 columns.
+         Left column:  Device Connection card.
+         Right column: vertical stack — Detection Settings on top, Guidance Audio below.
+                       When connected, Electrode Contact also appears in the right stack.
+         alignItems: stretch → left card matches combined height of the right stack. */}
       <div 
         className="setup-content"
         style={{
           display: 'grid',
-          gridTemplateColumns: museConnected ? 'repeat(2, 1fr)' : 'repeat(3, 1fr)',
+          gridTemplateColumns: 'repeat(2, 1fr)',
           gap: '20px',
           alignItems: 'stretch',
           alignContent: 'start',
           marginTop: '24px',
         }}
       >
-        {/* Device Connection — equal-width column alongside other cards */}
+        {/* ── LEFT COLUMN: Device Connection ── */}
         <div style={{ height: '100%' }}>
           <ConnectionStatus
             museConnected={museConnected}
@@ -195,88 +195,10 @@ export function SessionSetup({
           />
         </div>
 
-        {/* Detection Settings */}
-        <section 
-          className="setup-section"
-          style={{
-            background: 'linear-gradient(165deg, hsl(270 7% 13% / 0.75), hsl(270 10% 9% / 0.85))',
-            border: '1px solid hsl(270 15% 22% / 0.35)',
-            borderRadius: '12px',
-            padding: '20px',
-            boxShadow: '0 4px 20px hsl(270 20% 2% / 0.5)',
-          }}
-        >
-          <h2 
-            style={{
-              fontFamily: 'var(--font-sans)',
-              fontSize: '16px',
-              fontWeight: 600,
-              color: 'var(--text-primary)',
-              margin: '0 0 16px 0',
-              lineHeight: 1.3,
-            }}
-          >
-            Detection Settings
-          </h2>
-          <div className="settings-group">
-            <div className="setting-row" style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span style={{ fontFamily: 'var(--font-sans)', fontSize: '14px', fontWeight: 400, color: 'var(--text-primary)' }}>
-                  Coherence Sensitivity
-                </span>
-                <span style={{ fontFamily: 'var(--font-sans)', fontSize: '14px', fontWeight: 500, color: '#9B6BC8' }}>
-                  {thresholdSettings.coherenceSensitivity < 0.33 
-                    ? 'Easy' 
-                    : thresholdSettings.coherenceSensitivity < 0.67 
-                    ? 'Medium' 
-                    : 'Hard'}
-                </span>
-              </div>
-              
-              <input
-                type="range"
-                min="0"
-                max="1"
-                step="0.05"
-                value={thresholdSettings.coherenceSensitivity}
-                onChange={(e) =>
-                  onThresholdSettingsChange({
-                    ...thresholdSettings,
-                    coherenceSensitivity: parseFloat(e.target.value),
-                  })
-                }
-                className="setting-slider"
-                style={{
-                  width: '100%',
-                  height: '6px',
-                  borderRadius: '999px',
-                  appearance: 'none',
-                  background: `linear-gradient(to right, #D9C478 0%, #D9C478 ${thresholdSettings.coherenceSensitivity * 100}%, hsl(270 7% 20%) ${thresholdSettings.coherenceSensitivity * 100}%, hsl(270 7% 20%) 100%)`,
-                  cursor: 'pointer',
-                }}
-              />
-              
-              <p style={{ fontFamily: 'var(--font-sans)', fontSize: '12px', fontWeight: 400, color: 'var(--text-muted)', fontStyle: 'italic', margin: '4px 0 0 0' }}>
-                Controls how easy it is to enter coherence state
-              </p>
-              
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', marginTop: '8px' }}>
-                <p style={{ fontFamily: 'var(--font-sans)', fontSize: '12px', fontWeight: 400, color: 'var(--text-subtle)' }}>
-                  Current: Threshold {Math.round((0.2 + thresholdSettings.coherenceSensitivity * 0.7) * 100)}%, Time {Math.round((1 + thresholdSettings.coherenceSensitivity * 9) * 10) / 10}s
-                </p>
-                <p style={{ fontFamily: 'var(--font-sans)', fontSize: '12px', fontWeight: 400, color: 'var(--text-subtle)' }}>
-                  Easy (0.0): Threshold 20%, Time 1.0s
-                </p>
-                <p style={{ fontFamily: 'var(--font-sans)', fontSize: '12px', fontWeight: 400, color: 'var(--text-subtle)' }}>
-                  Hard (1.0): Threshold 90%, Time 10.0s
-                </p>
-              </div>
-            </div>
-          </div>
-        </section>
+        {/* ── RIGHT COLUMN: stacked cards (flex-col with same gap as outer grid) ── */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
 
-        {/* Electrode Contact — only when Muse connected (row 2 in 2-col mode) */}
-        {museConnected && (
+          {/* Detection Settings */}
           <section 
             className="setup-section"
             style={{
@@ -287,48 +209,129 @@ export function SessionSetup({
               boxShadow: '0 4px 20px hsl(270 20% 2% / 0.5)',
             }}
           >
-            <ElectrodeStatus status={electrodeStatus} />
-            {batteryLevel >= 0 && (
-              <div 
-                className={`battery-display ${batteryLevel <= 20 ? 'low' : ''}`}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px',
-                  marginTop: '16px',
-                  padding: '8px 12px',
-                  background: 'hsl(270 10% 16% / 0.6)',
-                  borderRadius: '8px',
-                }}
-              >
-                <svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18" style={{ color: batteryLevel <= 20 ? '#c73c3c' : '#D9C478' }}>
-                  {batteryLevel > 75 ? (
-                    <path d="M15.67 4H14V2h-4v2H8.33C7.6 4 7 4.6 7 5.33v15.33C7 21.4 7.6 22 8.33 22h7.33c.74 0 1.34-.6 1.34-1.33V5.33C17 4.6 16.4 4 15.67 4z" />
-                  ) : batteryLevel > 50 ? (
-                    <path d="M15.67 4H14V2h-4v2H8.33C7.6 4 7 4.6 7 5.33v15.33C7 21.4 7.6 22 8.33 22h7.33c.74 0 1.34-.6 1.34-1.33V5.33C17 4.6 16.4 4 15.67 4zM13 18H11V9h2v9z" />
-                  ) : batteryLevel > 25 ? (
-                    <path d="M15.67 4H14V2h-4v2H8.33C7.6 4 7 4.6 7 5.33v15.33C7 21.4 7.6 22 8.33 22h7.33c.74 0 1.34-.6 1.34-1.33V5.33C17 4.6 16.4 4 15.67 4zM13 18H11V13h2v5z" />
-                  ) : (
-                    <path d="M15.67 4H14V2h-4v2H8.33C7.6 4 7 4.6 7 5.33v15.33C7 21.4 7.6 22 8.33 22h7.33c.74 0 1.34-.6 1.34-1.33V5.33C17 4.6 16.4 4 15.67 4zM13 18H11V16h2v2z" />
-                  )}
-                </svg>
-                <span 
-                  className="battery-text"
+            <h2 
+              style={{
+                fontFamily: 'var(--font-sans)',
+                fontSize: '16px',
+                fontWeight: 600,
+                color: 'var(--text-primary)',
+                margin: '0 0 16px 0',
+                lineHeight: 1.3,
+              }}
+            >
+              Detection Settings
+            </h2>
+            <div className="settings-group">
+              <div className="setting-row" style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontFamily: 'var(--font-sans)', fontSize: '14px', fontWeight: 400, color: 'var(--text-primary)' }}>
+                    Coherence Sensitivity
+                  </span>
+                  <span style={{ fontFamily: 'var(--font-sans)', fontSize: '14px', fontWeight: 500, color: '#9B6BC8' }}>
+                    {thresholdSettings.coherenceSensitivity < 0.33 
+                      ? 'Easy' 
+                      : thresholdSettings.coherenceSensitivity < 0.67 
+                      ? 'Medium' 
+                      : 'Hard'}
+                  </span>
+                </div>
+                
+                <input
+                  type="range"
+                  min="0"
+                  max="1"
+                  step="0.05"
+                  value={thresholdSettings.coherenceSensitivity}
+                  onChange={(e) =>
+                    onThresholdSettingsChange({
+                      ...thresholdSettings,
+                      coherenceSensitivity: parseFloat(e.target.value),
+                    })
+                  }
+                  className="setting-slider"
                   style={{
-                    fontFamily: 'var(--font-sans)',
-                    fontSize: '13px',
-                    fontWeight: 500,
-                    color: batteryLevel <= 20 ? '#c73c3c' : 'var(--text-muted)',
+                    width: '100%',
+                    height: '6px',
+                    borderRadius: '999px',
+                    appearance: 'none',
+                    background: `linear-gradient(to right, #D9C478 0%, #D9C478 ${thresholdSettings.coherenceSensitivity * 100}%, hsl(270 7% 20%) ${thresholdSettings.coherenceSensitivity * 100}%, hsl(270 7% 20%) 100%)`,
+                    cursor: 'pointer',
+                  }}
+                />
+                
+                <p style={{ fontFamily: 'var(--font-sans)', fontSize: '12px', fontWeight: 400, color: 'var(--text-muted)', fontStyle: 'italic', margin: '4px 0 0 0' }}>
+                  Controls how easy it is to enter coherence state
+                </p>
+                
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', marginTop: '8px' }}>
+                  <p style={{ fontFamily: 'var(--font-sans)', fontSize: '12px', fontWeight: 400, color: 'var(--text-subtle)' }}>
+                    Current: Threshold {Math.round((0.2 + thresholdSettings.coherenceSensitivity * 0.7) * 100)}%, Time {Math.round((1 + thresholdSettings.coherenceSensitivity * 9) * 10) / 10}s
+                  </p>
+                  <p style={{ fontFamily: 'var(--font-sans)', fontSize: '12px', fontWeight: 400, color: 'var(--text-subtle)' }}>
+                    Easy (0.0): Threshold 20%, Time 1.0s
+                  </p>
+                  <p style={{ fontFamily: 'var(--font-sans)', fontSize: '12px', fontWeight: 400, color: 'var(--text-subtle)' }}>
+                    Hard (1.0): Threshold 90%, Time 10.0s
+                  </p>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          {/* Electrode Contact — only when Muse connected */}
+          {museConnected && (
+            <section 
+              className="setup-section"
+              style={{
+                background: 'linear-gradient(165deg, hsl(270 7% 13% / 0.75), hsl(270 10% 9% / 0.85))',
+                border: '1px solid hsl(270 15% 22% / 0.35)',
+                borderRadius: '12px',
+                padding: '20px',
+                boxShadow: '0 4px 20px hsl(270 20% 2% / 0.5)',
+              }}
+            >
+              <ElectrodeStatus status={electrodeStatus} />
+              {batteryLevel >= 0 && (
+                <div 
+                  className={`battery-display ${batteryLevel <= 20 ? 'low' : ''}`}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    marginTop: '16px',
+                    padding: '8px 12px',
+                    background: 'hsl(270 10% 16% / 0.6)',
+                    borderRadius: '8px',
                   }}
                 >
-                  {batteryLevel}%
-                </span>
-              </div>
-            )}
-          </section>
-        )}
+                  <svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18" style={{ color: batteryLevel <= 20 ? '#c73c3c' : '#D9C478' }}>
+                    {batteryLevel > 75 ? (
+                      <path d="M15.67 4H14V2h-4v2H8.33C7.6 4 7 4.6 7 5.33v15.33C7 21.4 7.6 22 8.33 22h7.33c.74 0 1.34-.6 1.34-1.33V5.33C17 4.6 16.4 4 15.67 4z" />
+                    ) : batteryLevel > 50 ? (
+                      <path d="M15.67 4H14V2h-4v2H8.33C7.6 4 7 4.6 7 5.33v15.33C7 21.4 7.6 22 8.33 22h7.33c.74 0 1.34-.6 1.34-1.33V5.33C17 4.6 16.4 4 15.67 4zM13 18H11V9h2v9z" />
+                    ) : batteryLevel > 25 ? (
+                      <path d="M15.67 4H14V2h-4v2H8.33C7.6 4 7 4.6 7 5.33v15.33C7 21.4 7.6 22 8.33 22h7.33c.74 0 1.34-.6 1.34-1.33V5.33C17 4.6 16.4 4 15.67 4zM13 18H11V13h2v5z" />
+                    ) : (
+                      <path d="M15.67 4H14V2h-4v2H8.33C7.6 4 7 4.6 7 5.33v15.33C7 21.4 7.6 22 8.33 22h7.33c.74 0 1.34-.6 1.34-1.33V5.33C17 4.6 16.4 4 15.67 4zM13 18H11V16h2v2z" />
+                    )}
+                  </svg>
+                  <span 
+                    className="battery-text"
+                    style={{
+                      fontFamily: 'var(--font-sans)',
+                      fontSize: '13px',
+                      fontWeight: 500,
+                      color: batteryLevel <= 20 ? '#c73c3c' : 'var(--text-muted)',
+                    }}
+                  >
+                    {batteryLevel}%
+                  </span>
+                </div>
+              )}
+            </section>
+          )}
 
-        {/* Guidance Audio — col 3 when disconnected (3-col), or row 2 col 2 when connected (2-col) */}
+          {/* Guidance Audio */}
         <section 
           className="setup-section"
           style={{
@@ -452,6 +455,8 @@ export function SessionSetup({
             </p>
           </div>
         </section>
+
+        </div>{/* ── END right column stack ── */}
 
         {/* Debug Electrode Overlay — only when enabled and connected */}
         {museConnected && DEBUG_ELECTRODES_OVERLAY && (

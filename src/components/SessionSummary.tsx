@@ -4,33 +4,30 @@
 // - Typography: Inter font family, various weights
 // - Colors: #D9C478 (accent gold), various HSL backgrounds
 
-import { useMemo, useState, useCallback } from 'react';
+import { useMemo, useState, useCallback, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { useNavigate, Link } from 'react-router-dom';
 import type { Session, SessionStats, User } from '../types';
 import { getJourneys, getLastJourneyId } from '../lib/session-storage';
 import { formatTime } from '../lib/storage';
-import { generateSummaryPdfBlob } from '../lib/summary-pdf';
+import { exportSummarySnapshotPdf } from '../lib/summary-pdf';
 
 interface SessionSummaryProps {
   session: Session;
   stats: SessionStats;
   user: User;
-  onNewSession: () => void;
   onExportData?: () => void;
-  onSaveSession?: () => void;
 }
 
 export function SessionSummary({
   session,
   stats,
   user,
-  onNewSession,
-  onSaveSession,
 }: SessionSummaryProps) {
   const navigate = useNavigate();
-  const [saved, setSaved] = useState(false);
+  const summaryRef = useRef<HTMLDivElement>(null);
   const [isSharing, setIsSharing] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
 
   // Get journey name from journeyId
   const journeyId = getLastJourneyId(user.id);
@@ -75,90 +72,59 @@ export function SessionSummary({
     return `Building coherence foundation. Peak coherence was ${peak}%.`;
   }, [stats.coherencePercent, peakCoherence]);
 
-  const handleSave = useCallback(() => {
-    if (onSaveSession) {
-      onSaveSession();
-      setSaved(true);
+  /** Generate a visual-snapshot PDF of the Summary screen. */
+  const getSnapshotPdfBlob = useCallback(async (): Promise<Blob> => {
+    if (!summaryRef.current) {
+      throw new Error('Summary container not mounted');
     }
-  }, [onSaveSession]);
+    return exportSummarySnapshotPdf(summaryRef.current);
+  }, []);
 
-  /** Generate PDF and return blob for share/email */
-  const getPdfBlob = useCallback(async (): Promise<Blob> => {
-    return generateSummaryPdfBlob({
-      session,
-      stats,
-      user,
-      journeyName,
-      peakCoherence,
-      stability,
-      avgHeartRate: session.avgHeartRate ?? null,
-      avgHRV: session.avgHRV ?? null,
-    });
-  }, [session, stats, user, journeyName, peakCoherence, stability]);
+  const pdfFileName = `SoundBed-Session-${new Date(session.startTime).toISOString().slice(0, 10)}.pdf`;
 
+  /** Single Share action — generates a snapshot PDF then triggers the
+   *  system share sheet.  When the user picks Email from the share sheet
+   *  the PDF is attached with the approved subject / body copy.
+   *  On desktop (no Web Share API) falls back to a direct PDF download. */
   const handleShare = useCallback(async () => {
     setIsSharing(true);
+    setExportError(null);
     try {
-      const pdfBlob = await getPdfBlob();
-      const file = new File(
-        [pdfBlob],
-        `SoundBed-Session-${new Date(session.startTime).toISOString().slice(0, 10)}.pdf`,
-        { type: 'application/pdf' }
-      );
-      const text = `Session Report – ${user.name}\n${new Date(session.startTime).toLocaleString()}\nDuration: ${formatTime(stats.totalLength)} min\nCoherence: ${Math.round(stats.coherencePercent)}%\nPeak: ${Math.round(peakCoherence * 100)}%\nStability: ${stability}`;
+      const pdfBlob = await getSnapshotPdfBlob();
+      const file = new File([pdfBlob], pdfFileName, { type: 'application/pdf' });
+      const shareText = `Hi ${user.name},\n\nThis is a snapshot of your most recent SoundBed session.\nTake a moment to feel into it. Your body remembers.\n\nSmall shifts compound. Keep training.`;
+
       if (navigator.share && navigator.canShare?.({ files: [file] })) {
-        await navigator.share({ title: 'SoundBed Session Summary', text, files: [file] });
+        // Native share sheet (iOS / Android) — PDF attached, email uses approved copy
+        await navigator.share({
+          title: 'Your Nervous System Just Learned Something',
+          text: shareText,
+          files: [file],
+        });
       } else if (navigator.share) {
-        await navigator.share({ title: 'SoundBed Session Summary', text });
+        // Share without file support — text only
+        await navigator.share({
+          title: 'Your Nervous System Just Learned Something',
+          text: shareText,
+        });
       } else {
-        await navigator.clipboard.writeText(text);
+        // Desktop fallback — download the PDF directly
         const url = URL.createObjectURL(pdfBlob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = file.name;
+        a.download = pdfFileName;
         a.click();
         URL.revokeObjectURL(url);
       }
     } catch (e) {
       if ((e as Error)?.name !== 'AbortError') {
         console.error('Share failed:', e);
+        setExportError("Couldn't generate PDF snapshot. Please try again.");
       }
     } finally {
       setIsSharing(false);
     }
-  }, [session, stats, user, peakCoherence, stability, getPdfBlob]);
-
-  /** Build plain-text summary for email body */
-  const buildShareText = useCallback(() => {
-    const hrText = session.avgHeartRate != null ? `\nHeart Rate: ${Math.round(session.avgHeartRate)} bpm` : '';
-    const hrvText = session.avgHRV != null ? `\nHRV: ${Math.round(session.avgHRV)} ms` : '';
-    return `SoundBed Session Report\nUser: ${user.name}\nJourney: ${journeyName}\nDate: ${new Date(session.startTime).toLocaleString()}\nDuration: ${formatTime(stats.totalLength)} min\nCoherence: ${Math.round(stats.coherencePercent)}%\nPeak: ${Math.round(peakCoherence * 100)}%\nStability: ${stability}${hrText}${hrvText}`;
-  }, [session, stats, user, journeyName, peakCoherence, stability]);
-
-  /** Email share — opens mailto with session text */
-  const handleEmail = useCallback(() => {
-    const subject = encodeURIComponent(`SoundBed Session – ${journeyName} – ${new Date(session.startTime).toLocaleDateString()}`);
-    const body = encodeURIComponent(buildShareText());
-    window.open(`mailto:?subject=${subject}&body=${body}`, '_self');
-  }, [session, journeyName, buildShareText]);
-
-  /** Download PDF to device */
-  const handleDownloadPdf = useCallback(async () => {
-    setIsSharing(true);
-    try {
-      const blob = await getPdfBlob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `SoundBed-Session-${new Date(session.startTime).toISOString().slice(0, 10)}.pdf`;
-      a.click();
-      URL.revokeObjectURL(url);
-    } catch (e) {
-      console.error('PDF download failed:', e);
-    } finally {
-      setIsSharing(false);
-    }
-  }, [session, getPdfBlob]);
+  }, [user, getSnapshotPdfBlob, pdfFileName]);
 
   /**
    * Draw timeline graph with 3 mental state zones and vertical color layering.
@@ -450,7 +416,9 @@ export function SessionSummary({
 
   return (
     <motion.div
+      ref={summaryRef}
       className="screen session-summary"
+      data-export="session-summary"
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: -20 }}
@@ -460,9 +428,10 @@ export function SessionSummary({
         margin: '0 auto',
       }}
     >
-      {/* Top Navigation Bar - Target 6: Back arrow left, Save/Share buttons right */}
+      {/* Top Navigation Bar - Back arrow left, Share buttons right (hidden from PDF export) */}
       <header 
         className="summary-header"
+        data-export-ignore
         style={{
           display: 'flex',
           alignItems: 'center',
@@ -487,117 +456,59 @@ export function SessionSummary({
             <path d="M19 12H5M12 19l-7-7 7-7"/>
           </svg>
         </Link>
-        <div 
-          className="summary-header-actions"
+        <button
+          className="summary-action-btn"
+          onClick={handleShare}
+          disabled={isSharing}
           style={{
             display: 'flex',
             alignItems: 'center',
-            gap: '8px',
+            gap: '6px',
+            padding: '8px 16px',
+            background: 'transparent',
+            border: '1px solid hsl(275 20% 25% / 0.35)',
+            borderRadius: '12px',
+            color: isSharing ? 'var(--text-subtle)' : 'var(--text-primary)',
+            fontFamily: 'var(--font-sans)',
+            fontSize: '14px',
+            fontWeight: 400,
+            cursor: isSharing ? 'default' : 'pointer',
+            transition: 'all 0.2s ease',
           }}
         >
-          <button
-            className="summary-action-btn"
-            onClick={handleSave}
-            disabled={saved}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-              padding: '8px 16px',
-              background: 'transparent',
-              border: '1px solid hsl(275 20% 25% / 0.35)',
-              borderRadius: '12px',
-              color: saved ? 'var(--text-subtle)' : 'var(--text-primary)',
-              fontFamily: 'var(--font-sans)',
-              fontSize: '14px',
-              fontWeight: 400,
-              cursor: saved ? 'default' : 'pointer',
-              transition: 'all 0.2s ease',
-            }}
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
-              <polyline points="17 21 17 13 7 13 7 21"/>
-              <polyline points="7 3 7 8 15 8"/>
-            </svg>
-            <span>{saved ? 'Saved' : 'Save'}</span>
-          </button>
-          <button
-            className="summary-action-btn"
-            onClick={handleEmail}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-              padding: '8px 16px',
-              background: 'transparent',
-              border: '1px solid hsl(275 20% 25% / 0.35)',
-              borderRadius: '12px',
-              color: 'var(--text-primary)',
-              fontFamily: 'var(--font-sans)',
-              fontSize: '14px',
-              fontWeight: 400,
-              cursor: 'pointer',
-              transition: 'all 0.2s ease',
-            }}
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
-            <span>Email</span>
-          </button>
-          <button
-            className="summary-action-btn"
-            onClick={handleShare}
-            disabled={isSharing}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-              padding: '8px 16px',
-              background: 'transparent',
-              border: '1px solid hsl(275 20% 25% / 0.35)',
-              borderRadius: '12px',
-              color: isSharing ? 'var(--text-subtle)' : 'var(--text-primary)',
-              fontFamily: 'var(--font-sans)',
-              fontSize: '14px',
-              fontWeight: 400,
-              cursor: isSharing ? 'default' : 'pointer',
-              transition: 'all 0.2s ease',
-            }}
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <circle cx="18" cy="5" r="3"/>
-              <circle cx="6" cy="12" r="3"/>
-              <circle cx="18" cy="19" r="3"/>
-              <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/>
-              <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
-            </svg>
-            <span>Share</span>
-          </button>
-          <button
-            className="summary-action-btn"
-            onClick={handleDownloadPdf}
-            disabled={isSharing}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-              padding: '8px 16px',
-              background: 'transparent',
-              border: '1px solid hsl(275 20% 25% / 0.35)',
-              borderRadius: '12px',
-              color: isSharing ? 'var(--text-subtle)' : 'var(--text-primary)',
-              fontFamily: 'var(--font-sans)',
-              fontSize: '14px',
-              fontWeight: 400,
-              cursor: isSharing ? 'default' : 'pointer',
-              transition: 'all 0.2s ease',
-            }}
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-            <span>PDF</span>
-          </button>
-        </div>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="18" cy="5" r="3"/>
+            <circle cx="6" cy="12" r="3"/>
+            <circle cx="18" cy="19" r="3"/>
+            <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/>
+            <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
+          </svg>
+          <span>{isSharing ? 'Generating…' : 'Share'}</span>
+        </button>
       </header>
+
+      {/* Export error toast */}
+      {exportError && (
+        <div
+          data-export-ignore
+          role="alert"
+          onClick={() => setExportError(null)}
+          style={{
+            padding: '10px 16px',
+            margin: '0 0 12px',
+            background: 'hsl(0 55% 50% / 0.15)',
+            border: '1px solid hsl(0 55% 50% / 0.4)',
+            borderRadius: '10px',
+            color: 'hsl(0 55% 80%)',
+            fontFamily: 'var(--font-sans)',
+            fontSize: '13px',
+            textAlign: 'center',
+            cursor: 'pointer',
+          }}
+        >
+          {exportError}
+        </div>
+      )}
 
       <div className="summary-content">
         {/* Hero Section - Target 6: Glass card with coherence ring */}
@@ -1188,9 +1099,10 @@ export function SessionSummary({
         </div>
       </div>
 
-      {/* CTA Buttons — Lovable spec: Secondary + Primary button styles */}
+      {/* CTA Buttons — Lovable spec: Secondary + Primary button styles (hidden from PDF export) */}
       <footer 
         className="summary-footer"
+        data-export-ignore
         style={{
           display: 'flex',
           alignItems: 'center',
@@ -1221,7 +1133,7 @@ export function SessionSummary({
         </motion.button>
         <motion.button
           className="btn btn-primary btn-large"
-          onClick={onNewSession}
+          onClick={() => navigate('/journeys')}
           whileHover={{ scale: 1.02, y: -2 }}
           whileTap={{ scale: 0.98 }}
           style={{

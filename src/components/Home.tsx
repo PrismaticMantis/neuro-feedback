@@ -195,23 +195,23 @@ export function Home({ currentUser, users, onCreateUser, onSelectUser }: HomePro
             </svg>
           </div>
 
-          {/* Heading - text-display (48px, 600, Inter) */}
-          <h1 className="hero-title text-display">Ready to begin?</h1>
+          {/* Heading — Heading 2 (24px, 500, Inter) per Lovable spec */}
+          <h1 className="hero-title">Ready to begin?</h1>
 
           {/* Description (Lovable copy) - text-body */}
           <p className="hero-description text-body-large">
             Release mental strain and access spacious, clear thinking
           </p>
 
-          {/* Primary CTA with play icon (Lovable spec) */}
+          {/* Primary CTA — compact pill button per Lovable spec */}
           <motion.button
-            className="btn btn-primary btn-large"
+            className="btn btn-primary"
             onClick={handleStartSession}
             whileHover={{ scale: 1.02 }}
             whileTap={{ scale: 0.98 }}
             style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 'var(--space-tight)' }}
           >
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>
             Start Session
           </motion.button>
         </motion.div>

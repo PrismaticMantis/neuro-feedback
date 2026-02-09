@@ -20,12 +20,6 @@ import { museHandler } from './lib/muse-handler';
 import { movementDetector, DEBUG_MOVEMENT } from './lib/movement-detector';
 import { calculateCalmScore, calculateCreativeFlowScore } from './lib/flow-state';
 import { deriveRecoveryPoints } from './lib/summary-pdf';
-import {
-  buildSessionRecord,
-  saveSessionRecord,
-  getLastJourneyId,
-} from './lib/session-storage';
-import { ENABLE_SESSION_HISTORY } from './lib/feature-flags';
 import type { ThresholdSettings } from './types';
 import './App.css';
 
@@ -177,40 +171,6 @@ function App() {
     navigate('/summary');
   }, [audio, session, navigate]);
 
-  const handleNewSession = useCallback(() => {
-    session.setScreen('setup');
-    navigate('/home');
-  }, [session, navigate]);
-
-  const handleSaveSession = useCallback(() => {
-    const s = session.lastSession;
-    const st = session.lastSessionStats;
-    const user = session.currentUser;
-    if (!s || !st || !user || !ENABLE_SESSION_HISTORY) return;
-
-    const journeyId = getLastJourneyId(user.id);
-    const coherencePercent = s.duration > 0
-      ? (s.coherenceTime / s.duration) * 100
-      : 0;
-
-    const record = buildSessionRecord({
-      id: s.id,
-      userId: user.id,
-      journeyId,
-      startTime: s.startTime,
-      endTime: s.endTime,
-      durationMs: s.duration,
-      coherenceMs: s.coherenceTime,
-      coherencePercent,
-      coherenceEntries: 0,
-      longestStreakMs: s.longestStreak,
-      avgCoherence: s.avgCoherence,
-      achievementScore: st.achievementScore,
-      coherenceHistory: s.coherenceHistory,
-    });
-    saveSessionRecord(record);
-  }, [session.lastSession, session.lastSessionStats, session.currentUser]);
-
   const handleEntrainmentToggle = useCallback(() => {
     audio.setEntrainmentEnabled(!audio.entrainmentEnabled);
   }, [audio]);
@@ -296,9 +256,7 @@ function App() {
                 session={session.lastSession}
                 stats={session.lastSessionStats}
                 user={session.currentUser}
-                onNewSession={handleNewSession}
                 onExportData={session.exportData}
-                onSaveSession={handleSaveSession}
               />
             ) : (
               <Navigate to="/home" replace />
