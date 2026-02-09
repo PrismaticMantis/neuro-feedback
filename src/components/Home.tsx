@@ -164,9 +164,6 @@ export function Home({ currentUser, users, onCreateUser, onSelectUser }: HomePro
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
     >
-      {/* LAYER 1: Ambient viewport glow (static, pointer-events none) */}
-      <div className="home-ambient-glow" />
-
       <div className="home-content-container">
         {/* ── Header ── */}
         <header className="home-header">

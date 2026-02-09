@@ -10,36 +10,51 @@ import type { User } from '../types';
 const ENABLED_JOURNEY_ID = 'creativeFlow';
 
 /**
- * Journey theme map — matched to Lovable "2 - Choose Journey.png".
+ * Journey theme map — pixel-matched to Lovable "2 - Choose Journey.png".
  *
- * All cards share the same uniform dark-glass background (no per-card
- * coloured gradient).  Visual differentiation comes from icon badge colour
- * and the gold play button on the enabled journey (Creative Flow).
+ * Each card has a DISTINCT coloured gradient wash concentrated at the top,
+ * a matching accent border, and a soft ambient glow.  Colours are fully
+ * opaque to guarantee visibility on every device.
  */
 const JOURNEY_THEMES: Record<string, {
   duration: string;
   iconColor: string;
   iconBg: string;
+  cardBg: string;
+  cardBorder: string;
+  cardGlow: string;
 }> = {
   calm: {
     duration: '15 min',
     iconColor: '#ffffff',
     iconBg: '#5B8DEF',
+    cardBg: 'linear-gradient(165deg, hsl(215 30% 18%) 0%, hsl(225 14% 10%) 100%)',
+    cardBorder: '1px solid hsl(215 25% 28% / 0.45)',
+    cardGlow: '0 4px 24px hsl(215 30% 8% / 0.5), inset 0 1px 0 hsl(215 30% 40% / 0.08)',
   },
   deepRest: {
     duration: '25 min',
     iconColor: '#ffffff',
     iconBg: '#9B6BC8',
+    cardBg: 'linear-gradient(165deg, hsl(275 32% 20%) 0%, hsl(270 14% 10%) 100%)',
+    cardBorder: '1px solid hsl(275 25% 30% / 0.45)',
+    cardGlow: '0 4px 24px hsl(275 30% 8% / 0.5), inset 0 1px 0 hsl(275 30% 40% / 0.08)',
   },
   creativeFlow: {
     duration: '20 min',
-    iconColor: '#0c0a0e',
+    iconColor: '#ffffff',
     iconBg: '#D9C478',
+    cardBg: 'linear-gradient(165deg, hsl(45 28% 16%) 0%, hsl(40 12% 10%) 100%)',
+    cardBorder: '1px solid hsl(45 22% 26% / 0.45)',
+    cardGlow: '0 4px 24px hsl(45 25% 8% / 0.5), inset 0 1px 0 hsl(45 30% 40% / 0.08)',
   },
   nightWindDown: {
     duration: '30 min',
     iconColor: '#ffffff',
     iconBg: '#7C6BC8',
+    cardBg: 'linear-gradient(165deg, hsl(260 32% 20%) 0%, hsl(260 14% 10%) 100%)',
+    cardBorder: '1px solid hsl(260 25% 30% / 0.45)',
+    cardGlow: '0 4px 24px hsl(260 30% 8% / 0.5), inset 0 1px 0 hsl(260 30% 40% / 0.08)',
   },
 };
 
@@ -250,9 +265,9 @@ export function JourneySelect({ currentUser }: JourneySelectProps) {
                 transition: 'all 0.3s ease',
                 position: 'relative',
                 overflow: 'hidden',
-                background: 'var(--bg-card-glass)',
-                border: 'var(--border-card-glass)',
-                boxShadow: 'var(--shadow-card-glass)',
+                background: theme.cardBg,
+                border: theme.cardBorder,
+                boxShadow: theme.cardGlow,
                 backdropFilter: 'blur(16px)',
                 minHeight: '200px',         // Taller to match Lovable
               }}

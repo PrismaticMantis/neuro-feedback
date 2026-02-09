@@ -2277,10 +2277,7 @@ h3 {
   backdrop-filter: blur(20px);
 }
 
-.journey-card-icon {
-  flex-shrink: 0;
-  color: var(--text-primary);
-}
+/* .journey-card-icon — colour set inline per-journey in JourneySelect.tsx */
 
 .journey-card-content {
   flex: 1;
@@ -3233,30 +3230,18 @@ h3 {
   display: flex;
   flex-direction: column;
   min-height: 100vh;
-  padding-bottom: 96px;       /* 6rem — room for fixed nav */
-}
-
-/* ── Ambient viewport glow (static, 3 radial washes) ── */
-.home-ambient-glow {
-  position: fixed;
-  inset: 0;
-  pointer-events: none;
-  z-index: 0;
-  background:
-    /* Amethyst wash from top-centre */
-    radial-gradient(ellipse 80% 60% at 50% -10%, hsla(275, 45%, 55%, 0.05), transparent),
-    /* Champagne warm glow bottom-right */
-    radial-gradient(ellipse 50% 40% at 90% 80%, hsla(45, 55%, 70%, 0.03), transparent),
-    /* Rose quartz tint left-centre */
-    radial-gradient(ellipse 40% 30% at 10% 60%, hsla(330, 40%, 60%, 0.02), transparent);
+  /* Override .screen's padding — this page handles its own layout */
+  padding: 0 0 96px 0;
 }
 
 /* ── Content container ── */
 .home-content-container {
-  position: relative;          /* stacks above ambient glow */
+  position: relative;
   max-width: 1152px;           /* max-w-6xl */
   margin: 0 auto;
-  padding: 0 32px;             /* px-8 */
+  padding: 0 var(--space-page-x);  /* 32px horizontal */
+  width: 100%;
+  box-sizing: border-box;
 }
 
 /* ── Header ── */
@@ -3669,22 +3654,9 @@ h3 {
   filter: brightness(1.06);
 }
 
-.journey-card-icon {
-  width: 48px;
-  height: 48px;
-  border-radius: var(--radius-xl);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  margin-bottom: var(--space-inner);
-  flex-shrink: 0;
-}
-
-.journey-card-icon svg {
-  width: 24px;
-  height: 24px;
-  color: var(--text-primary);
-}
+/* NOTE: .journey-card-icon sizing, colour and layout are set INLINE
+   in JourneySelect.tsx via JOURNEY_THEMES.  Do NOT add width/height/color
+   here — it overrides the per-journey values the spec requires. */
 
 .journey-name {
   font-family: var(--font-sans);
