@@ -10,50 +10,60 @@ import type { User } from '../types';
 const ENABLED_JOURNEY_ID = 'creativeFlow';
 
 /**
- * Journey theme map — unique gradient, icon, and glow per journey (Lovable parity).
+ * Journey theme map — pixel-matched to Lovable "2 - Choose Journey.png".
  *
- * Each card gets a subtle tint of its accent color on the glass background,
- * a matching border hue, and a soft radial glow that differentiates it visually.
+ * Each card has a distinct gradient wash concentrated at the top, a matching
+ * accent border, and a soft ambient glow.  The `playAccent` flag controls
+ * which card gets the gold play button (Night Wind-Down in the Lovable spec).
  */
 const JOURNEY_THEMES: Record<string, {
   duration: string;
   iconColor: string;
   iconBg: string;
-  cardGradient: string;   // Themed glass background
-  cardBorder: string;     // Accent-tinted border
-  cardGlow: string;       // Subtle box-shadow glow
+  cardGradient: string;
+  cardBorder: string;
+  cardGlow: string;
+  playAccent: boolean;       // true = gold play button (Lovable: Night Wind-Down)
 }> = {
   calm: {
     duration: '15 min',
     iconColor: '#ffffff',
     iconBg: '#5B8DEF',
-    cardGradient: 'linear-gradient(165deg, hsl(210 18% 15% / 0.85), hsl(215 14% 10% / 0.9))',
-    cardBorder: '1px solid hsl(210 22% 28% / 0.35)',
-    cardGlow: '0 4px 24px hsl(210 35% 18% / 0.3), inset 0 1px 0 hsl(210 30% 40% / 0.08)',
+    // Visible blue wash at top fading to dark
+    cardGradient: 'linear-gradient(170deg, hsl(215 25% 20% / 0.7) 0%, hsl(220 15% 12% / 0.85) 55%, hsl(225 12% 9% / 0.92) 100%)',
+    cardBorder: '1px solid hsl(215 22% 30% / 0.35)',
+    cardGlow: '0 4px 24px hsl(215 30% 10% / 0.35), inset 0 1px 0 hsl(215 30% 45% / 0.06)',
+    playAccent: false,
   },
   deepRest: {
     duration: '25 min',
     iconColor: '#ffffff',
     iconBg: '#9B6BC8',
-    cardGradient: 'linear-gradient(165deg, hsl(275 18% 15% / 0.85), hsl(275 15% 10% / 0.9))',
-    cardBorder: '1px solid hsl(275 25% 30% / 0.4)',
-    cardGlow: '0 4px 24px hsl(275 35% 18% / 0.3), inset 0 1px 0 hsl(275 30% 40% / 0.08)',
+    // Prominent purple wash at top
+    cardGradient: 'linear-gradient(170deg, hsl(275 28% 22% / 0.7) 0%, hsl(275 18% 14% / 0.8) 50%, hsl(275 12% 9% / 0.92) 100%)',
+    cardBorder: '1px solid hsl(275 25% 32% / 0.4)',
+    cardGlow: '0 4px 24px hsl(275 30% 10% / 0.35), inset 0 1px 0 hsl(275 30% 45% / 0.06)',
+    playAccent: false,
   },
   creativeFlow: {
     duration: '20 min',
     iconColor: '#0c0a0e',
     iconBg: '#D9C478',
-    cardGradient: 'linear-gradient(165deg, hsl(45 14% 14% / 0.85), hsl(40 10% 10% / 0.9))',
-    cardBorder: '1px solid hsl(45 20% 28% / 0.35)',
-    cardGlow: '0 4px 24px hsl(45 35% 18% / 0.3), inset 0 1px 0 hsl(45 30% 40% / 0.08)',
+    // Warm gold wash at top
+    cardGradient: 'linear-gradient(170deg, hsl(45 22% 18% / 0.7) 0%, hsl(42 14% 12% / 0.82) 50%, hsl(40 10% 9% / 0.92) 100%)',
+    cardBorder: '1px solid hsl(45 20% 30% / 0.35)',
+    cardGlow: '0 4px 24px hsl(45 25% 10% / 0.35), inset 0 1px 0 hsl(45 30% 45% / 0.06)',
+    playAccent: false,
   },
   nightWindDown: {
     duration: '30 min',
     iconColor: '#ffffff',
     iconBg: '#7C6BC8',
-    cardGradient: 'linear-gradient(165deg, hsl(255 18% 15% / 0.85), hsl(255 15% 10% / 0.9))',
-    cardBorder: '1px solid hsl(255 22% 30% / 0.4)',
-    cardGlow: '0 4px 24px hsl(255 35% 18% / 0.3), inset 0 1px 0 hsl(255 25% 40% / 0.08)',
+    // Purple-mauve wash at top
+    cardGradient: 'linear-gradient(170deg, hsl(260 25% 22% / 0.7) 0%, hsl(260 18% 14% / 0.8) 50%, hsl(260 12% 9% / 0.92) 100%)',
+    cardBorder: '1px solid hsl(260 22% 32% / 0.4)',
+    cardGlow: '0 4px 24px hsl(260 30% 10% / 0.35), inset 0 1px 0 hsl(260 25% 45% / 0.06)',
+    playAccent: true,          // Gold play button per Lovable spec
   },
 };
 
@@ -127,8 +137,8 @@ export function JourneySelect({ currentUser }: JourneySelectProps) {
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: -12 }}
       style={{
-        padding: '0 24px 100px', // Lovable Target 2: padding with room for bottom nav
-        maxWidth: '900px',
+        padding: '0 20px 100px', // Lovable Target 2: tighter side padding so cards fill width
+        maxWidth: '820px',       // Narrower container → cards fill proportionally more
         margin: '0 auto',
       }}
     >
@@ -240,8 +250,10 @@ export function JourneySelect({ currentUser }: JourneySelectProps) {
       >
         {journeys.map((j) => {
           const theme = JOURNEY_THEMES[j.id] ?? JOURNEY_THEMES.creativeFlow;
-          const isEnabled = j.id === ENABLED_JOURNEY_ID;
-          
+          // Play button: gold accent per Lovable reference (Night Wind-Down),
+          // NOT tied to isEnabled — visual parity takes priority.
+          const goldPlay = theme.playAccent;
+
           return (
             <motion.button
               key={j.id}
@@ -255,25 +267,24 @@ export function JourneySelect({ currentUser }: JourneySelectProps) {
                 flexDirection: 'column',
                 alignItems: 'flex-start',
                 textAlign: 'left',
-                padding: '20px',
-                borderRadius: '12px',
+                padding: '22px',
+                borderRadius: '14px',
                 cursor: 'pointer',
                 transition: 'all 0.3s ease',
                 position: 'relative',
                 overflow: 'hidden',
-                // Per-journey themed glass background
                 background: theme.cardGradient,
                 border: theme.cardBorder,
                 boxShadow: theme.cardGlow,
                 backdropFilter: 'blur(16px)',
-                minHeight: '180px',
+                minHeight: '200px',         // Taller to match Lovable
               }}
             >
-              {/* Icon Circle - Lovable: 44px rounded-lg with accent fill and subtle glow */}
-              <motion.div 
-                className="journey-card-icon" 
-                style={{ 
-                  background: theme.iconBg, 
+              {/* Icon Circle - Lovable: 44px rounded-lg with accent fill */}
+              <div
+                className="journey-card-icon"
+                style={{
+                  background: theme.iconBg,
                   width: '44px',
                   height: '44px',
                   borderRadius: '12px',
@@ -283,22 +294,14 @@ export function JourneySelect({ currentUser }: JourneySelectProps) {
                   marginBottom: '16px',
                   flexShrink: 0,
                   color: theme.iconColor,
-                  boxShadow: `0 0 20px ${theme.iconBg}40`,
+                  boxShadow: `0 0 18px ${theme.iconBg}35`,
                 }}
-                animate={{
-                  boxShadow: [
-                    `0 0 15px ${theme.iconBg}30`,
-                    `0 0 25px ${theme.iconBg}50`,
-                    `0 0 15px ${theme.iconBg}30`,
-                  ],
-                }}
-                transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}
               >
                 <JourneyIcon id={j.id} />
-              </motion.div>
-              
+              </div>
+
               {/* Journey Name */}
-              <span 
+              <span
                 className="journey-name"
                 style={{
                   fontFamily: 'var(--font-sans)',
@@ -312,9 +315,9 @@ export function JourneySelect({ currentUser }: JourneySelectProps) {
               >
                 {j.name}
               </span>
-              
+
               {/* Journey Description */}
-              <span 
+              <span
                 className="journey-desc"
                 style={{
                   fontFamily: 'var(--font-sans)',
@@ -329,9 +332,9 @@ export function JourneySelect({ currentUser }: JourneySelectProps) {
               >
                 {j.description}
               </span>
-              
+
               {/* Footer: Duration + Play Button */}
-              <div 
+              <div
                 style={{
                   display: 'flex',
                   alignItems: 'center',
@@ -341,7 +344,7 @@ export function JourneySelect({ currentUser }: JourneySelectProps) {
                 }}
               >
                 {/* Duration with clock icon */}
-                <span 
+                <span
                   className="journey-duration"
                   style={{
                     display: 'flex',
@@ -359,23 +362,23 @@ export function JourneySelect({ currentUser }: JourneySelectProps) {
                   </svg>
                   {theme.duration}
                 </span>
-                
-                {/* Play Button — filled accent for enabled, subtle outline for coming-soon */}
-                <span 
-                  className="journey-play-btn" 
-                  style={{ 
-                    background: isEnabled ? theme.iconBg : 'hsl(270 10% 18% / 0.6)',
-                    border: isEnabled ? 'none' : '1px solid hsl(270 15% 30% / 0.4)',
-                    width: '32px',
-                    height: '32px',
+
+                {/* Play Button — gold accent only on Night Wind-Down per Lovable */}
+                <span
+                  className="journey-play-btn"
+                  style={{
+                    background: goldPlay ? '#D9C478' : 'hsl(270 8% 18% / 0.55)',
+                    border: goldPlay ? 'none' : '1px solid hsl(270 12% 28% / 0.4)',
+                    width: '34px',
+                    height: '34px',
                     borderRadius: '50%',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
                     flexShrink: 0,
-                    color: isEnabled ? theme.iconColor : 'var(--text-subtle)',
+                    color: goldPlay ? '#0c0a0e' : 'var(--text-subtle)',
                     transition: 'all 0.2s ease',
-                  }} 
+                  }}
                   aria-hidden
                 >
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
@@ -389,15 +392,15 @@ export function JourneySelect({ currentUser }: JourneySelectProps) {
       </div>
 
       {/* About Sound Journeys - Target 2: Neutral info card at bottom */}
-      <section 
+      <section
         className="about-journeys-card"
         style={{
-          padding: '20px',
-          background: 'linear-gradient(165deg, hsl(270 8% 14% / 0.7), hsl(270 10% 10% / 0.8))',
+          padding: '22px 24px',
+          background: 'linear-gradient(170deg, hsl(270 8% 14% / 0.65), hsl(270 10% 10% / 0.8))',
           border: '1px solid hsl(270 12% 24% / 0.3)',
-          borderRadius: '12px',
+          borderRadius: '14px',
           backdropFilter: 'blur(16px)',
-          boxShadow: '0 4px 20px hsl(270 20% 2% / 0.4)',
+          boxShadow: '0 4px 20px hsl(270 20% 2% / 0.35)',
         }}
       >
         <h3

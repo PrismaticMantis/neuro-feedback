@@ -188,10 +188,16 @@ export function Home({ currentUser, users, onCreateUser, onSelectUser }: HomePro
           animate={{ opacity: 1, scale: 1 }}
           transition={{ delay: 0.1 }}
         >
-          {/* Icon Circle - sparkle/star (Lovable spec, centered at top) */}
+          {/* Icon Circle - multi-point sparkle matching Lovable spec */}
           <div className="hero-icon-circle">
             <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden>
-              <path d="M12 2l2.5 7.5L22 12l-7.5 2.5L12 22l-2.5-7.5L2 12l7.5-2.5L12 2z" />
+              {/* Main 4-point star */}
+              <path d="M12 1l2.2 8.2L22 12l-7.8 2.8L12 23l-2.2-8.2L2 12l7.8-2.8L12 1z" />
+              {/* Small diagonal sparkle points */}
+              <path d="M5.5 5.5l1.4 2.1L5.5 9.7 4.1 7.6 5.5 5.5z" opacity="0.7"/>
+              <path d="M18.5 5.5l1.4 2.1-1.4 2.1-1.4-2.1 1.4-2.1z" opacity="0.7"/>
+              <path d="M5.5 14.3l1.4 2.1-1.4 2.1-1.4-2.1 1.4-2.1z" opacity="0.7"/>
+              <path d="M18.5 14.3l1.4 2.1-1.4 2.1-1.4-2.1 1.4-2.1z" opacity="0.7"/>
             </svg>
           </div>
 
@@ -209,7 +215,7 @@ export function Home({ currentUser, users, onCreateUser, onSelectUser }: HomePro
             onClick={handleStartSession}
             whileHover={{ scale: 1.02 }}
             whileTap={{ scale: 0.98 }}
-            style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 'var(--space-tight)' }}
+            style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 'var(--space-tight)', position: 'relative', zIndex: 1 }}
           >
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>
             Start Session

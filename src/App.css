@@ -3284,7 +3284,7 @@ h3 {
   width: 100%;
   max-width: 680px;
   text-align: center;
-  padding: var(--space-card-hero);
+  padding: 40px var(--space-card-hero);
   background: var(--bg-card-glass);
   border: var(--border-card-glass);
   border-radius: var(--radius-card-premium);
@@ -3292,6 +3292,11 @@ h3 {
   box-shadow: var(--shadow-card-glass);
   overflow: hidden;            /* clip the star glow inside card bounds */
   position: relative;          /* stacking context for glow z-index */
+  /* Vertically center the content block within the card */
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
 }
 
 .hero-icon-circle {
@@ -3306,21 +3311,26 @@ h3 {
   color: var(--accent-primary);
   box-shadow: var(--shadow-glow-accent);
   position: relative;
+  z-index: 1;                  /* above the card ::before glow */
 }
 
-/* Star glow - large diffuse warm glow that lights up the card centre.
-   Matches Lovable: a soft lantern-like radiance clipped by the card. */
-.hero-icon-circle::before {
+/* Card-centred glow — radiance centered on the card (behind "Ready to begin?").
+   Clipped by the card's overflow: hidden so it never bleeds outside. */
+.home-hero-card::before {
   content: '';
   position: absolute;
-  inset: -120px;
+  top: 50%;
+  left: 50%;
+  width: 340px;
+  height: 340px;
+  transform: translate(-50%, -50%);
   border-radius: 50%;
   background: radial-gradient(
     circle at 50% 50%,
-    hsl(45 55% 70% / 0.32) 0%,
-    hsl(45 55% 65% / 0.16) 30%,
-    hsl(45 50% 60% / 0.05) 55%,
-    transparent 78%
+    hsl(45 55% 70% / 0.30) 0%,
+    hsl(45 55% 65% / 0.14) 35%,
+    hsl(45 50% 60% / 0.04) 60%,
+    transparent 80%
   );
   z-index: 0;
   animation: star-glow-pulse 5.5s ease-in-out infinite;
@@ -3330,28 +3340,26 @@ h3 {
 @keyframes star-glow-pulse {
   0%, 100% {
     opacity: 0.7;
-    transform: scale(1);
+    transform: translate(-50%, -50%) scale(1);
   }
   50% {
     opacity: 1;
-    transform: scale(1.1);
+    transform: translate(-50%, -50%) scale(1.12);
   }
 }
 
 /* Respect prefers-reduced-motion: show static glow, no animation */
 @media (prefers-reduced-motion: reduce) {
-  .hero-icon-circle::before {
+  .home-hero-card::before {
     animation: none;
     opacity: 0.85;
-    transform: scale(1.05);
+    transform: translate(-50%, -50%) scale(1.05);
   }
 }
 
 .hero-icon-circle svg {
   width: 32px;
   height: 32px;
-  position: relative;
-  z-index: 1;                  /* above the ::before glow layer */
 }
 
 .hero-title {
@@ -3361,6 +3369,8 @@ h3 {
   color: var(--text-primary);
   margin: 0 0 var(--space-tight) 0;
   line-height: var(--font-heading-2-line-height);
+  position: relative;
+  z-index: 1;
 }
 
 .hero-description {
@@ -3371,6 +3381,8 @@ h3 {
   color: var(--text-subtle);                 /* more subdued than --text-muted per spec */
   letter-spacing: 0.01em;
   margin: 0 0 var(--space-page-x) 0;        /* 32px gap to button per target */
+  position: relative;
+  z-index: 1;
 }
 
 .hero-choose-journey {
