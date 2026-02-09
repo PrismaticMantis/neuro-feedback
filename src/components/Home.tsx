@@ -198,8 +198,8 @@ export function Home({ currentUser, users, onCreateUser, onSelectUser }: HomePro
           {/* Heading — Heading 2 (24px, 500, Inter) per Lovable spec */}
           <h1 className="hero-title">Ready to begin?</h1>
 
-          {/* Description (Lovable copy) - text-body */}
-          <p className="hero-description text-body-large">
+          {/* Description (Lovable copy) - caption-sized subtitle per spec */}
+          <p className="hero-description">
             Release mental strain and access spacious, clear thinking
           </p>
 

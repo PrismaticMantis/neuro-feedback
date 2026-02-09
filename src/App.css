@@ -3290,6 +3290,8 @@ h3 {
   border-radius: var(--radius-card-premium);
   backdrop-filter: var(--bg-card-glass-backdrop);
   box-shadow: var(--shadow-card-glass);
+  overflow: hidden;            /* clip the star glow inside card bounds */
+  position: relative;          /* stacking context for glow z-index */
 }
 
 .hero-icon-circle {
@@ -3307,20 +3309,20 @@ h3 {
 }
 
 /* Star glow - large diffuse warm glow that lights up the card centre.
-   Matches Lovable: a soft lantern-like radiance, not a tight icon halo. */
+   Matches Lovable: a soft lantern-like radiance clipped by the card. */
 .hero-icon-circle::before {
   content: '';
   position: absolute;
-  inset: -100px;
+  inset: -120px;
   border-radius: 50%;
   background: radial-gradient(
     circle at 50% 50%,
-    hsl(45 55% 70% / 0.35) 0%,
-    hsl(45 55% 65% / 0.18) 30%,
-    hsl(45 50% 60% / 0.06) 55%,
+    hsl(45 55% 70% / 0.32) 0%,
+    hsl(45 55% 65% / 0.16) 30%,
+    hsl(45 50% 60% / 0.05) 55%,
     transparent 78%
   );
-  z-index: -1;
+  z-index: 0;
   animation: star-glow-pulse 5.5s ease-in-out infinite;
   pointer-events: none;
 }
@@ -3348,6 +3350,8 @@ h3 {
 .hero-icon-circle svg {
   width: 32px;
   height: 32px;
+  position: relative;
+  z-index: 1;                  /* above the ::before glow layer */
 }
 
 .hero-title {
@@ -3361,11 +3365,12 @@ h3 {
 
 .hero-description {
   font-family: var(--font-sans);
-  font-size: var(--font-body-large-size);
-  font-weight: var(--font-body-large-weight);
-  line-height: var(--font-body-large-line-height);
-  color: var(--text-muted);
-  margin: 0 0 var(--space-page-x) 0; /* 32px gap to button per target */
+  font-size: var(--font-caption-size);       /* 14px — matches Lovable spec subtitle */
+  font-weight: var(--font-caption-weight);   /* 400 */
+  line-height: var(--font-caption-line-height); /* 1.5 */
+  color: var(--text-subtle);                 /* more subdued than --text-muted per spec */
+  letter-spacing: 0.01em;
+  margin: 0 0 var(--space-page-x) 0;        /* 32px gap to button per target */
 }
 
 .hero-choose-journey {
