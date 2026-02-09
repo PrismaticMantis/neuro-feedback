@@ -3306,18 +3306,19 @@ h3 {
   position: relative;
 }
 
-/* Star glow - pulsing glow behind the star icon on the Home "Ready to begin" card.
-   Tuned for clear visibility while remaining soft and premium. */
+/* Star glow - large diffuse warm glow that lights up the card centre.
+   Matches Lovable: a soft lantern-like radiance, not a tight icon halo. */
 .hero-icon-circle::before {
   content: '';
   position: absolute;
-  inset: -24px;
+  inset: -100px;
   border-radius: 50%;
   background: radial-gradient(
     circle at 50% 50%,
-    hsl(45 55% 70% / 0.38) 0%,
-    hsl(45 55% 70% / 0.15) 40%,
-    transparent 72%
+    hsl(45 55% 70% / 0.35) 0%,
+    hsl(45 55% 65% / 0.18) 30%,
+    hsl(45 50% 60% / 0.06) 55%,
+    transparent 78%
   );
   z-index: -1;
   animation: star-glow-pulse 5.5s ease-in-out infinite;
@@ -3327,11 +3328,11 @@ h3 {
 @keyframes star-glow-pulse {
   0%, 100% {
     opacity: 0.7;
-    transform: scale(1.05);
+    transform: scale(1);
   }
   50% {
     opacity: 1;
-    transform: scale(1.25);
+    transform: scale(1.1);
   }
 }
 
@@ -3339,8 +3340,8 @@ h3 {
 @media (prefers-reduced-motion: reduce) {
   .hero-icon-circle::before {
     animation: none;
-    opacity: 0.9;
-    transform: scale(1.1);
+    opacity: 0.85;
+    transform: scale(1.05);
   }
 }
 

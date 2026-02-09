@@ -9,8 +9,9 @@ import { motion } from 'framer-motion';
 import { useNavigate, Link } from 'react-router-dom';
 import type { Session, SessionStats, User } from '../types';
 import { getJourneys, getLastJourneyId } from '../lib/session-storage';
-import { formatTime } from '../lib/storage';
-import { exportSummarySnapshotPdf } from '../lib/summary-pdf';
+import { formatTime, formatTimeWithUnit } from '../lib/storage';
+import { exportSummarySnapshotPdf, deriveRecoveryPoints } from '../lib/summary-pdf';
+import type { FallbackPdfData } from '../lib/summary-pdf';
 
 interface SessionSummaryProps {
   session: Session;
@@ -72,13 +73,32 @@ export function SessionSummary({
     return `Building coherence foundation. Peak coherence was ${peak}%.`;
   }, [stats.coherencePercent, peakCoherence]);
 
-  /** Generate a visual-snapshot PDF of the Summary screen. */
+  /** Build fallback data so the text-layout PDF can be produced if
+   *  the html2canvas snapshot fails (iOS canvas limits, etc.). */
+  const fallbackData = useMemo<FallbackPdfData>(() => ({
+    userName: user.name,
+    journeyName,
+    sessionDate: new Date(session.startTime).toLocaleString(undefined, {
+      dateStyle: 'medium',
+      timeStyle: 'short',
+    }),
+    durationFormatted: formatTimeWithUnit(session.duration),
+    coherencePercent: stats.coherencePercent,
+    peakCoherence,
+    stability,
+    avgHeartRate: session.avgHeartRate ?? null,
+    avgHRV: session.avgHRV ?? null,
+    recoveryPoints: session.recoveryPoints ?? deriveRecoveryPoints(stats.coherencePercent, stability),
+    longestStreakFormatted: formatTime(stats.longestStreak),
+    interpretation: sessionInterpretation,
+  }), [user.name, journeyName, session, stats, peakCoherence, stability, sessionInterpretation]);
+
+  /** Generate a visual-snapshot PDF of the Summary screen.
+   *  Falls back to a clean text PDF if the snapshot capture fails
+   *  (or if the DOM ref is null, which shouldn't happen). */
   const getSnapshotPdfBlob = useCallback(async (): Promise<Blob> => {
-    if (!summaryRef.current) {
-      throw new Error('Summary container not mounted');
-    }
-    return exportSummarySnapshotPdf(summaryRef.current);
-  }, []);
+    return exportSummarySnapshotPdf(summaryRef.current, fallbackData);
+  }, [fallbackData]);
 
   const pdfFileName = `SoundBed-Session-${new Date(session.startTime).toISOString().slice(0, 10)}.pdf`;
 
