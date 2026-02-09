@@ -12,7 +12,7 @@
   "dependencies": {
     "@vercel/node": "^3.0.0",
     "framer-motion": "^12.24.7",
-    "html-to-image": "^1.11.13",
+    "html2canvas": "^1.4.1",
     "jspdf": "^4.0.0",
     "muse-js": "^3.3.0",
     "osc-js": "^2.4.1",
