@@ -3227,183 +3227,239 @@ h3 {
   }
 }
 
-/* ============ Home / Dashboard (Lovable-style) ============ */
+/* ============ Home / Dashboard (Lovable verbatim spec) ============ */
 
 .screen-home {
   display: flex;
   flex-direction: column;
   min-height: 100vh;
-  padding-bottom: 80px; /* Space for bottom nav */
+  padding-bottom: 96px;       /* 6rem — room for fixed nav */
 }
 
+/* ── Ambient viewport glow (static, 3 radial washes) ── */
+.home-ambient-glow {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background:
+    /* Amethyst wash from top-centre */
+    radial-gradient(ellipse 80% 60% at 50% -10%, hsla(275, 45%, 55%, 0.05), transparent),
+    /* Champagne warm glow bottom-right */
+    radial-gradient(ellipse 50% 40% at 90% 80%, hsla(45, 55%, 70%, 0.03), transparent),
+    /* Rose quartz tint left-centre */
+    radial-gradient(ellipse 40% 30% at 10% 60%, hsla(330, 40%, 60%, 0.02), transparent);
+}
+
+/* ── Content container ── */
+.home-content-container {
+  position: relative;          /* stacks above ambient glow */
+  max-width: 1152px;           /* max-w-6xl */
+  margin: 0 auto;
+  padding: 0 32px;             /* px-8 */
+}
+
+/* ── Header ── */
 .home-header {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
-  padding: var(--space-card-gap) var(--space-page-x) 0;
+  padding: 24px 0;            /* py-6 */
 }
 
 .home-greeting {
   display: flex;
   flex-direction: column;
-  gap: 4px; /* Tight gap between greeting and name per target */
+  gap: 2px;
+}
+
+.home-greeting-text {
+  font-family: var(--font-sans);
+  font-size: 14px;             /* text-sm / .text-caption */
+  font-weight: 400;
+  color: hsl(270 8% 60%);     /* #9992a1 — foreground-muted */
+  margin: 0;
+  line-height: 1.5;
+}
+
+.home-user-name {
+  font-family: var(--font-sans);
+  font-size: 30px;             /* text-3xl / .text-heading-1 */
+  font-weight: 600;            /* semibold */
+  letter-spacing: -0.025em;    /* tracking-tight → −0.75px at 30px */
+  line-height: 1.2;            /* 36px */
+  color: hsl(45 30% 95%);     /* #f5f2eb — foreground */
+  margin: 0;
 }
 
 .home-header-actions {
   display: flex;
   align-items: center;
-  gap: var(--space-inner);
+  gap: 12px;                   /* gap-3 */
 }
 
-.greeting-text {
-  font-size: var(--font-caption-size);
-  font-weight: var(--weight-regular);
-  color: var(--text-muted);
-  font-family: var(--font-sans);
-  margin: 0;
-  line-height: var(--font-caption-line-height);
-}
-
-.user-name-text {
-  font-size: var(--font-heading-1-size);
-  font-weight: var(--font-heading-1-weight);
-  color: var(--text-primary);
-  font-family: var(--font-sans);
-  margin: 0;
-  line-height: var(--font-heading-1-line-height);
-}
-
-.home-main {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding: 32px var(--space-page-x) 0;
-}
-
-.home-hero-card {
-  width: 100%;
-  max-width: 680px;
-  text-align: center;
-  padding: 40px var(--space-card-hero);
-  background: var(--bg-card-glass);
-  border: var(--border-card-glass);
-  border-radius: var(--radius-card-premium);
-  backdrop-filter: var(--bg-card-glass-backdrop);
-  box-shadow: var(--shadow-card-glass);
-  overflow: hidden;            /* clip the star glow inside card bounds */
-  position: relative;          /* stacking context for glow z-index */
-  /* Vertically center the content block within the card */
-  display: flex;
-  flex-direction: column;
+/* Ghost icon buttons (Bell, Settings) */
+.home-icon-btn {
+  display: inline-flex;
   align-items: center;
   justify-content: center;
+  padding: 12px;               /* p-3 */
+  border-radius: 12px;         /* rounded-xl */
+  border: none;
+  background: transparent;
+  color: hsl(270 8% 60%);     /* foreground-muted */
+  cursor: pointer;
+  transition: all 200ms ease;
+}
+.home-icon-btn:hover {
+  color: hsl(45 30% 95%);     /* foreground */
+  background: hsla(270, 7%, 14%, 0.6);
 }
 
-.hero-icon-circle {
-  width: 64px;
-  height: 64px;
-  margin: 0 auto var(--space-card-gap);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: linear-gradient(135deg, hsl(45 55% 70% / 0.2), hsl(40 50% 62% / 0.15));
-  border-radius: 50%;
-  color: var(--accent-primary);
-  box-shadow: var(--shadow-glow-accent);
-  position: relative;
-  z-index: 1;                  /* above the card ::before glow */
+/* ── CTA Section ── */
+.home-cta-section {
+  margin-top: 48px;            /* mt-12 */
+  animation: home-fade-in-up 0.5s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+  animation-delay: 0.1s;
+  opacity: 0;                  /* starts invisible; forwards holds final state */
 }
 
-/* Card-centred glow — radiance centered on the card (behind "Ready to begin?").
-   Clipped by the card's overflow: hidden so it never bleeds outside. */
-.home-hero-card::before {
-  content: '';
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  width: 340px;
-  height: 340px;
-  transform: translate(-50%, -50%);
-  border-radius: 50%;
-  background: radial-gradient(
-    circle at 50% 50%,
-    hsl(45 55% 70% / 0.30) 0%,
-    hsl(45 55% 65% / 0.14) 35%,
-    hsl(45 50% 60% / 0.04) 60%,
-    transparent 80%
+/* Glass card — Lovable spec verbatim */
+.home-card-glass {
+  border-radius: 16px;         /* rounded-2xl */
+  background: linear-gradient(
+    165deg,
+    hsla(270, 7%, 14%, 0.7),   /* #242127 at 70% — top-left lighter */
+    hsla(270, 10%, 8%, 0.8)    /* #141117 at 80% — bottom-right darker */
   );
-  z-index: 0;
-  animation: star-glow-pulse 5.5s ease-in-out infinite;
+  border: 1px solid hsla(275, 20%, 25%, 0.35);
+  box-shadow:
+    0 4px 20px hsla(270, 20%, 2%, 0.6),
+    inset 0 1px 0 hsla(275, 15%, 35%, 0.08);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  padding: 48px;               /* p-12 */
+  text-align: center;
+  position: relative;
+  overflow: hidden;            /* clips orb at card edges */
+}
+
+/* ── Pulsing champagne orb (LAYER 2) ── */
+.home-orb-wrapper {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   pointer-events: none;
 }
 
-@keyframes star-glow-pulse {
-  0%, 100% {
-    opacity: 0.7;
-    transform: translate(-50%, -50%) scale(1);
-  }
-  50% {
-    opacity: 1;
-    transform: translate(-50%, -50%) scale(1.12);
-  }
+.home-orb {
+  width: 320px;                /* w-80 */
+  height: 320px;               /* h-80 */
+  border-radius: 9999px;       /* rounded-full */
+  background: hsla(45, 55%, 70%, 0.1);   /* bg-primary/10 — champagne at 10% */
+  filter: blur(64px);          /* blur-3xl — dissolves into soft light */
+  animation: home-pulse-glow 3s ease-in-out infinite;
 }
 
-/* Respect prefers-reduced-motion: show static glow, no animation */
-@media (prefers-reduced-motion: reduce) {
-  .home-hero-card::before {
-    animation: none;
-    opacity: 0.85;
-    transform: translate(-50%, -50%) scale(1.05);
-  }
+@keyframes home-pulse-glow {
+  0%, 100% { opacity: 0.4; }
+  50%      { opacity: 1; }
 }
 
-.hero-icon-circle svg {
-  width: 32px;
-  height: 32px;
+/* ── Content above orb ── */
+.home-card-content {
+  position: relative;          /* stacks above orb */
 }
 
-.hero-title {
-  font-size: var(--font-heading-2-size);
-  font-weight: var(--font-heading-2-weight);
+/* ── Sparkles icon container (LAYER 3) ── */
+.home-icon-container {
+  width: 96px;                 /* w-24 */
+  height: 96px;                /* h-24 */
+  margin: 0 auto 32px;        /* mx-auto mb-8 */
+  border-radius: 9999px;       /* rounded-full */
+  background: hsla(45, 55%, 70%, 0.1);  /* bg-primary/10 */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 0 50px hsla(45, 55%, 70%, 0.2);  /* glow-primary — STATIC, no animation */
+}
+
+/* ── Typography ── */
+.home-heading {
   font-family: var(--font-sans);
-  color: var(--text-primary);
-  margin: 0 0 var(--space-tight) 0;
-  line-height: var(--font-heading-2-line-height);
-  position: relative;
-  z-index: 1;
+  font-size: 30px;             /* text-3xl / .text-heading-1 */
+  font-weight: 600;            /* semibold */
+  letter-spacing: -0.025em;    /* tracking-tight */
+  line-height: 1.2;            /* 36px */
+  color: hsl(45 30% 95%);     /* #f5f2eb — foreground */
+  margin: 0 0 12px 0;         /* mb-3 */
 }
 
-.hero-description {
+.home-subtext {
   font-family: var(--font-sans);
-  font-size: var(--font-caption-size);       /* 14px — matches Lovable spec subtitle */
-  font-weight: var(--font-caption-weight);   /* 400 */
-  line-height: var(--font-caption-line-height); /* 1.5 */
-  color: var(--text-subtle);                 /* more subdued than --text-muted per spec */
-  letter-spacing: 0.01em;
-  margin: 0 0 var(--space-page-x) 0;        /* 32px gap to button per target */
-  position: relative;
-  z-index: 1;
+  font-size: 16px;             /* text-base / .text-body */
+  font-weight: 400;
+  line-height: 1.625;          /* leading-relaxed → 26px */
+  letter-spacing: -0.01em;     /* global −0.16px */
+  color: hsl(270 8% 60%);     /* #9992a1 — foreground-muted */
+  max-width: 512px;            /* max-w-lg */
+  margin: 0 auto 40px;        /* mx-auto mb-10 */
 }
 
-.hero-choose-journey {
-  margin: 16px 0 0;
-}
-
-.hero-choose-journey .btn-link {
-  font-family: var(--font-sans);
-  font-size: var(--font-caption-size);
-  font-weight: var(--weight-regular);
-  color: var(--accent-primary);
-  background: none;
+/* ── Start Session button — Lovable .btn-primary spec ── */
+.home-start-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;                   /* gap-2.5 */
+  border-radius: 12px;         /* rounded-xl */
   border: none;
-  padding: 0;
+  font-family: var(--font-sans);
+  font-weight: 500;            /* medium */
+  font-size: 18px;             /* text-lg */
+  padding: 16px 48px;          /* py-4 px-12 */
   cursor: pointer;
-  text-decoration: underline;
-  text-underline-offset: 3px;
+  transition: all 300ms ease;
+  background: linear-gradient(135deg, hsl(45 55% 70%), hsl(40 50% 62%));
+  color: hsl(270 12% 8%);     /* #141017 — dark text on gold */
+  box-shadow:
+    0 4px 20px hsla(270, 20%, 2%, 0.6),
+    0 0 30px hsla(45, 55%, 70%, 0.2);
+}
+.home-start-btn:hover {
+  transform: translateY(-2px);
+  box-shadow:
+    0 8px 40px hsla(270, 20%, 2%, 0.7),
+    0 0 50px hsla(45, 55%, 70%, 0.3);
+}
+.home-start-btn:active {
+  transform: translateY(0);
 }
 
-.hero-choose-journey .btn-link:hover {
-  color: var(--text-primary);
+/* ── Entry animation ── */
+@keyframes home-fade-in-up {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ── Reduced motion: keep glow static, skip animations ── */
+@media (prefers-reduced-motion: reduce) {
+  .home-orb {
+    animation: none;
+    opacity: 0.7;
+  }
+  .home-cta-section {
+    animation: none;
+    opacity: 1;
+  }
 }
 
 /* Create User Modal */

@@ -153,75 +153,85 @@ export function Home({ currentUser, users, onCreateUser, onSelectUser }: HomePro
     );
   }
 
-  // Normal Home screen: Lovable-style
+  // ── Normal Home screen — Lovable verbatim spec ──
   const greeting = getGreeting();
   const userName = currentUser.name;
 
   return (
     <motion.div
       className="screen screen-home"
-      initial={{ opacity: 0, y: 12 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: -12 }}
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
     >
-      {/* Header: greeting left, actions right (Lovable spec) */}
-      <header className="home-header">
-        <div className="home-greeting">
-          <p className="greeting-text text-caption">{greeting}</p>
-          <p className="user-name-text text-heading-1">{userName}</p>
-        </div>
-        <div className="home-header-actions">
-          <button type="button" className="btn-ghost" aria-label="Notifications">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
-          </button>
-          <button type="button" className="btn-ghost" aria-label="Settings">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-          </button>
-        </div>
-      </header>
+      {/* LAYER 1: Ambient viewport glow (static, pointer-events none) */}
+      <div className="home-ambient-glow" />
 
-      {/* Main Content - Centered Card */}
-      <main className="home-main">
-        <motion.div
-          className="home-hero-card"
-          initial={{ opacity: 0, scale: 0.95 }}
-          animate={{ opacity: 1, scale: 1 }}
-          transition={{ delay: 0.1 }}
-        >
-          {/* Icon Circle - multi-point sparkle matching Lovable spec */}
-          <div className="hero-icon-circle">
-            <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden>
-              {/* Main 4-point star */}
-              <path d="M12 1l2.2 8.2L22 12l-7.8 2.8L12 23l-2.2-8.2L2 12l7.8-2.8L12 1z" />
-              {/* Small diagonal sparkle points */}
-              <path d="M5.5 5.5l1.4 2.1L5.5 9.7 4.1 7.6 5.5 5.5z" opacity="0.7"/>
-              <path d="M18.5 5.5l1.4 2.1-1.4 2.1-1.4-2.1 1.4-2.1z" opacity="0.7"/>
-              <path d="M5.5 14.3l1.4 2.1-1.4 2.1-1.4-2.1 1.4-2.1z" opacity="0.7"/>
-              <path d="M18.5 14.3l1.4 2.1-1.4 2.1-1.4-2.1 1.4-2.1z" opacity="0.7"/>
-            </svg>
+      <div className="home-content-container">
+        {/* ── Header ── */}
+        <header className="home-header">
+          <div className="home-greeting">
+            <p className="home-greeting-text">{greeting}</p>
+            <h1 className="home-user-name">{userName}</h1>
           </div>
+          <div className="home-header-actions">
+            <button type="button" className="home-icon-btn" aria-label="Notifications">
+              {/* Bell — lucide */}
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/>
+                <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>
+              </svg>
+            </button>
+            <button type="button" className="home-icon-btn" aria-label="Settings">
+              {/* Settings gear — lucide */}
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/>
+                <circle cx="12" cy="12" r="3"/>
+              </svg>
+            </button>
+          </div>
+        </header>
 
-          {/* Heading — Heading 2 (24px, 500, Inter) per Lovable spec */}
-          <h1 className="hero-title">Ready to begin?</h1>
+        {/* ── CTA Section — animated entry ── */}
+        <section className="home-cta-section">
+          <div className="home-card-glass">
+            {/* LAYER 2: Pulsing champagne orb (behind content) */}
+            <div className="home-orb-wrapper">
+              <div className="home-orb" />
+            </div>
 
-          {/* Description (Lovable copy) - caption-sized subtitle per spec */}
-          <p className="hero-description">
-            Release mental strain and access spacious, clear thinking
-          </p>
+            {/* Content (above orb via position: relative) */}
+            <div className="home-card-content">
+              {/* LAYER 3: Sparkles icon with static glow halo */}
+              <div className="home-icon-container">
+                {/* Sparkles — lucide (4-point star with small + cross accent) */}
+                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'hsl(45 55% 70%)' }}>
+                  <path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.582a.5.5 0 0 1 0 .963L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/>
+                  <path d="M20 3v4"/>
+                  <path d="M22 5h-4"/>
+                </svg>
+              </div>
 
-          {/* Primary CTA — compact pill button per Lovable spec */}
-          <motion.button
-            className="btn btn-primary"
-            onClick={handleStartSession}
-            whileHover={{ scale: 1.02 }}
-            whileTap={{ scale: 0.98 }}
-            style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 'var(--space-tight)', position: 'relative', zIndex: 1 }}
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-            Start Session
-          </motion.button>
-        </motion.div>
-      </main>
+              <h2 className="home-heading">Ready to begin?</h2>
+
+              <p className="home-subtext">
+                Release mental strain and access spacious, clear thinking
+              </p>
+
+              <button
+                className="home-start-btn"
+                onClick={handleStartSession}
+              >
+                {/* Play — lucide */}
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <polygon points="6 3 20 12 6 21 6 3"/>
+                </svg>
+                Start Session
+              </button>
+            </div>
+          </div>
+        </section>
+      </div>
     </motion.div>
   );
 }

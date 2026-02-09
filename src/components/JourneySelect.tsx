@@ -10,60 +10,36 @@ import type { User } from '../types';
 const ENABLED_JOURNEY_ID = 'creativeFlow';
 
 /**
- * Journey theme map — pixel-matched to Lovable "2 - Choose Journey.png".
+ * Journey theme map — matched to Lovable "2 - Choose Journey.png".
  *
- * Each card has a distinct gradient wash concentrated at the top, a matching
- * accent border, and a soft ambient glow.  The `playAccent` flag controls
- * which card gets the gold play button (Night Wind-Down in the Lovable spec).
+ * All cards share the same uniform dark-glass background (no per-card
+ * coloured gradient).  Visual differentiation comes from icon badge colour
+ * and the gold play button on the enabled journey (Creative Flow).
  */
 const JOURNEY_THEMES: Record<string, {
   duration: string;
   iconColor: string;
   iconBg: string;
-  cardGradient: string;
-  cardBorder: string;
-  cardGlow: string;
-  playAccent: boolean;       // true = gold play button (Lovable: Night Wind-Down)
 }> = {
   calm: {
     duration: '15 min',
     iconColor: '#ffffff',
     iconBg: '#5B8DEF',
-    // Visible blue wash at top fading to dark
-    cardGradient: 'linear-gradient(170deg, hsl(215 25% 20% / 0.7) 0%, hsl(220 15% 12% / 0.85) 55%, hsl(225 12% 9% / 0.92) 100%)',
-    cardBorder: '1px solid hsl(215 22% 30% / 0.35)',
-    cardGlow: '0 4px 24px hsl(215 30% 10% / 0.35), inset 0 1px 0 hsl(215 30% 45% / 0.06)',
-    playAccent: false,
   },
   deepRest: {
     duration: '25 min',
     iconColor: '#ffffff',
     iconBg: '#9B6BC8',
-    // Prominent purple wash at top
-    cardGradient: 'linear-gradient(170deg, hsl(275 28% 22% / 0.7) 0%, hsl(275 18% 14% / 0.8) 50%, hsl(275 12% 9% / 0.92) 100%)',
-    cardBorder: '1px solid hsl(275 25% 32% / 0.4)',
-    cardGlow: '0 4px 24px hsl(275 30% 10% / 0.35), inset 0 1px 0 hsl(275 30% 45% / 0.06)',
-    playAccent: false,
   },
   creativeFlow: {
     duration: '20 min',
     iconColor: '#0c0a0e',
     iconBg: '#D9C478',
-    // Warm gold wash at top
-    cardGradient: 'linear-gradient(170deg, hsl(45 22% 18% / 0.7) 0%, hsl(42 14% 12% / 0.82) 50%, hsl(40 10% 9% / 0.92) 100%)',
-    cardBorder: '1px solid hsl(45 20% 30% / 0.35)',
-    cardGlow: '0 4px 24px hsl(45 25% 10% / 0.35), inset 0 1px 0 hsl(45 30% 45% / 0.06)',
-    playAccent: false,
   },
   nightWindDown: {
     duration: '30 min',
     iconColor: '#ffffff',
     iconBg: '#7C6BC8',
-    // Purple-mauve wash at top
-    cardGradient: 'linear-gradient(170deg, hsl(260 25% 22% / 0.7) 0%, hsl(260 18% 14% / 0.8) 50%, hsl(260 12% 9% / 0.92) 100%)',
-    cardBorder: '1px solid hsl(260 22% 32% / 0.4)',
-    cardGlow: '0 4px 24px hsl(260 30% 10% / 0.35), inset 0 1px 0 hsl(260 25% 45% / 0.06)',
-    playAccent: true,          // Gold play button per Lovable spec
   },
 };
 
@@ -96,13 +72,16 @@ function JourneyIcon({ id }: { id: string }) {
     );
   }
   if (id === 'nightWindDown') {
-    // Three horizontal lines with adjustment marks (matches target filter icon)
+    // Horizontal sliders / equalizer icon — three lines with staggered knobs
+    // matching Lovable target (adjustment/tuning metaphor for winding down)
     return (
-      <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-        <line x1="4" y1="8" x2="20" y2="8"/>
-        <circle cx="8" cy="8" r="2" fill="currentColor" stroke="none"/>
-        <line x1="4" y1="16" x2="20" y2="16"/>
-        <circle cx="16" cy="16" r="2" fill="currentColor" stroke="none"/>
+      <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <line x1="4" y1="7" x2="20" y2="7"/>
+        <line x1="4" y1="12" x2="20" y2="12"/>
+        <line x1="4" y1="17" x2="20" y2="17"/>
+        <circle cx="15" cy="7" r="2" fill="currentColor" stroke="none"/>
+        <circle cx="9" cy="12" r="2" fill="currentColor" stroke="none"/>
+        <circle cx="15" cy="17" r="2" fill="currentColor" stroke="none"/>
       </svg>
     );
   }
@@ -250,9 +229,7 @@ export function JourneySelect({ currentUser }: JourneySelectProps) {
       >
         {journeys.map((j) => {
           const theme = JOURNEY_THEMES[j.id] ?? JOURNEY_THEMES.creativeFlow;
-          // Play button: gold accent per Lovable reference (Night Wind-Down),
-          // NOT tied to isEnabled — visual parity takes priority.
-          const goldPlay = theme.playAccent;
+          const isEnabled = j.id === ENABLED_JOURNEY_ID;
 
           return (
             <motion.button
@@ -273,9 +250,9 @@ export function JourneySelect({ currentUser }: JourneySelectProps) {
                 transition: 'all 0.3s ease',
                 position: 'relative',
                 overflow: 'hidden',
-                background: theme.cardGradient,
-                border: theme.cardBorder,
-                boxShadow: theme.cardGlow,
+                background: 'var(--bg-card-glass)',
+                border: 'var(--border-card-glass)',
+                boxShadow: 'var(--shadow-card-glass)',
                 backdropFilter: 'blur(16px)',
                 minHeight: '200px',         // Taller to match Lovable
               }}
@@ -363,12 +340,12 @@ export function JourneySelect({ currentUser }: JourneySelectProps) {
                   {theme.duration}
                 </span>
 
-                {/* Play Button — gold accent only on Night Wind-Down per Lovable */}
+                {/* Play Button — gold accent on the enabled journey (Creative Flow) */}
                 <span
                   className="journey-play-btn"
                   style={{
-                    background: goldPlay ? '#D9C478' : 'hsl(270 8% 18% / 0.55)',
-                    border: goldPlay ? 'none' : '1px solid hsl(270 12% 28% / 0.4)',
+                    background: isEnabled ? '#D9C478' : 'hsl(270 8% 18% / 0.55)',
+                    border: isEnabled ? 'none' : '1px solid hsl(270 12% 28% / 0.4)',
                     width: '34px',
                     height: '34px',
                     borderRadius: '50%',
@@ -376,7 +353,7 @@ export function JourneySelect({ currentUser }: JourneySelectProps) {
                     alignItems: 'center',
                     justifyContent: 'center',
                     flexShrink: 0,
-                    color: goldPlay ? '#0c0a0e' : 'var(--text-subtle)',
+                    color: isEnabled ? '#0c0a0e' : 'var(--text-subtle)',
                     transition: 'all 0.2s ease',
                   }}
                   aria-hidden
