@@ -3304,9 +3304,8 @@ h3 {
 /* ── CTA Section ── */
 .home-cta-section {
   margin-top: 48px;            /* mt-12 */
-  animation: home-fade-in-up 0.5s cubic-bezier(0.4, 0, 0.2, 1) forwards;
-  animation-delay: 0.1s;
-  opacity: 0;                  /* starts invisible; forwards holds final state */
+  animation: home-fade-in-up 0.3s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+  /* No delay — parent motion.div already handles the entrance timing */
 }
 
 /* Glass card — Lovable spec verbatim */
@@ -4042,6 +4041,40 @@ h3 {
   color: var(--text-muted);
   margin: 0;
   line-height: var(--font-caption-line-height);
+}
+
+/* ── Switch Profile panel (gear icon toggle) ── */
+.profile-switch-panel {
+  padding: var(--padding-card-glass);
+  margin-bottom: var(--space-card-gap);
+  background: var(--bg-card-glass);
+  border: var(--border-card-glass);
+  border-radius: var(--radius-card-glass);
+  backdrop-filter: var(--bg-card-glass-backdrop);
+  box-shadow: var(--shadow-card-glass);
+}
+
+.profile-switch-title {
+  font-family: var(--font-sans);
+  font-size: var(--font-heading-3-size);
+  font-weight: var(--font-heading-3-weight);
+  color: var(--text-primary);
+  margin: 0 0 12px 0;
+  line-height: var(--font-heading-3-line-height);
+}
+
+.profile-switch-panel .user-list {
+  margin-top: 0;
+  margin-bottom: 12px;
+}
+
+.profile-switch-panel .profile-add-btn {
+  margin-top: 8px;
+  width: 100%;
+}
+
+.profile-switch-panel .profile-create-form {
+  margin-top: 8px;
 }
 
 .profile-summary-row {

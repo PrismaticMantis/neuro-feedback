@@ -87,16 +87,12 @@ function JourneyIcon({ id }: { id: string }) {
     );
   }
   if (id === 'nightWindDown') {
-    // Horizontal sliders / equalizer — three lines, knobs staggered left-right-left
-    // matching Lovable spec icon exactly
+    // Wind icon — three curved lines blowing to the right (lucide Wind)
     return (
       <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <line x1="4" y1="7" x2="20" y2="7"/>
-        <line x1="4" y1="12" x2="20" y2="12"/>
-        <line x1="4" y1="17" x2="20" y2="17"/>
-        <circle cx="9" cy="7" r="2" fill="currentColor" stroke="none"/>
-        <circle cx="15" cy="12" r="2" fill="currentColor" stroke="none"/>
-        <circle cx="9" cy="17" r="2" fill="currentColor" stroke="none"/>
+        <path d="M17.7 7.7a2.5 2.5 0 1 1 1.8 4.3H2"/>
+        <path d="M9.6 4.6A2 2 0 1 1 11 8H2"/>
+        <path d="M12.6 19.4A2 2 0 1 0 14 16H2"/>
       </svg>
     );
   }

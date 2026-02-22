@@ -65,7 +65,11 @@ function App() {
   })();
 
   useEffect(() => {
-    if (!session.isSessionActive || !muse.state.connected) return;
+    // CRITICAL: Only skip if session is not active OR we have a REAL disconnect.
+    // During 'stalled' and 'reconnecting' states, KEEP tracking — the session
+    // must never stop while BLE transport is alive.
+    if (!session.isSessionActive) return;
+    if (muse.connectionHealthState === 'disconnected') return;
 
     const { tp9, af7, af8, tp10 } = muse.electrodeStatus;
     const contactScores = [tp9, af7, af8, tp10].map((q) =>
@@ -74,7 +78,7 @@ function App() {
     const contactQuality = contactScores.reduce<number>((a, b) => a + b, 0) / 4;
     const timeSinceLastUpdate = museHandler.getConnectionStateDetail().timeSinceLastUpdate;
     const signalQuality = {
-      isConnected: muse.state.connected,
+      isConnected: muse.connectionHealthState !== 'disconnected',
       contactQuality,
       timeSinceLastUpdate,
     };
@@ -100,7 +104,7 @@ function App() {
     muse.coherenceStatus.isActive,
     muse.coherence,
     muse.coherenceStatus.signalVariance,
-    muse.state.connected,
+    muse.connectionHealthState,
     muse.state.touching,
     muse.state.bandsSmooth,
     muse.electrodeStatus,

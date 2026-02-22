@@ -34,16 +34,21 @@ type BrainState = 'disconnected' | 'deep' | 'meditative' | 'relaxed' | 'focused'
  * 
  * CRITICAL: Separates BLE transport state from data health to prevent false disconnections.
  * 
+ * RULE: If BLE transport is connected, NEVER declare 'disconnected'.
+ *       Only a real GATT disconnect event can set 'disconnected'.
+ *       Data stalls → keep recovering forever until transport drops.
+ * 
  * States:
  * - 'healthy': BLE connected AND receiving data at expected cadence
  * - 'stalled': BLE connected but data stream temporarily stalled (brief pause, <10s)
- * - 'reconnecting': BLE connected but data stalled for longer period, attempting recovery (10-30s)
- * - 'disconnected': GATT disconnect event fired OR recovery failed after 30s
+ * - 'reconnecting': BLE connected but data stalled for 10s+, actively recovering (NO timeout)
+ * - 'disconnected': ONLY when GATT disconnect event fires (real transport loss)
  * 
  * Thresholds:
  * - DATA_STALL_MS (5000): After 5s of no data, enter 'stalled' state
  * - RECONNECT_ATTEMPT_MS (10000): After 10s, start recovery attempts ('reconnecting')
- * - DISCONNECT_CONFIRM_MS (30000): After 30s of failed recovery, declare 'disconnected'
+ * - RECONNECT_INTERVAL_MS (5000): Time between recovery attempts
+ * - MAX_RECONNECT_ATTEMPTS = Infinity: NEVER stop trying while BLE is alive
  * 
  * Test Plan (add to regression tests):
  * - iPhone Safari/Bluefy/Chrome iOS: Test with brief stalls, screen lock/unlock
@@ -140,9 +145,8 @@ export class MuseHandler {
   // These are tuned to prevent false positives from brief stalls while still detecting real disconnects
   private static readonly DATA_STALL_MS = 5000;        // 5s: Enter 'stalled' state (data pause, not disconnect)
   private static readonly RECONNECT_ATTEMPT_MS = 10000; // 10s: Start recovery attempts ('reconnecting')
-  private static readonly DISCONNECT_CONFIRM_MS = 30000; // 30s: Declare 'disconnected' (confirmed lost)
-  private static readonly RECONNECT_INTERVAL_MS = 3000;  // 3s: Time between reconnect attempts
-  private static readonly MAX_RECONNECT_ATTEMPTS = 5;    // Max attempts before giving up
+  private static readonly RECONNECT_INTERVAL_MS = 5000;  // 5s: Time between reconnect attempts
+  private static readonly MAX_RECONNECT_ATTEMPTS = Infinity; // NEVER stop trying while BLE transport is alive
   
   // Electrode quality (horseshoe indicator): [TP9, AF7, AF8, TP10]
   // Values: 1 = good, 2 = medium, 3 = poor, 4 = off
@@ -171,6 +175,9 @@ export class MuseHandler {
   private accelerometerSubscription: { unsubscribe: () => void } | null = null;
   private connectionStatusSubscription: { unsubscribe: () => void } | null = null;
   private ppgSubscription: { unsubscribe: () => void } | null = null; // PPG (heart rate) subscription
+
+  // Periodic health watchdog — runs independently of UI to guarantee recovery attempts
+  private _healthWatchdogInterval: ReturnType<typeof setInterval> | null = null;
 
   // PPG (photoplethysmography) heart rate tracking (only if ENABLE_PPG_MODULATION is true)
   // NOTE: PPG is used ONLY for HR/HRV metrics, NOT for movement detection.
@@ -333,6 +340,10 @@ export class MuseHandler {
       this._touching = true;
       this._connectionQuality = 1;
       this.isInitialized = true;
+
+      // Start periodic health watchdog — runs every 2s independently of UI loop
+      // Guarantees recovery attempts happen even if requestAnimationFrame is throttled
+      this.startHealthWatchdog();
       this._lastUpdate = Date.now();
       this._signalPausedSince = null;
       this._reconnectAttempts = 0;
@@ -623,6 +634,7 @@ export class MuseHandler {
     this._lastDisconnectReason = 'GATT disconnect event - Bluetooth transport disconnected';
     this._healthState = 'disconnected';
     this._bleTransportConnected = false;
+    this.stopHealthWatchdog();
 
     this.eegSubscription?.unsubscribe();
     this.telemetrySubscription?.unsubscribe();
@@ -712,27 +724,51 @@ export class MuseHandler {
   }
 
   /**
+   * Start periodic health watchdog timer.
+   * Runs every 2s to call updateConnectionHealth(), which triggers recovery
+   * attempts if data has stalled.  This runs via setInterval so it continues
+   * even when requestAnimationFrame is throttled (e.g. iOS background,
+   * screen off, Safari tab switch).
+   */
+  private startHealthWatchdog(): void {
+    this.stopHealthWatchdog();
+    this._healthWatchdogInterval = setInterval(() => {
+      if (this._bleTransportConnected) {
+        this.updateConnectionHealth();
+      }
+    }, 2000);
+  }
+
+  private stopHealthWatchdog(): void {
+    if (this._healthWatchdogInterval) {
+      clearInterval(this._healthWatchdogInterval);
+      this._healthWatchdogInterval = null;
+    }
+  }
+
+  /**
    * Update connection health state based on data flow.
    * Called periodically to check health and trigger recovery if needed.
    * 
    * CRITICAL: This is the core logic that prevents false disconnections.
-   * Only declare 'disconnected' if:
-   * 1. GATT disconnect event fired, OR
-   * 2. Recovery attempts failed for DISCONNECT_CONFIRM_MS (30s)
+   * Only declare 'disconnected' if GATT disconnect event fired (real transport loss).
+   * If BLE transport is alive, NEVER declare disconnected — keep recovering forever.
    */
   updateConnectionHealth(): ConnectionHealthState {
     const now = Date.now();
     const timeSinceLastUpdate = now - this._lastUpdate;
     
-    // If not connected at all, return disconnected
+    // ── Only a REAL GATT disconnect can declare 'disconnected' ──
+    // If BLE transport is gone, we're disconnected — no question.
     if (!this._bleTransportConnected) {
       this._healthState = 'disconnected';
       return this._healthState;
     }
     
+    // ── BLE transport is alive — NEVER declare 'disconnected' ──
+    
     // If receiving data, we're healthy
     if (timeSinceLastUpdate < MuseHandler.DATA_STALL_MS) {
-      // Data is flowing - healthy
       if (this._healthState !== 'healthy') {
         if (DEBUG_CONNECTION_HEALTH) {
           console.log('[Muse] 🟢 Data flow resumed - connection healthy', {
@@ -764,44 +800,24 @@ export class MuseHandler {
         pauseDuration,
         bleTransportConnected: this._bleTransportConnected,
         reconnectAttempts: this._reconnectAttempts,
-        thresholds: {
-          stall: MuseHandler.DATA_STALL_MS,
-          reconnect: MuseHandler.RECONNECT_ATTEMPT_MS,
-          disconnect: MuseHandler.DISCONNECT_CONFIRM_MS,
-        },
       });
     }
     
-    // Determine health state based on pause duration
-    if (pauseDuration >= MuseHandler.DISCONNECT_CONFIRM_MS) {
-      // 30+ seconds of no data with BLE still "connected" - declare disconnected
-      // This could indicate a zombie connection that didn't fire GATT disconnect
-      if (this._healthState !== 'disconnected') {
-        this._lastDisconnectReason = `Data stall exceeded ${MuseHandler.DISCONNECT_CONFIRM_MS}ms with ${this._reconnectAttempts} failed recovery attempts`;
-        console.warn('[Muse] 🔴 Connection declared disconnected (prolonged data stall)', {
-          pauseDuration,
-          reconnectAttempts: this._reconnectAttempts,
-          reason: this._lastDisconnectReason,
-        });
-        // Note: We don't call handleBluetoothDisconnect() here because BLE might still be connected
-        // The UI should show "Disconnected" but we keep trying until GATT actually disconnects
-      }
-      this._healthState = 'disconnected';
-    } else if (pauseDuration >= MuseHandler.RECONNECT_ATTEMPT_MS) {
-      // 10-30 seconds - actively trying to recover
+    // ── Data stalled but BLE is alive — keep recovering, NEVER give up ──
+    
+    if (pauseDuration >= MuseHandler.RECONNECT_ATTEMPT_MS) {
+      // 10+ seconds — actively trying to recover
       this._healthState = 'reconnecting';
       
-      // Attempt recovery if we haven't recently and haven't exceeded max attempts
+      // Periodically attempt notification restart — no cap on attempts
       const timeSinceLastAttempt = now - this._lastReconnectAttempt;
-      if (timeSinceLastAttempt >= MuseHandler.RECONNECT_INTERVAL_MS && 
-          this._reconnectAttempts < MuseHandler.MAX_RECONNECT_ATTEMPTS) {
-        // Fire and forget - don't await
+      if (timeSinceLastAttempt >= MuseHandler.RECONNECT_INTERVAL_MS) {
         this.attemptNotificationRestart().catch(err => {
           console.warn('[Muse] Recovery attempt failed:', err);
         });
       }
     } else if (pauseDuration >= MuseHandler.DATA_STALL_MS) {
-      // 5-10 seconds - data stalled but not yet trying recovery
+      // 5-10 seconds — data stalled, waiting before first recovery
       if (this._healthState !== 'stalled') {
         if (DEBUG_CONNECTION_HEALTH) {
           console.log('[Muse] ⏸️ Data stall detected (waiting before recovery)', {

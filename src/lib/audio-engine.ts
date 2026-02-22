@@ -46,9 +46,9 @@ export const DEBUG_MOVEMENT_AUDIO = false;
  */
 const COHERENCE_TRIGGER_PARAMS = {
   // Sustained layer parameters (shimmer is now tied to the same state — no separate shimmer params)
-  sustainedThreshold: 0.58,         // Coherence % for sustained layer + shimmer activation
-  sustainedHoldMs: 12000,           // Hold time above threshold to activate (12s)
-  sustainedExitThreshold: 0.48,     // Must fall below this to exit (hysteresis)
+  sustainedThreshold: 0.50,         // Coherence % for sustained layer + shimmer activation
+  sustainedHoldMs: 8000,            // Hold time above threshold to activate (8s)
+  sustainedExitThreshold: 0.42,     // Must fall below this to exit (hysteresis)
   sustainedExitHoldMs: 5000,        // Must stay below exit threshold for this long (5s)
 };
 
@@ -69,7 +69,7 @@ const CROSSFADE_CONSTANTS = {
   SUSTAINED_COHERENCE_SECONDS: COHERENCE_TRIGGER_PARAMS.sustainedHoldMs / 1000,
   SUSTAINED_ATTACK_SECONDS: 4.0, // Faster fade-in (was 5.5)
   SUSTAINED_RELEASE_SECONDS: 5.0, // Faster fade-out (was 6.0)
-  SUSTAINED_COHERENCE_COOLDOWN_SECONDS: 30.0, // Reduced cooldown (was 60s)
+  SUSTAINED_COHERENCE_COOLDOWN_SECONDS: 20.0, // Reduced cooldown for easier re-entry
   // Fog effect constants (active mind sustain gating)
   ACTIVE_SUSTAIN_SECONDS: 3.0, // Must be non-coherent for this long before fog appears
   FOG_REVERB_WET: 0.15, // Reverb wet mix (0-1), subtle spatial effect
@@ -230,7 +230,8 @@ export class AudioEngine {
   private sustainedCoherenceLastFadeOutTime: number | null = null; // When sustained layer last faded out (for cooldown)
   private sustainedCoherenceEnabled: boolean = false; // Whether sustained layer is currently enabled
   private sustainedExitStartTime: number | null = null; // When coherence first dropped below exit threshold (for hysteresis)
-  private coherenceAboveSustainedSince: number | null = null; // When coherence first went above sustained threshold
+  private sustainedAccumulatedMs: number = 0; // Accumulated time above sustained threshold (pauses in middle zone, resets below exit)
+  private sustainedLastUpdateTime: number | null = null; // Last tick time for accumulator
 
   // Fog effect tracking (active mind sustain gating)
   private activeMindEnteredAt: number | null = null; // When non-coherent state started
@@ -257,7 +258,7 @@ export class AudioEngine {
       exitThreshold: 0.70,
       enterSustainSeconds: 1.8,
       exitSustainSeconds: 0.6,
-      maxPacketGapMs: 1000,
+      maxPacketGapMs: 5000,  // 5s — match DATA_STALL_MS; don't force baseline on brief hiccups
       minContactQuality: 0.5,
       enableDebugLogging: true, // Enable for debugging
     });
@@ -603,7 +604,7 @@ export class AudioEngine {
           this.baselineBuffer             ? Promise.resolve(this.baselineBuffer)             : loadOne('/audio/baseline.mp3', 'baseline'),
           this.coherenceBuffer            ? Promise.resolve(this.coherenceBuffer)            : loadOne('/audio/coherence-v3.mp3', 'coherence'),
           this.shimmerBuffer              ? Promise.resolve(this.shimmerBuffer)              : loadShimmer(),
-          this.sustainedCoherenceBuffer   ? Promise.resolve(this.sustainedCoherenceBuffer)   : loadOne('/audio/sustained-coherence.mp3', 'sustained-coherence'),
+          this.sustainedCoherenceBuffer   ? Promise.resolve(this.sustainedCoherenceBuffer)   : loadOne('/audio/sustained-coherence2.mp3', 'sustained-coherence'),
           this.movementCueBuffers[0]      ? Promise.resolve(this.movementCueBuffers[0])      : loadOne('/audio/movement-cue-1.mp3', 'movement-cue-1'),
           this.movementCueBuffers[1]      ? Promise.resolve(this.movementCueBuffers[1])      : loadOne('/audio/movement-cue-2.mp3', 'movement-cue-2'),
           this.movementCueBuffers[2]      ? Promise.resolve(this.movementCueBuffers[2])      : loadOne('/audio/movement-cue-3.mp3', 'movement-cue-3'),
@@ -750,7 +751,8 @@ export class AudioEngine {
     this.sustainedCoherenceLastFadeOutTime = null;
     this.sustainedCoherenceEnabled = false;
     this.sustainedExitStartTime = null;
-    this.coherenceAboveSustainedSince = null;
+    this.sustainedAccumulatedMs = 0;
+    this.sustainedLastUpdateTime = null;
     // Reset fog tracking
     this.activeMindEnteredAt = null;
     this.fogEnabled = false;
@@ -948,7 +950,8 @@ export class AudioEngine {
     this.sustainedCoherenceLastFadeOutTime = null;
     this.sustainedCoherenceEnabled = false;
     this.sustainedExitStartTime = null;
-    this.coherenceAboveSustainedSince = null;
+    this.sustainedAccumulatedMs = 0;
+    this.sustainedLastUpdateTime = null;
     // PART 2: Finalize coherence audio time tracking
     if (this.coherenceGainActiveStart !== null) {
       const finalDuration = Date.now() - this.coherenceGainActiveStart;
@@ -1059,49 +1062,53 @@ export class AudioEngine {
     this.smoothedCoherenceStrength = this.smoothedCoherenceStrength * 0.9 + strength * 0.1;
     
     // ============================================
-    // SUSTAINED LAYER LOGIC (with hysteresis to prevent flickering)
+    // SUSTAINED LAYER LOGIC (accumulator-based with hysteresis)
+    //
+    // Three zones:
+    //   ABOVE entry threshold (50%): accumulate time toward activation
+    //   MIDDLE (42%–50%):            pause — accumulated progress is preserved
+    //   BELOW exit threshold (42%):  reset accumulated progress to zero
     // ============================================
     
-    // Check if coherence is above sustained threshold
     if (coherencePercent >= shimmerParams.sustainedThreshold) {
-      // Track when we first went above threshold
-      if (this.coherenceAboveSustainedSince === null) {
-        this.coherenceAboveSustainedSince = currentTime;
-        if (DEBUG_COHERENCE_EVENTS) {
-          console.log(`[AudioEngine] 🎯 Coherence above sustained threshold (${(coherencePercent * 100).toFixed(1)}% >= ${(shimmerParams.sustainedThreshold * 100).toFixed(0)}%)`);
-        }
+      // ABOVE entry threshold — accumulate time
+      if (this.sustainedLastUpdateTime !== null) {
+        const delta = currentTime - this.sustainedLastUpdateTime;
+        this.sustainedAccumulatedMs += delta;
+      } else if (DEBUG_COHERENCE_EVENTS) {
+        console.log(`[AudioEngine] 🎯 Coherence above sustained threshold (${(coherencePercent * 100).toFixed(1)}% >= ${(shimmerParams.sustainedThreshold * 100).toFixed(0)}%)`);
       }
+      this.sustainedLastUpdateTime = currentTime;
       
       // Reset exit timer since we're above threshold
       this.sustainedExitStartTime = null;
       
       // Check hold time and cooldown
-      const aboveThresholdMs = currentTime - this.coherenceAboveSustainedSince;
       const cooldownOk = this.sustainedCoherenceLastFadeOutTime === null || 
         (currentTime - this.sustainedCoherenceLastFadeOutTime) >= CROSSFADE_CONSTANTS.SUSTAINED_COHERENCE_COOLDOWN_SECONDS * 1000;
       
-      if (aboveThresholdMs >= shimmerParams.sustainedHoldMs && cooldownOk && !this.sustainedCoherenceEnabled) {
-        // Enable sustained layer + shimmer together
+      if (this.sustainedAccumulatedMs >= shimmerParams.sustainedHoldMs && cooldownOk && !this.sustainedCoherenceEnabled) {
         this.sustainedCoherenceEnabled = true;
         this.shimmerEnabled = true;
-        console.log(`[AudioEngine] 🎯 SUSTAINED LAYER + SHIMMER ACTIVATED after ${(aboveThresholdMs / 1000).toFixed(1)}s above threshold (coherence: ${(coherencePercent * 100).toFixed(1)}%)`);
+        console.log(`[AudioEngine] 🎯 SUSTAINED LAYER + SHIMMER ACTIVATED after ${(this.sustainedAccumulatedMs / 1000).toFixed(1)}s accumulated above threshold (coherence: ${(coherencePercent * 100).toFixed(1)}%)`);
         this.fadeInSustainedCoherence(now);
         this.fadeInShimmer(now);
       }
       
       // Log progress toward sustained (throttled)
-      if (DEBUG_COHERENCE_EVENTS && !this.sustainedCoherenceEnabled && aboveThresholdMs > 0) {
-        const progressPercent = Math.min(100, (aboveThresholdMs / shimmerParams.sustainedHoldMs) * 100);
-        const logInterval = 2000; // Log every 2s
-        if (aboveThresholdMs % logInterval < 100) {
-          console.log(`[AudioEngine] 🎯 Sustained progress: ${progressPercent.toFixed(0)}% (${(aboveThresholdMs / 1000).toFixed(1)}s / ${(shimmerParams.sustainedHoldMs / 1000).toFixed(0)}s)`,
+      if (DEBUG_COHERENCE_EVENTS && !this.sustainedCoherenceEnabled && this.sustainedAccumulatedMs > 0) {
+        const progressPercent = Math.min(100, (this.sustainedAccumulatedMs / shimmerParams.sustainedHoldMs) * 100);
+        if (Math.floor(this.sustainedAccumulatedMs / 2000) !== Math.floor((this.sustainedAccumulatedMs - (currentTime - (this.sustainedLastUpdateTime ?? currentTime))) / 2000)) {
+          console.log(`[AudioEngine] 🎯 Sustained progress: ${progressPercent.toFixed(0)}% (${(this.sustainedAccumulatedMs / 1000).toFixed(1)}s / ${(shimmerParams.sustainedHoldMs / 1000).toFixed(0)}s)`,
             cooldownOk ? '' : `[cooldown: ${(CROSSFADE_CONSTANTS.SUSTAINED_COHERENCE_COOLDOWN_SECONDS - ((currentTime - (this.sustainedCoherenceLastFadeOutTime || 0)) / 1000)).toFixed(0)}s remaining]`);
         }
       }
     } else if (coherencePercent < shimmerParams.sustainedExitThreshold) {
-      // Coherence dropped below exit threshold (hysteresis)
+      // BELOW exit threshold — reset accumulated progress and handle deactivation
+      this.sustainedLastUpdateTime = null;
+      
       if (this.sustainedCoherenceEnabled) {
-        // Start tracking time below exit threshold (hysteresis)
+        // Start tracking time below exit threshold (hysteresis for deactivation)
         if (this.sustainedExitStartTime === null) {
           this.sustainedExitStartTime = currentTime;
           if (DEBUG_COHERENCE_EVENTS) {
@@ -1109,17 +1116,14 @@ export class AudioEngine {
           }
         }
         
-        // Check if we've been below exit threshold long enough (hysteresis)
         const belowExitMs = currentTime - this.sustainedExitStartTime;
         if (belowExitMs >= shimmerParams.sustainedExitHoldMs) {
-          // Disable sustained layer + shimmer together (hysteresis complete)
           this.sustainedCoherenceEnabled = false;
           this.sustainedCoherenceLastFadeOutTime = currentTime;
-          this.coherenceAboveSustainedSince = null;
+          this.sustainedAccumulatedMs = 0;
           this.sustainedExitStartTime = null;
           console.log(`[AudioEngine] 🎯 SUSTAINED LAYER + SHIMMER DEACTIVATED after ${(belowExitMs / 1000).toFixed(1)}s below exit threshold`);
           this.fadeOutSustainedCoherence(now);
-          // Fade out shimmer
           this.shimmerEnabled = false;
           if (this.shimmerGain && this.ctx) {
             const sNow = this.ctx.currentTime;
@@ -1129,25 +1133,30 @@ export class AudioEngine {
             this.shimmerGain.gain.linearRampToValueAtTime(0.001, sNow + CROSSFADE_CONSTANTS.SHIMMER_FADE_OUT_SECONDS);
           }
         } else if (DEBUG_COHERENCE_EVENTS && belowExitMs > 0) {
-          // Log hysteresis progress
           const exitProgress = (belowExitMs / shimmerParams.sustainedExitHoldMs * 100).toFixed(0);
           if (belowExitMs % 1000 < 100) {
             console.log(`[AudioEngine] 🎯 Sustained exit hysteresis: ${exitProgress}% (${(belowExitMs / 1000).toFixed(1)}s / ${(shimmerParams.sustainedExitHoldMs / 1000).toFixed(0)}s)`);
           }
         }
       } else {
-        // Not enabled - just reset above threshold timer
-        this.coherenceAboveSustainedSince = null;
+        // Not enabled — reset accumulated progress (hard drop)
+        if (this.sustainedAccumulatedMs > 0 && DEBUG_COHERENCE_EVENTS) {
+          console.log(`[AudioEngine] 🎯 Sustained progress reset (coherence ${(coherencePercent * 100).toFixed(1)}% dropped below exit threshold ${(shimmerParams.sustainedExitThreshold * 100).toFixed(0)}%, lost ${(this.sustainedAccumulatedMs / 1000).toFixed(1)}s)`);
+        }
+        this.sustainedAccumulatedMs = 0;
       }
     } else {
-      // Coherence is between exit and entry thresholds - maintain current state
-      // Reset exit timer if above exit threshold but below entry threshold
-      if (coherencePercent >= shimmerParams.sustainedExitThreshold) {
-        this.sustainedExitStartTime = null;
-      }
-      // Also reset above-threshold timer if below entry threshold
-      if (coherencePercent < shimmerParams.sustainedThreshold) {
-        this.coherenceAboveSustainedSince = null;
+      // MIDDLE ZONE (between exit and entry thresholds) — pause accumulator, preserve progress
+      this.sustainedLastUpdateTime = null;
+      
+      // Reset exit timer since we're above exit threshold
+      this.sustainedExitStartTime = null;
+      
+      if (DEBUG_COHERENCE_EVENTS && this.sustainedAccumulatedMs > 0 && !this.sustainedCoherenceEnabled) {
+        const progressPercent = Math.min(100, (this.sustainedAccumulatedMs / shimmerParams.sustainedHoldMs) * 100);
+        if (currentTime % 3000 < 100) {
+          console.log(`[AudioEngine] 🎯 Sustained PAUSED at ${progressPercent.toFixed(0)}% (${(this.sustainedAccumulatedMs / 1000).toFixed(1)}s) — coherence in middle zone ${(coherencePercent * 100).toFixed(1)}%`);
+        }
       }
     }
     

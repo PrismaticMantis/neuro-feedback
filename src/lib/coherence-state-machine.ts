@@ -18,7 +18,7 @@ const DEFAULT_CONFIG: CoherenceStateMachineConfig = {
   exitThreshold: 0.70,
   enterSustainSeconds: 1.8,
   exitSustainSeconds: 0.6,
-  maxPacketGapMs: 1000,
+  maxPacketGapMs: 5000,   // 5s — aligned with DATA_STALL_MS to tolerate brief BLE hiccups
   minContactQuality: 0.5,
   enableDebugLogging: false,
 };
