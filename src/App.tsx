@@ -78,7 +78,7 @@ function App() {
     const contactQuality = contactScores.reduce<number>((a, b) => a + b, 0) / 4;
     const timeSinceLastUpdate = museHandler.getConnectionStateDetail().timeSinceLastUpdate;
     const signalQuality = {
-      isConnected: muse.connectionHealthState !== 'disconnected',
+      isConnected: true, // guaranteed by the 'disconnected' early-return above
       contactQuality,
       timeSinceLastUpdate,
     };
