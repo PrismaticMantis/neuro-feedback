@@ -256,6 +256,11 @@ export class MuseHandler {
       console.log('[Muse] Scanning for BLE devices...');
 
       this.museClient = new MuseClient();
+      // IMPORTANT: muse-js requires this flag before connect() or ppgReadings stays unavailable.
+      // (Muse 2 / Muse S only; Muse 1 does not support PPG.)
+      if (ENABLE_PPG_MODULATION) {
+        (this.museClient as MuseClient & { enablePpg?: boolean }).enablePpg = true;
+      }
       await this.museClient.connect();
 
       this._deviceName = this.museClient.deviceName || 'Muse';
