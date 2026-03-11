@@ -96,6 +96,14 @@ export function ActiveSession({
   const journeys = getJourneys();
   const journey = journeys.find(j => j.id === journeyId) || journeys[0];
   const ppgDiag = museHandler.getPPGDiagnostics();
+  const ppgStatusLabel = !ppgDiag.streamAvailable
+    ? 'OFF'
+    : (ppgDiag.samplesReceived > 0 ? 'ON' : 'WAIT');
+  const ppgStatusTone = !ppgDiag.streamAvailable
+    ? { bg: 'hsl(0 45% 22% / 0.7)', fg: 'hsl(0 70% 75%)', border: 'hsl(0 45% 35% / 0.8)' }
+    : (ppgDiag.samplesReceived > 0
+      ? { bg: 'hsl(140 50% 22% / 0.7)', fg: 'hsl(140 70% 75%)', border: 'hsl(140 50% 35% / 0.8)' }
+      : { bg: 'hsl(45 45% 22% / 0.7)', fg: 'hsl(45 75% 78%)', border: 'hsl(45 50% 35% / 0.8)' });
 
   // Format time display
   const formatTime = (ms: number) => {
@@ -211,19 +219,19 @@ export function ActiveSession({
             <path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3zM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z"/>
           </svg>
           <span
-            title={`PPG stream ${ppgDiag.streamAvailable ? 'available' : 'missing'} | samples ${ppgDiag.samplesReceived}`}
+            title={`PPG ${ppgStatusLabel} | mode ${ppgDiag.connectionMode ?? 'none'} | samples ${ppgDiag.samplesReceived}`}
             style={{
               fontFamily: 'var(--font-sans)',
               fontSize: '10px',
               fontWeight: 500,
               padding: '3px 6px',
               borderRadius: '999px',
-              background: ppgDiag.streamAvailable ? 'hsl(140 50% 22% / 0.7)' : 'hsl(0 45% 22% / 0.7)',
-              color: ppgDiag.streamAvailable ? 'hsl(140 70% 75%)' : 'hsl(0 70% 75%)',
-              border: `1px solid ${ppgDiag.streamAvailable ? 'hsl(140 50% 35% / 0.8)' : 'hsl(0 45% 35% / 0.8)'}`,
+              background: ppgStatusTone.bg,
+              color: ppgStatusTone.fg,
+              border: `1px solid ${ppgStatusTone.border}`,
             }}
           >
-            PPG {ppgDiag.streamAvailable ? 'ON' : 'OFF'}
+            PPG {ppgStatusLabel}
           </span>
         </div>
       </header>

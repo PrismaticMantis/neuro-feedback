@@ -193,7 +193,7 @@ export class MuseHandler {
   private ppgLastStableBPM: number | null = null; // Last BPM that passed confidence gating
   private ppgLastStableHRV: number | null = null; // Last HRV that passed confidence gating
   private ppgSampleCount: number = 0; // Total PPG samples received this connection
-  private ppgStreamAvailable: boolean = false; // Whether the device exposes ppgReadings stream
+  private ppgStreamAvailable: boolean = false; // Whether any connection path exposes/accepts PPG stream
   // Session-level BPM aggregation (running average)
   private ppgSessionBPMSum: number = 0;
   private ppgSessionBPMCount: number = 0;
@@ -864,6 +864,9 @@ export class MuseHandler {
           console.log('[Muse] Connected to OSC bridge');
           this._connected = true;
           this._connectionMode = 'osc';
+          // In OSC mode we can still receive PPG/HR/HRV if bridge forwards those addresses.
+          // Mark stream as potentially available; sample count confirms real data flow.
+          this.ppgStreamAvailable = ENABLE_PPG_MODULATION;
           this.isInitialized = true;
           this.callbacks.onConnect?.();
           resolve();
@@ -1136,6 +1139,76 @@ export class MuseHandler {
           // Battery: [charge%, fuel_gauge_mv, adc_voltage, temperature_C]
           if (Array.isArray(args) && args.length >= 1) {
             this._batteryLevel = Math.round(args[0]);
+          }
+          break;
+        case '/muse/hr':
+        case '/muse/heart_rate':
+        case '/heart_rate':
+          if (ENABLE_PPG_MODULATION) {
+            const bpm = this.parseValue(args);
+            if (bpm >= 38 && bpm <= 180) {
+              this.ppgBPM = this.ppgBPM === null
+                ? bpm
+                : this.ppgBPM * (1 - this.ppgBPMSmoothingAlpha) + bpm * this.ppgBPMSmoothingAlpha;
+              this.ppgBPMConfidence = Math.max(this.ppgBPMConfidence, 0.7);
+              this.ppgLastBeatMs = now;
+              this.ppgSessionBPMSum += this.ppgBPM;
+              this.ppgSessionBPMCount++;
+              this.ppgLastStableBPM = this.ppgBPM;
+              this.ppgSampleCount++;
+            }
+          }
+          break;
+        case '/muse/hrv':
+        case '/hrv':
+          if (ENABLE_PPG_MODULATION) {
+            const hrv = this.parseValue(args);
+            if (hrv > 0 && hrv < 400) {
+              this.ppgHRV = hrv;
+              this.ppgLastStableHRV = hrv;
+              this.ppgSampleCount++;
+            }
+          }
+          break;
+        case '/muse/ppg':
+        case '/muse/ppg/raw':
+          if (ENABLE_PPG_MODULATION) {
+            const samples = Array.isArray(args) ? args.filter((v) => typeof v === 'number' && isFinite(v)) : [];
+            if (samples.length > 0) {
+              this.handlePPGReading({ samples, timestamp: now });
+            }
+          }
+          break;
+        default:
+          // Flexible fallback for OSC bridges that use non-standard PPG address naming.
+          if (ENABLE_PPG_MODULATION) {
+            const lower = address.toLowerCase();
+            if (lower.includes('hrv')) {
+              const hrv = this.parseValue(args);
+              if (hrv > 0 && hrv < 400) {
+                this.ppgHRV = hrv;
+                this.ppgLastStableHRV = hrv;
+                this.ppgSampleCount++;
+              }
+            } else if (lower.includes('heart') || lower.endsWith('/hr') || lower.includes('bpm')) {
+              const bpm = this.parseValue(args);
+              if (bpm >= 38 && bpm <= 180) {
+                this.ppgBPM = this.ppgBPM === null
+                  ? bpm
+                  : this.ppgBPM * (1 - this.ppgBPMSmoothingAlpha) + bpm * this.ppgBPMSmoothingAlpha;
+                this.ppgBPMConfidence = Math.max(this.ppgBPMConfidence, 0.7);
+                this.ppgLastBeatMs = now;
+                this.ppgSessionBPMSum += this.ppgBPM;
+                this.ppgSessionBPMCount++;
+                this.ppgLastStableBPM = this.ppgBPM;
+                this.ppgSampleCount++;
+              }
+            } else if (lower.includes('ppg')) {
+              const samples = Array.isArray(args) ? args.filter((v) => typeof v === 'number' && isFinite(v)) : [];
+              if (samples.length > 0) {
+                this.handlePPGReading({ samples, timestamp: now });
+              }
+            }
           }
           break;
       }
@@ -1534,12 +1607,19 @@ export class MuseHandler {
   /**
    * Lightweight diagnostics so UI can show whether PPG is actually available.
    */
-  getPPGDiagnostics(): { streamAvailable: boolean; subscribed: boolean; samplesReceived: number; confidence: number } {
+  getPPGDiagnostics(): {
+    streamAvailable: boolean;
+    subscribed: boolean;
+    samplesReceived: number;
+    confidence: number;
+    connectionMode: ConnectionMode;
+  } {
     return {
       streamAvailable: this.ppgStreamAvailable,
       subscribed: this.ppgSubscription !== null,
       samplesReceived: this.ppgSampleCount,
       confidence: this.ppgBPMConfidence,
+      connectionMode: this._connectionMode,
     };
   }
 }
