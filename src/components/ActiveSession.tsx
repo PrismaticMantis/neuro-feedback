@@ -95,6 +95,7 @@ export function ActiveSession({
   }, [sessionHook.currentUser]);
   const journeys = getJourneys();
   const journey = journeys.find(j => j.id === journeyId) || journeys[0];
+  const ppgDiag = museHandler.getPPGDiagnostics();
 
   // Format time display
   const formatTime = (ms: number) => {
@@ -209,6 +210,21 @@ export function ActiveSession({
             <path d="M3 18v-6a9 9 0 0 1 18 0v6"/>
             <path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3zM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z"/>
           </svg>
+          <span
+            title={`PPG stream ${ppgDiag.streamAvailable ? 'available' : 'missing'} | samples ${ppgDiag.samplesReceived}`}
+            style={{
+              fontFamily: 'var(--font-sans)',
+              fontSize: '10px',
+              fontWeight: 500,
+              padding: '3px 6px',
+              borderRadius: '999px',
+              background: ppgDiag.streamAvailable ? 'hsl(140 50% 22% / 0.7)' : 'hsl(0 45% 22% / 0.7)',
+              color: ppgDiag.streamAvailable ? 'hsl(140 70% 75%)' : 'hsl(0 70% 75%)',
+              border: `1px solid ${ppgDiag.streamAvailable ? 'hsl(140 50% 35% / 0.8)' : 'hsl(0 45% 35% / 0.8)'}`,
+            }}
+          >
+            PPG {ppgDiag.streamAvailable ? 'ON' : 'OFF'}
+          </span>
         </div>
       </header>
 

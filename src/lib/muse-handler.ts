@@ -190,6 +190,10 @@ export class MuseHandler {
   private ppgBPMConfidence: number = 0; // Confidence 0-1
   private ppgLastBeatMs: number | null = null; // Timestamp of last detected beat
   private ppgHRV: number | null = null; // RMSSD of recent inter-beat intervals (ms)
+  private ppgLastStableBPM: number | null = null; // Last BPM that passed confidence gating
+  private ppgLastStableHRV: number | null = null; // Last HRV that passed confidence gating
+  private ppgSampleCount: number = 0; // Total PPG samples received this connection
+  private ppgStreamAvailable: boolean = false; // Whether the device exposes ppgReadings stream
   // Session-level BPM aggregation (running average)
   private ppgSessionBPMSum: number = 0;
   private ppgSessionBPMCount: number = 0;
@@ -325,6 +329,7 @@ export class MuseHandler {
       }
 
       // Subscribe to PPG (photoplethysmography) for heart rate (if feature enabled)
+      this.ppgStreamAvailable = !!this.museClient.ppgReadings;
       if (ENABLE_PPG_MODULATION && this.museClient.ppgReadings) {
         this.ppgSubscription = this.museClient.ppgReadings.subscribe(
           (ppg) => {
@@ -672,6 +677,8 @@ export class MuseHandler {
       this.ppgBPMConfidence = 0;
       this.ppgLastBeatMs = null;
       this.ppgLastPeakTime = 0;
+      this.ppgSampleCount = 0;
+      this.ppgStreamAvailable = false;
     }
     this._signalPausedSince = null;
     this._reconnectAttempts = 0;
@@ -911,6 +918,7 @@ export class MuseHandler {
 
     // Process each sample
     for (const sample of ppg.samples) {
+      this.ppgSampleCount++;
       // Smooth the signal (EMA)
       this.ppgSmoothed = this.ppgSmoothed * (1 - this.ppgSmoothingAlpha) + sample * this.ppgSmoothingAlpha;
 
@@ -967,7 +975,7 @@ export class MuseHandler {
     // Get peaks within window
     const recentPeaks = this.ppgPeakTimestamps.filter((ts) => ts > windowStart);
 
-    if (recentPeaks.length < 4) {
+    if (recentPeaks.length < 3) {
       // Not enough beats for confidence
       this.ppgBPM = null;
       this.ppgBPMConfidence = 0;
@@ -987,8 +995,8 @@ export class MuseHandler {
     // Convert to BPM: BPM = 60,000 / IBI_ms
     let newBPM = 60000 / avgIBI;
 
-    // Confidence gating: reject implausible BPM (40-140 range)
-    if (newBPM < 40 || newBPM > 140) {
+    // Confidence gating: reject implausible BPM (slightly wider range for real-world variance)
+    if (newBPM < 38 || newBPM > 160) {
       this.ppgBPM = null;
       this.ppgBPMConfidence = 0;
       return;
@@ -1019,7 +1027,7 @@ export class MuseHandler {
       this.ppgBPMConfidence * 0.9 + confidence * 0.1;
 
     // Only output BPM if confidence is high enough
-    if (this.ppgBPMConfidence < 0.6) {
+    if (this.ppgBPMConfidence < 0.45) {
       this.ppgBPM = null;
     }
 
@@ -1034,14 +1042,18 @@ export class MuseHandler {
       this.ppgHRV = Math.sqrt(sumSquaredDiffs / (ibis.length - 1));
     }
 
-    // Accumulate BPM for session-level average (only when confident)
-    if (this.ppgBPM !== null && this.ppgBPMConfidence >= 0.6) {
+    // Accumulate BPM for session-level average (relaxed confidence threshold)
+    if (this.ppgBPM !== null && this.ppgBPMConfidence >= 0.45) {
       this.ppgSessionBPMSum += this.ppgBPM;
       this.ppgSessionBPMCount++;
+      this.ppgLastStableBPM = this.ppgBPM;
+      if (this.ppgHRV !== null) {
+        this.ppgLastStableHRV = this.ppgHRV;
+      }
     }
 
     // Debug logging (throttled to once every 3-5 seconds)
-    if (DEBUG_PPG && this.ppgBPM !== null && this.ppgBPMConfidence >= 0.6) {
+    if (DEBUG_PPG && this.ppgBPM !== null && this.ppgBPMConfidence >= 0.45) {
       const timeSinceLastLog = now - this.ppgLastLogTime;
       if (timeSinceLastLog >= 3000) { // Log at most once every 3 seconds
         console.log('[MuseHandler] PPG data:', {
@@ -1227,6 +1239,8 @@ export class MuseHandler {
       this.ppgBPMConfidence = 0;
       this.ppgLastBeatMs = null;
       this.ppgLastPeakTime = 0;
+      this.ppgSampleCount = 0;
+      this.ppgStreamAvailable = false;
     }
 
     // Reset PPG state on disconnect
@@ -1238,6 +1252,8 @@ export class MuseHandler {
       this.ppgBPMConfidence = 0;
       this.ppgLastBeatMs = null;
       this.ppgLastPeakTime = 0;
+      this.ppgSampleCount = 0;
+      this.ppgStreamAvailable = false;
     }
 
     // Disconnect OSC
@@ -1497,8 +1513,10 @@ export class MuseHandler {
     }
     const avgHR = this.ppgSessionBPMCount > 0
       ? Math.round(this.ppgSessionBPMSum / this.ppgSessionBPMCount)
-      : null;
-    const avgHRV = this.ppgHRV !== null ? Math.round(this.ppgHRV) : null;
+      : (this.ppgLastStableBPM !== null ? Math.round(this.ppgLastStableBPM) : null);
+    const avgHRV = this.ppgHRV !== null
+      ? Math.round(this.ppgHRV)
+      : (this.ppgLastStableHRV !== null ? Math.round(this.ppgLastStableHRV) : null);
     return { avgHR, avgHRV };
   }
 
@@ -1509,6 +1527,20 @@ export class MuseHandler {
     this.ppgSessionBPMSum = 0;
     this.ppgSessionBPMCount = 0;
     this.ppgHRV = null;
+    this.ppgLastStableBPM = null;
+    this.ppgLastStableHRV = null;
+  }
+
+  /**
+   * Lightweight diagnostics so UI can show whether PPG is actually available.
+   */
+  getPPGDiagnostics(): { streamAvailable: boolean; subscribed: boolean; samplesReceived: number; confidence: number } {
+    return {
+      streamAvailable: this.ppgStreamAvailable,
+      subscribed: this.ppgSubscription !== null,
+      samplesReceived: this.ppgSampleCount,
+      confidence: this.ppgBPMConfidence,
+    };
   }
 }
 

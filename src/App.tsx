@@ -28,11 +28,16 @@ const DEFAULT_THRESHOLD_SETTINGS: ThresholdSettings = {
 };
 
 function sensitivityToCoherenceThreshold(sensitivity: number): number {
-  return 0.2 + sensitivity * 0.7;
+  // Re-scale the full sensitivity curve to the new easier baseline.
+  // Range is now 0.15 (easiest) to 0.90 (hardest), so every step is relative
+  // to the new minimum instead of only special-casing the lowest value.
+  return 0.15 + sensitivity * 0.75;
 }
 
 function sensitivityToTimeThreshold(sensitivity: number): number {
-  return 1000 + sensitivity * 9000;
+  // Re-scale the full hold-time curve to the new easier baseline.
+  // Range is now 700ms (easiest) to 10000ms (hardest).
+  return 700 + sensitivity * 9300;
 }
 
 function App() {
@@ -50,11 +55,14 @@ function App() {
     const coherenceThreshold = sensitivityToCoherenceThreshold(thresholdSettings.coherenceSensitivity);
     const timeThreshold = sensitivityToTimeThreshold(thresholdSettings.coherenceSensitivity);
     const isEasyMode = thresholdSettings.coherenceSensitivity < 0.33;
+    const isAbsoluteMinimum = thresholdSettings.coherenceSensitivity <= 0.05;
 
     muse.setThresholdSettings({
       coherenceThreshold,
       timeThreshold,
-      useRelativeMode: isEasyMode,
+      // Relative mode can feel inconsistent at absolute minimum due to baseline calibration.
+      // Keep easy mode relative behavior for normal-low settings, but use absolute mode at minimum.
+      useRelativeMode: isEasyMode && !isAbsoluteMinimum,
     });
     audioEngine.setDifficultyPreset(thresholdSettings.coherenceSensitivity);
   }, [thresholdSettings.coherenceSensitivity, muse.setThresholdSettings]);
