@@ -9,11 +9,16 @@ import { ConnectionStatus } from './ConnectionStatus';
 import { ElectrodeStatus } from './ElectrodeStatus';
 import { BINAURAL_PRESETS } from '../hooks/useAudio';
 import { DEBUG_ELECTRODES_OVERLAY } from '../lib/feature-flags';
-import { museHandler } from '../lib/muse-handler';
+import { useEegDevice } from '../lib/eeg/EegDeviceContext';
+import {
+  overallContactSummaryFromLegacyStatus,
+  overallContactSummaryFromSites,
+} from '../lib/eeg/contact-quality';
 import type {
   User,
   BinauralPresetName,
   ElectrodeStatus as ElectrodeStatusType,
+  ElectrodeSiteContact,
   ThresholdSettings,
 } from '../types';
 
@@ -23,6 +28,8 @@ interface SessionSetupProps {
   museDeviceName: string | null;
   connectionQuality: number;
   electrodeStatus: ElectrodeStatusType;
+  /** When non-empty, electrode UI renders from this list (device-agnostic). */
+  electrodeSites: ElectrodeSiteContact[];
   batteryLevel: number;
   onConnectBluetooth: () => void;
   onConnectOSC: (url?: string) => void;
@@ -57,6 +64,7 @@ export function SessionSetup({
   museDeviceName,
   connectionQuality,
   electrodeStatus,
+  electrodeSites,
   batteryLevel,
   onConnectBluetooth,
   onConnectOSC,
@@ -77,6 +85,7 @@ export function SessionSetup({
   onSelectUser,
   onStartSession,
 }: SessionSetupProps) {
+  const eegDevice = useEegDevice();
   const [newUserName, setNewUserName] = useState('');
   // showUserForm state removed - Lovable design doesn't show user switcher inline
 
@@ -174,7 +183,7 @@ export function SessionSetup({
         boxShadow: '0 4px 20px hsl(270 20% 2% / 0.5)',
       }}
     >
-      <ElectrodeStatus status={electrodeStatus} />
+      <ElectrodeStatus sites={electrodeSites} status={electrodeStatus} />
       {batteryLevel >= 0 && (
         <div 
           className={`battery-display ${batteryLevel <= 20 ? 'low' : ''}`}
@@ -472,13 +481,15 @@ export function SessionSetup({
             <h3 style={{ color: 'var(--accent-primary)', marginBottom: 12, fontSize: '14px' }}>Electrode Debug</h3>
             <div style={{ fontFamily: 'monospace', fontSize: '11px', lineHeight: 1.6, color: 'var(--text-primary)' }}>
               <div>connected: {String(museConnected)}</div>
-              <div>raw horseshoe: [{museHandler.getElectrodeQuality().join(', ')}]</div>
+              <div>raw horseshoe: [{eegDevice.getElectrodeQuality().join(', ')}]</div>
+              <div>electrodeSites: {JSON.stringify(electrodeSites)}</div>
               <div>electrodeStatus: {JSON.stringify(electrodeStatus)}</div>
               <div>connectionQuality: {connectionQuality.toFixed(2)}</div>
-              <div>signalLabel: {(() => {
-                const goodCount = [electrodeStatus.tp9, electrodeStatus.af7, electrodeStatus.af8, electrodeStatus.tp10].filter(q => q === 'good').length;
-                return goodCount >= 3 ? 'Strong' : goodCount >= 1 ? 'Partial' : 'Poor';
-              })()}</div>
+              <div>signalLabel:{' '}
+                {electrodeSites.length > 0
+                  ? overallContactSummaryFromSites(electrodeSites).label
+                  : overallContactSummaryFromLegacyStatus(electrodeStatus).label}
+              </div>
             </div>
           </section>
         )}

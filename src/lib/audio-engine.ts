@@ -9,7 +9,7 @@ import type {
 import { CoherenceStateMachine, type SignalQuality, type CoherenceStateMachineConfig } from './coherence-state-machine';
 import type { CoherenceState } from './coherence-state-machine';
 import { ENABLE_EXPRESSIVE_MODULATION } from './flow-state';
-import { ENABLE_PPG_MODULATION, DEBUG_PPG } from './muse-handler';
+import { ENABLE_PPG_MODULATION, DEBUG_PPG } from './eeg/eeg-feature-flags';
 
 // Debug flag for coherence events (shimmer, sustained layer)
 // Set to true to enable detailed coherence event logging
@@ -1383,7 +1383,7 @@ export class AudioEngine {
    * Now active during 'stabilizing' and 'coherent' states (not just coherent)
    * Modulates lowpass filter cutoff frequency for clearly audible but smooth effect
    * Uses BPM/60 Hz clamped to 0.7-1.3 Hz as modulation rate
-   * To disable: set ENABLE_PPG_MODULATION = false in muse-handler.ts
+   * To disable: set ENABLE_PPG_MODULATION = false in eeg/eeg-feature-flags.ts
    */
   private updatePPGModulation(
     ppg: { bpm: number | null; confidence: number; lastBeatMs: number | null },

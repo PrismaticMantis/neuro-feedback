@@ -1,10 +1,21 @@
-// React hook for Muse EEG data
+// React hook for Muse EEG data (active device comes from EegDeviceProvider / defaults to Muse 2)
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { museHandler, MuseHandler } from '../lib/muse-handler';
+import { useEegDevice } from '../lib/eeg/EegDeviceContext';
+import { horseshoeToElectrodeModel } from '../lib/eeg/electrode-sites';
+import {
+  connectionQualityMetricFromLegacyStatus,
+  connectionQualityMetricFromSites,
+} from '../lib/eeg/contact-quality';
 import { CoherenceDetector, calculateCoherence, getCoherenceZone } from '../lib/flow-state';
 import { DEBUG_ELECTRODES } from '../lib/feature-flags';
-import type { MuseState, CoherenceStatus, ElectrodeStatus, ElectrodeQuality, ConnectionHealthState } from '../types';
+import type {
+  MuseState,
+  CoherenceStatus,
+  ElectrodeStatus,
+  ConnectionHealthState,
+  ElectrodeSiteContact,
+} from '../types';
 
 export interface UseMuseReturn {
   state: MuseState;
@@ -13,6 +24,8 @@ export interface UseMuseReturn {
   coherenceZone: 'flow' | 'stabilizing' | 'noise';
   coherenceHistory: number[];
   electrodeStatus: ElectrodeStatus;
+  /** Device-agnostic per-site contact — parallel to electrodeStatus for Muse 2 */
+  electrodeSites: ElectrodeSiteContact[];
   ppg: { bpm: number | null; confidence: number; lastBeatMs: number | null }; // PPG heart rate metrics
   connectionHealthState: ConnectionHealthState; // Connection health for UI display
   isBluetoothAvailable: boolean;
@@ -54,32 +67,14 @@ const INITIAL_ELECTRODE_STATUS: ElectrodeStatus = {
   tp10: 'off',
 };
 
-/**
- * Map muse-js horseshoe value to UI electrode state.
- * Muse semantics: 1 = good, 2 = medium, 3 = poor, 4 = off (no inverted thresholds).
- */
-function horseshoeToQuality(value: number): ElectrodeQuality {
-  if (value === 1) return 'good';
-  if (value === 2) return 'medium';
-  if (value === 3) return 'poor';
-  return 'off';
-}
-
-/**
- * Overall signal quality from electrode states (same green-count logic as connection meter).
- * 3-4 good → strong, 1-2 good → partial, 0 good → poor.
- */
-function electrodeStatusToConnectionQuality(status: ElectrodeStatus): number {
-  const goodCount = [status.tp9, status.af7, status.af8, status.tp10].filter((q) => q === 'good').length;
-  return goodCount >= 3 ? 1 : goodCount >= 1 ? 0.5 : 0;
-}
-
 export function useMuse(): UseMuseReturn {
+  const eegDevice = useEegDevice();
   const [state, setState] = useState<MuseState>(INITIAL_STATE);
   const [coherenceStatus, setCoherenceStatus] = useState<CoherenceStatus>(INITIAL_COHERENCE_STATUS);
   const [coherence, setCoherence] = useState(0);
   const [coherenceHistory, setCoherenceHistory] = useState<number[]>([]);
   const [electrodeStatus, setElectrodeStatus] = useState<ElectrodeStatus>(INITIAL_ELECTRODE_STATUS);
+  const [electrodeSites, setElectrodeSites] = useState<ElectrodeSiteContact[]>([]);
   const [ppg, setPPG] = useState<{ bpm: number | null; confidence: number; lastBeatMs: number | null }>({
     bpm: null,
     confidence: 0,
@@ -96,7 +91,7 @@ export function useMuse(): UseMuseReturn {
   const lastDebugLog = useRef<number>(0);
   const wasConnectedRef = useRef<boolean>(false);
 
-  // Electrode contact: source = museHandler.getElectrodeQuality() [TP9, AF7, AF8, TP10];
+  // Electrode contact: horseshoe integers + channel labels from device capabilities
   // values 1=good, 2=medium, 3=poor, 4=off. Overall quality = good-count: 3–4→1, 1–2→0.5, 0→0.
   useEffect(() => {
     const ELECTRODE_UPDATE_MS = 100; // ~10 Hz for responsive updates (<300ms perceived)
@@ -104,18 +99,19 @@ export function useMuse(): UseMuseReturn {
     const DEBUG_LOG_MS = 500; // ~2x/sec for debug
 
     const updateLoop = () => {
-      if (museHandler.connected) {
-        const horseshoe = museHandler.getElectrodeQuality();
-        const museState = museHandler.getState();
+      if (eegDevice.connected) {
+        const horseshoe = eegDevice.getElectrodeQuality();
+        const museState = eegDevice.getState();
         const tNow = Date.now();
 
-        const next: ElectrodeStatus = {
-          tp9: horseshoeToQuality(horseshoe[0] ?? 4),
-          af7: horseshoeToQuality(horseshoe[1] ?? 4),
-          af8: horseshoeToQuality(horseshoe[2] ?? 4),
-          tp10: horseshoeToQuality(horseshoe[3] ?? 4),
-        };
-        const connectionQualityFromElectrodes = electrodeStatusToConnectionQuality(next);
+        const { legacyStatus: next, sites } = horseshoeToElectrodeModel(
+          horseshoe,
+          eegDevice.capabilities.eegChannelLabels,
+        );
+        const connectionQualityFromElectrodes =
+          sites.length > 0
+            ? connectionQualityMetricFromSites(sites)
+            : connectionQualityMetricFromLegacyStatus(next);
 
         wasConnectedRef.current = true;
         
@@ -124,6 +120,7 @@ export function useMuse(): UseMuseReturn {
           lastElectrodeUpdate.current = tNow;
           // Always create fresh object to force React re-render
           setElectrodeStatus({ ...next });
+          setElectrodeSites(sites);
 
           // Debug logging (always enabled when DEBUG_ELECTRODES flag is true)
           if (DEBUG_ELECTRODES && tNow - lastDebugLog.current >= DEBUG_LOG_MS) {
@@ -138,7 +135,7 @@ export function useMuse(): UseMuseReturn {
         if (tNow - lastStateUpdate.current >= STATE_UPDATE_MS) {
           lastStateUpdate.current = tNow;
           // Get current health state from handler
-          const healthState = museHandler.getHealthState();
+          const healthState = eegDevice.getHealthState();
           setConnectionHealthState(healthState);
           
           // Always create fresh objects to force React re-render (no memoization blocking)
@@ -154,15 +151,18 @@ export function useMuse(): UseMuseReturn {
         }
 
         // Calculate motion level from accelerometer
-        const motionLevel = Math.abs(museHandler.accX) + Math.abs(museHandler.accY) + Math.abs(museHandler.accZ);
+        const motionLevel = Math.abs(eegDevice.accX) + Math.abs(eegDevice.accY) + Math.abs(eegDevice.accZ);
         const normalizedMotion = Math.min(1, motionLevel / 30);
 
         // Electrode quality 0-1 for coherence (1=good, 2=medium→0.5, 3=poor, 4=off→0)
-        const electrodeQuality = horseshoe.reduce((sum: number, v: number) => {
-          if (v === 1) return sum + 1;
-          if (v === 2) return sum + 0.5;
-          return sum;
-        }, 0) / 4;
+        const chN = eegDevice.capabilities.eegChannelCount;
+        let sumQ = 0;
+        for (let i = 0; i < chN; i++) {
+          const v = horseshoe[i] ?? 4;
+          if (v === 1) sumQ += 1;
+          else if (v === 2) sumQ += 0.5;
+        }
+        const electrodeQuality = sumQ / chN;
 
         // Update coherence detector with electrode quality
         const csState = coherenceDetector.current.update(museState.bandsSmooth, normalizedMotion, electrodeQuality);
@@ -184,12 +184,13 @@ export function useMuse(): UseMuseReturn {
         }
 
         // Update PPG metrics (heart rate)
-        const ppgMetrics = museHandler.getPPG();
+        const ppgMetrics = eegDevice.getPPG();
         setPPG(ppgMetrics);
       } else {
         if (wasConnectedRef.current) {
           wasConnectedRef.current = false;
           setElectrodeStatus(INITIAL_ELECTRODE_STATUS);
+          setElectrodeSites([]);
           setConnectionHealthState('disconnected');
           if (DEBUG_ELECTRODES) {
             console.log(`[DEBUG_ELECTRODES] ${new Date().toISOString()} disconnected`, INITIAL_ELECTRODE_STATUS);
@@ -209,41 +210,39 @@ export function useMuse(): UseMuseReturn {
         cancelAnimationFrame(animationFrameRef.current);
       }
     };
-  }, []);
+  }, [eegDevice]);
 
   const connectBluetooth = useCallback(async () => {
     try {
       setError(null);
-      await museHandler.connectBluetooth();
+      await eegDevice.connectBluetooth();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Connection failed');
       throw err;
     }
-  }, []);
+  }, [eegDevice]);
 
   const connectOSC = useCallback(async (url?: string) => {
     try {
       setError(null);
-      await museHandler.connectOSC(url);
+      await eegDevice.connectOSC(url);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Connection failed');
       throw err;
     }
-  }, []);
+  }, [eegDevice]);
 
   // Force immediate electrode status update when Muse connects (and periodically refresh)
   useEffect(() => {
     if (state.connected) {
       const updateElectrodes = () => {
-        const horseshoe = museHandler.getElectrodeQuality();
-        const next: ElectrodeStatus = {
-          tp9: horseshoeToQuality(horseshoe[0] ?? 4),
-          af7: horseshoeToQuality(horseshoe[1] ?? 4),
-          af8: horseshoeToQuality(horseshoe[2] ?? 4),
-          tp10: horseshoeToQuality(horseshoe[3] ?? 4),
-        };
-        // Always create new object to force React re-render
+        const horseshoe = eegDevice.getElectrodeQuality();
+        const { legacyStatus: next, sites } = horseshoeToElectrodeModel(
+          horseshoe,
+          eegDevice.capabilities.eegChannelLabels,
+        );
         setElectrodeStatus({ ...next });
+        setElectrodeSites(sites);
       };
       
       updateElectrodes();
@@ -251,16 +250,17 @@ export function useMuse(): UseMuseReturn {
       const interval = setInterval(updateElectrodes, 200);
       return () => clearInterval(interval);
     }
-  }, [state.connected]);
+  }, [state.connected, eegDevice]);
 
   const disconnect = useCallback(() => {
-    museHandler.disconnect();
+    eegDevice.disconnect();
     setState(INITIAL_STATE);
     setCoherenceStatus(INITIAL_COHERENCE_STATUS);
     setElectrodeStatus(INITIAL_ELECTRODE_STATUS);
+    setElectrodeSites([]);
     setCoherence(0);
     coherenceDetector.current.reset();
-  }, []);
+  }, [eegDevice]);
 
   const setThresholdSettings = useCallback((settings: { coherenceThreshold: number; timeThreshold: number; useRelativeMode?: boolean }) => {
     coherenceDetector.current.setConfig({
@@ -279,9 +279,10 @@ export function useMuse(): UseMuseReturn {
     coherenceZone: getCoherenceZone(coherence),
     coherenceHistory,
     electrodeStatus,
+    electrodeSites,
     ppg,
     connectionHealthState,
-    isBluetoothAvailable: MuseHandler.isBluetoothAvailable(),
+    isBluetoothAvailable: eegDevice.isBluetoothAvailable(),
     connectBluetooth,
     connectOSC,
     disconnect,

@@ -1,19 +1,44 @@
 // FFT Processor for brainwave band power extraction
 // Based on Cooley-Tukey algorithm
 
-export const FFT_SIZE = 256;
-export const SAMPLE_RATE = 256; // Muse samples at 256 Hz
+import { MUSE2_DEVICE_CAPABILITIES } from './eeg/eeg-device-types';
+
+/** @deprecated Use MUSE2_DEVICE_CAPABILITIES.fftSize — kept for external imports */
+export const FFT_SIZE = MUSE2_DEVICE_CAPABILITIES.fftSize;
+
+/** @deprecated Use MUSE2_DEVICE_CAPABILITIES.sampleRateHz — kept for external imports */
+export const SAMPLE_RATE = MUSE2_DEVICE_CAPABILITIES.sampleRateHz;
+
+/** Configurable FFT / sample-rate pair — defaults match Muse 2. */
+export interface FftPipelineConfig {
+  fftSize: number;
+  sampleRateHz: number;
+}
+
+export const DEFAULT_FFT_PIPELINE: FftPipelineConfig = {
+  fftSize: MUSE2_DEVICE_CAPABILITIES.fftSize,
+  sampleRateHz: MUSE2_DEVICE_CAPABILITIES.sampleRateHz,
+};
 
 export class FFTProcessor {
   private size: number;
+  private sampleRateHz: number;
   private real: Float32Array;
   private imag: Float32Array;
   private cosTable: Float32Array;
   private sinTable: Float32Array;
   private window: Float32Array;
 
-  constructor(size: number = FFT_SIZE) {
-    this.size = size;
+  constructor(config: FftPipelineConfig | number = DEFAULT_FFT_PIPELINE) {
+    if (typeof config === 'number') {
+      this.size = config;
+      this.sampleRateHz = DEFAULT_FFT_PIPELINE.sampleRateHz;
+    } else {
+      this.size = config.fftSize;
+      this.sampleRateHz = config.sampleRateHz;
+    }
+
+    const size = this.size;
     this.real = new Float32Array(size);
     this.imag = new Float32Array(size);
 
@@ -30,6 +55,14 @@ export class FFTProcessor {
     for (let i = 0; i < size; i++) {
       this.window[i] = 0.5 * (1 - Math.cos((2 * Math.PI * i) / (size - 1)));
     }
+  }
+
+  getFftSize(): number {
+    return this.size;
+  }
+
+  getSampleRateHz(): number {
+    return this.sampleRateHz;
   }
 
   /**
@@ -94,7 +127,7 @@ export class FFTProcessor {
    * Get power in a frequency band (returns average power)
    */
   getBandPower(magnitudes: Float32Array, lowFreq: number, highFreq: number): number {
-    const freqResolution = SAMPLE_RATE / this.size;
+    const freqResolution = this.sampleRateHz / this.size;
     // Start at bin 1 minimum to exclude DC component (bin 0)
     const lowBin = Math.max(1, Math.floor(lowFreq / freqResolution));
     const highBin = Math.ceil(highFreq / freqResolution);
@@ -113,7 +146,7 @@ export class FFTProcessor {
    * Get total (sum) power in a frequency band - used for absolute dB calculation
    */
   getBandPowerSum(magnitudes: Float32Array, lowFreq: number, highFreq: number): number {
-    const freqResolution = SAMPLE_RATE / this.size;
+    const freqResolution = this.sampleRateHz / this.size;
     const lowBin = Math.max(1, Math.floor(lowFreq / freqResolution));
     const highBin = Math.ceil(highFreq / freqResolution);
 
@@ -130,7 +163,7 @@ export class FFTProcessor {
    */
   highPassFilter(samples: number[], cutoff: number = 1.0): number[] {
     const rc = 1.0 / (2 * Math.PI * cutoff);
-    const dt = 1.0 / SAMPLE_RATE;
+    const dt = 1.0 / this.sampleRateHz;
     const alpha = rc / (rc + dt);
 
     const filtered: number[] = new Array(samples.length);

@@ -9,10 +9,16 @@ import { motion } from 'framer-motion';
 import { CoherenceGraph } from './CoherenceGraph';
 import { ElectrodeStatus } from './ElectrodeStatus';
 import { DEBUG_SESSION_TELEMETRY } from '../lib/feature-flags';
-import { museHandler } from '../lib/muse-handler';
+import { useEegDevice } from '../lib/eeg/EegDeviceContext';
 import { getJourneys, getLastJourneyId } from '../lib/session-storage';
 import { useSession } from '../hooks/useSession';
-import type { ElectrodeStatus as ElectrodeStatusType, BrainwaveBands, BrainwaveBandsDb, ConnectionHealthState } from '../types';
+import type {
+  ElectrodeStatus as ElectrodeStatusType,
+  ElectrodeSiteContact,
+  BrainwaveBands,
+  BrainwaveBandsDb,
+  ConnectionHealthState,
+} from '../types';
 
 interface ActiveSessionProps {
   // Session data
@@ -24,6 +30,7 @@ interface ActiveSessionProps {
   museConnected: boolean;
   touching: boolean;
   electrodeStatus: ElectrodeStatusType;
+  electrodeSites: ElectrodeSiteContact[];
   bands: BrainwaveBands;
   bandsDb: BrainwaveBandsDb;
   batteryLevel: number;
@@ -44,6 +51,7 @@ export function ActiveSession({
   museConnected,
   touching,
   electrodeStatus,
+  electrodeSites,
   bands: _bands, // Keep for potential future use
   bandsDb,
   batteryLevel,
@@ -53,6 +61,7 @@ export function ActiveSession({
   onEndSession,
 }: ActiveSessionProps) {
   void _bands; // Silence unused warning
+  const eegDevice = useEegDevice();
   
   // Debug: Track update timestamps
   const [debugInfo, setDebugInfo] = useState<{
@@ -74,7 +83,7 @@ export function ActiveSession({
     }
 
     const interval = setInterval(() => {
-      const handlerDetail = museHandler.getConnectionStateDetail();
+      const handlerDetail = eegDevice.getConnectionStateDetail();
       const now = Date.now();
       setDebugInfo({
         lastUpdate: handlerDetail.timeSinceLastUpdate,
@@ -95,7 +104,7 @@ export function ActiveSession({
   }, [sessionHook.currentUser]);
   const journeys = getJourneys();
   const journey = journeys.find(j => j.id === journeyId) || journeys[0];
-  const ppgDiag = museHandler.getPPGDiagnostics();
+  const ppgDiag = eegDevice.getPPGDiagnostics();
   const ppgStatusLabel = !ppgDiag.streamAvailable
     ? 'OFF'
     : (ppgDiag.samplesReceived > 0 ? 'ON' : 'WAIT');
@@ -245,10 +254,10 @@ export function ActiveSession({
               healthState: {connectionHealthState}
             </div>
             <div>museConnected: {String(museConnected)}</div>
-            <div>bleTransport: {String(museHandler.bleTransportConnected)}</div>
+            <div>bleTransport: {String(eegDevice.bleTransportConnected)}</div>
             <div>touching: {String(touching)}</div>
             <div>lastUpdate: {debugInfo.lastUpdate}ms ago</div>
-            <div>raw horseshoe: [{museHandler.getElectrodeQuality().join(', ')}]</div>
+            <div>raw horseshoe: [{eegDevice.getElectrodeQuality().join(', ')}]</div>
             <div>electrodeStatus: {JSON.stringify(electrodeStatus)}</div>
             <div>bandsDb: δ={bandsDb.delta.toFixed(0)} θ={bandsDb.theta.toFixed(0)} α={bandsDb.alpha.toFixed(0)} β={bandsDb.beta.toFixed(0)} γ={bandsDb.gamma.toFixed(0)}</div>
             <div>coherenceHistory: {coherenceHistory.length} points</div>
@@ -280,7 +289,7 @@ export function ActiveSession({
             backdropFilter: 'blur(20px)',
           }}
         >
-          <ElectrodeStatus status={electrodeStatus} compact />
+          <ElectrodeStatus sites={electrodeSites} status={electrodeStatus} compact />
           
           {/* Band Power / Greeks Row */}
           <div 

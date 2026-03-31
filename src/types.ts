@@ -127,11 +127,19 @@ export interface IsochronicPreset {
 // Electrode contact quality (from Muse horseshoe indicator)
 export type ElectrodeQuality = 'good' | 'medium' | 'poor' | 'off';
 
+/** Legacy Muse 2 four-site map — kept for APIs and fallback when `electrodeSites` is empty. */
 export interface ElectrodeStatus {
   tp9: ElectrodeQuality;  // Left ear
   af7: ElectrodeQuality;  // Left forehead
   af8: ElectrodeQuality;  // Right forehead
   tp10: ElectrodeQuality; // Right ear
+}
+
+/** Per-site contact (device-agnostic) — see `horseshoeToElectrodeModel` in eeg/electrode-sites.ts */
+export interface ElectrodeSiteContact {
+  siteId: string;
+  label: string;
+  quality: ElectrodeQuality;
 }
 
 export type AppScreen = 'setup' | 'session' | 'summary';

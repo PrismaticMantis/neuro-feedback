@@ -16,10 +16,16 @@ import { Profile } from './components/Profile';
 import { BottomNav } from './components/BottomNav';
 import { DesignShowcase } from './components/DesignShowcase';
 import { audioEngine } from './lib/audio-engine';
-import { museHandler } from './lib/muse-handler';
+import { useEegDevice } from './lib/eeg/EegDeviceContext';
 import { movementDetector, DEBUG_MOVEMENT } from './lib/movement-detector';
 import { calculateCalmScore, calculateCreativeFlowScore } from './lib/flow-state';
 import { deriveRecoveryPoints } from './lib/summary-pdf';
+import {
+  averageContactScore01,
+  averageContactScore01FromLegacyStatus,
+  hasEnoughGoodOrMediumContact,
+  hasEnoughGoodOrMediumContactLegacy,
+} from './lib/eeg/contact-quality';
 import type { ThresholdSettings } from './types';
 import './App.css';
 
@@ -41,11 +47,16 @@ function sensitivityToTimeThreshold(sensitivity: number): number {
 }
 
 function App() {
+  const eegDevice = useEegDevice();
   const muse = useMuse();
   const audio = useAudio();
   const session = useSession();
   const navigate = useNavigate();
   const location = useLocation();
+
+  useEffect(() => {
+    movementDetector.setEegDevice(eegDevice);
+  }, [eegDevice]);
 
   const [thresholdSettings, setThresholdSettings] = useState<ThresholdSettings>(
     DEFAULT_THRESHOLD_SETTINGS
@@ -67,10 +78,10 @@ function App() {
     audioEngine.setDifficultyPreset(thresholdSettings.coherenceSensitivity);
   }, [thresholdSettings.coherenceSensitivity, muse.setThresholdSettings]);
 
-  const hasGoodContact = (() => {
-    const { tp9, af7, af8, tp10 } = muse.electrodeStatus;
-    return [tp9, af7, af8, tp10].filter((q) => q === 'good' || q === 'medium').length >= 3;
-  })();
+  const hasGoodContact =
+    muse.electrodeSites.length > 0
+      ? hasEnoughGoodOrMediumContact(muse.electrodeSites)
+      : hasEnoughGoodOrMediumContactLegacy(muse.electrodeStatus);
 
   useEffect(() => {
     // CRITICAL: Only skip if session is not active OR we have a REAL disconnect.
@@ -79,12 +90,11 @@ function App() {
     if (!session.isSessionActive) return;
     if (muse.connectionHealthState === 'disconnected') return;
 
-    const { tp9, af7, af8, tp10 } = muse.electrodeStatus;
-    const contactScores = [tp9, af7, af8, tp10].map((q) =>
-      q === 'good' ? 1.0 : q === 'medium' ? 0.5 : 0
-    );
-    const contactQuality = contactScores.reduce<number>((a, b) => a + b, 0) / 4;
-    const timeSinceLastUpdate = museHandler.getConnectionStateDetail().timeSinceLastUpdate;
+    const contactQuality =
+      muse.electrodeSites.length > 0
+        ? averageContactScore01(muse.electrodeSites)
+        : averageContactScore01FromLegacyStatus(muse.electrodeStatus);
+    const timeSinceLastUpdate = eegDevice.getConnectionStateDetail().timeSinceLastUpdate;
     const signalQuality = {
       isConnected: true, // guaranteed by the 'disconnected' early-return above
       contactQuality,
@@ -116,8 +126,10 @@ function App() {
     muse.state.touching,
     muse.state.bandsSmooth,
     muse.electrodeStatus,
+    muse.electrodeSites,
     hasGoodContact,
     session.isSessionActive,
+    eegDevice,
   ]);
 
   const handleStartSession = useCallback(async () => {
@@ -127,7 +139,7 @@ function App() {
       if (audio.entrainmentEnabled) await audio.setEntrainmentEnabled(true);
       
       // Reset PPG session tracking so averages are fresh for this session
-      museHandler.resetSessionPPG();
+      eegDevice.resetSessionPPG();
       
       // Wire movement detection -> audio cue playback (end-to-end pipeline)
       // Flow: Muse 2 accelerometer -> MovementDetector (EMA baseline) -> this callback -> playMovementCue()
@@ -157,7 +169,7 @@ function App() {
     } catch (e) {
       console.error('[App] Begin session failed:', e);
     }
-  }, [audio, session, navigate]);
+  }, [audio, session, navigate, eegDevice]);
 
   const handleEndSession = useCallback(() => {
     // Stop movement detection
@@ -169,7 +181,7 @@ function App() {
     audio.setEntrainmentEnabled(false);
 
     // Collect PPG data before ending session (must read before session state resets)
-    const ppgData = museHandler.getSessionPPGSummary();
+    const ppgData = eegDevice.getSessionPPGSummary();
 
     // Compute recovery points from coherence + stability
     // deriveRecoveryPoints(coherencePercent, stability) returns 6–15
@@ -181,7 +193,7 @@ function App() {
 
     session.endSession(audioMetrics.totalCoherenceAudioTimeMs, ppgData, recoveryPts);
     navigate('/summary');
-  }, [audio, session, navigate]);
+  }, [audio, session, navigate, eegDevice]);
 
   const handleEntrainmentToggle = useCallback(() => {
     audio.setEntrainmentEnabled(!audio.entrainmentEnabled);
@@ -218,6 +230,7 @@ function App() {
               museDeviceName={muse.state.deviceName}
               connectionQuality={muse.state.connectionQuality}
               electrodeStatus={muse.electrodeStatus}
+              electrodeSites={muse.electrodeSites}
               batteryLevel={muse.state.batteryLevel}
               onConnectBluetooth={muse.connectBluetooth}
               onConnectOSC={muse.connectOSC}
@@ -250,6 +263,7 @@ function App() {
               museConnected={muse.state.connected}
               touching={muse.state.touching}
               electrodeStatus={muse.electrodeStatus}
+              electrodeSites={muse.electrodeSites}
               bands={muse.state.bandsSmooth}
               bandsDb={muse.state.bandsDbSmooth}
               batteryLevel={muse.state.batteryLevel}

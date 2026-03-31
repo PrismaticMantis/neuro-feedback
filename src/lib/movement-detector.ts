@@ -21,7 +21,8 @@
  * UI Reference: This is an audio-only feature, no visual UI changes
  */
 
-import { museHandler } from './muse-handler';
+import type { EEGDevice } from './eeg/eeg-device';
+import { createEegDevice, DEFAULT_EEG_DEVICE_KIND } from './eeg/eeg-device-factory';
 
 // Debug flag for movement detection logging
 // Set to true to enable detailed movement event logging
@@ -89,10 +90,23 @@ export type MovementEventCallback = (movementDelta: number, source: 'acceleromet
  * Movement Detector Class
  * 
  * End-to-end pipeline:
- * Muse 2 BLE -> muse-handler (accX/accY/accZ) -> MovementDetector (EMA baseline deviation)
+ * EEG device (IMU) -> MovementDetector (EMA baseline deviation)
  *   -> onMovementCallback -> audioEngine.playMovementCue() -> audible cue
+ *
+ * Injected `EEGDevice` defaults to the global Muse 2 adapter — same behavior as before.
  */
 export class MovementDetector {
+  private device: EEGDevice;
+
+  constructor(device: EEGDevice = createEegDevice(DEFAULT_EEG_DEVICE_KIND)) {
+    this.device = device;
+  }
+
+  /** Sync with React context / future device picker — call when the active EEGDevice instance changes. */
+  setEegDevice(device: EEGDevice): void {
+    this.device = device;
+  }
+
   // EMA baseline for accelerometer position (slow-moving average)
   private baseX = 0;
   private baseY = 0;
@@ -175,12 +189,12 @@ export class MovementDetector {
     
     if (DEBUG_MOVEMENT) {
       console.log('[Move] ✅ Started', {
-        museConnected: museHandler.connected,
-        accelSubscribed: museHandler.accelSubscribed,
-        accelSampleCount: museHandler.accelSampleCount,
-        accX: museHandler.accX.toFixed(4),
-        accY: museHandler.accY.toFixed(4),
-        accZ: museHandler.accZ.toFixed(4),
+        museConnected: this.device.connected,
+        accelSubscribed: this.device.accelSubscribed,
+        accelSampleCount: this.device.accelSampleCount,
+        accX: this.device.accX.toFixed(4),
+        accY: this.device.accY.toFixed(4),
+        accZ: this.device.accZ.toFixed(4),
         hasCallback: !!this.onMovementCallback,
         config: MOVEMENT_CONFIG,
       });
@@ -253,15 +267,15 @@ export class MovementDetector {
     if (!this.isEnabled) return;
     
     const now = Date.now();
-    const isConnected = museHandler.connected;
-    const isAccelSub = museHandler.accelSubscribed;
+    const isConnected = this.device.connected;
+    const isAccelSub = this.device.accelSubscribed;
     
     // ---- Diagnostic log: runs REGARDLESS of gate conditions ----
     if (DEBUG_MOVEMENT && now - this.lastDiagnosticLog > MOVEMENT_CONFIG.diagnosticIntervalMs) {
       this.lastDiagnosticLog = now;
-      const accX = museHandler.accX;
-      const accY = museHandler.accY;
-      const accZ = museHandler.accZ;
+      const accX = this.device.accX;
+      const accY = this.device.accY;
+      const accZ = this.device.accZ;
       const allZero = accX === 0 && accY === 0 && accZ === 0;
       const armingLeft = Math.max(0, MOVEMENT_CONFIG.armingDelayMs - (now - this.sessionStartTs));
 
@@ -293,7 +307,7 @@ export class MovementDetector {
     // IMPORTANT: We no longer gate on accelSubscribed — it can be stale or not set
     // on some BLE implementations. Instead, checkAccelerometer() itself checks if
     // non-zero data is present. We only need Muse connected OR data flowing.
-    const hasAccelData = museHandler.accX !== 0 || museHandler.accY !== 0 || museHandler.accZ !== 0;
+    const hasAccelData = this.device.accX !== 0 || this.device.accY !== 0 || this.device.accZ !== 0;
     if (isConnected || hasAccelData) {
       this.checkAccelerometer(now);
     } else {
@@ -324,16 +338,16 @@ export class MovementDetector {
    *   'rearming'   → delta < rearmThreshold for rearmSettleMs → 'ready'
    */
   private checkAccelerometer(now: number): void {
-    const accX = museHandler.accX;
-    const accY = museHandler.accY;
-    const accZ = museHandler.accZ;
+    const accX = this.device.accX;
+    const accY = this.device.accY;
+    const accZ = this.device.accZ;
     
     // Skip if no data (all zeros = no subscription or no data yet)
     if (accX === 0 && accY === 0 && accZ === 0) {
       this.zeroAccelCount++;
       if (this.zeroAccelCount === 100 && DEBUG_MOVEMENT) {
         console.warn('[Move] ⚠️ Accelerometer 0,0,0 for 5s.' +
-          ' accelSubscribed=' + museHandler.accelSubscribed);
+          ' accelSubscribed=' + this.device.accelSubscribed);
       }
       return;
     }
@@ -443,9 +457,9 @@ export class MovementDetector {
    * Only active when accelerometer data is NOT flowing.
    */
   private checkEegArtifacts(now: number): void {
-    const accX = museHandler.accX;
-    const accY = museHandler.accY;
-    const accZ = museHandler.accZ;
+    const accX = this.device.accX;
+    const accY = this.device.accY;
+    const accZ = this.device.accZ;
     
     // If accelerometer is providing data, don't use fallback
     if (accX !== 0 || accY !== 0 || accZ !== 0) {
@@ -458,11 +472,11 @@ export class MovementDetector {
     }
     
     // Get electrode quality (proxy for signal disruption)
-    const electrodeQuality = museHandler.getElectrodeQuality();
+    const electrodeQuality = this.device.getElectrodeQuality();
     const poorChannels = electrodeQuality.filter(q => q >= 3).length;
     
     // Get band powers for artifact detection (broadband spike)
-    const bands = museHandler.bandsDb;
+    const bands = this.device.bandsDb;
     const totalPower = bands.delta + bands.theta + bands.alpha + bands.beta + bands.gamma;
     
     // Update EEG baseline with EMA
@@ -536,7 +550,7 @@ export class MovementDetector {
    * Check if accelerometer is available (dynamic — checks muse-handler live)
    */
   get accelerometerAvailable(): boolean {
-    return museHandler.accelSubscribed;
+    return this.device.accelSubscribed;
   }
 }
 

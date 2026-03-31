@@ -3,18 +3,12 @@
 
 import { MuseClient } from 'muse-js';
 import OSC from 'osc-js';
-import { FFTProcessor, FFT_SIZE } from './fft-processor';
+import { FFTProcessor } from './fft-processor';
+import { MUSE2_DEVICE_CAPABILITIES } from './eeg/eeg-device-types';
+import { ENABLE_PPG_MODULATION, DEBUG_PPG } from './eeg/eeg-feature-flags';
 import type { BrainwaveBands, BrainwaveBandsDb, MuseState } from '../types';
 
-// Feature flag for PPG (photoplethysmography) heart rate modulation
-// When false, all PPG behavior is disabled and app behaves identically to current version
-// To disable: set ENABLE_PPG_MODULATION = false
-export const ENABLE_PPG_MODULATION = true;
-
-// Debug flag for PPG logging (temporary, for verification)
-// Set to true to enable throttled debug logs for PPG BPM/confidence
-// To disable: set DEBUG_PPG = false
-export const DEBUG_PPG = false;
+export { ENABLE_PPG_MODULATION, DEBUG_PPG } from './eeg/eeg-feature-flags';
 
 // Debug flag for connection health logging
 // Set to true to enable detailed connection health diagnostics
@@ -148,9 +142,9 @@ export class MuseHandler {
   private static readonly RECONNECT_INTERVAL_MS = 5000;  // 5s: Time between reconnect attempts
   private static readonly MAX_RECONNECT_ATTEMPTS = Infinity; // NEVER stop trying while BLE transport is alive
   
-  // Electrode quality (horseshoe indicator): [TP9, AF7, AF8, TP10]
+  // Electrode quality (horseshoe indicator): index-aligned with MUSE2_DEVICE_CAPABILITIES.eegChannelLabels
   // Values: 1 = good, 2 = medium, 3 = poor, 4 = off
-  private _electrodeQuality: number[] = [4, 4, 4, 4];
+  private _electrodeQuality!: number[];
 
   // Battery percentage (0-100)
   private _batteryLevel: number = -1; // -1 = unknown
@@ -203,13 +197,17 @@ export class MuseHandler {
   private ppgLastPeakTime = 0; // Timestamp of last detected peak
   private ppgLastLogTime: number = 0; // For throttled debug logging
 
+  /** Channel count / FFT window — from Muse 2 capabilities (this class remains Muse-specific). */
+  private readonly eegChannelCount = MUSE2_DEVICE_CAPABILITIES.eegChannelCount;
+  private readonly fftWindowSize = MUSE2_DEVICE_CAPABILITIES.fftSize;
+
   // FFT processor
   private fft: FFTProcessor;
-  private eegBuffers: number[][] = [[], [], [], []];
+  private eegBuffers!: number[][];
   
   // Electrode signal quality tracking (for Bluetooth)
-  private eegAmplitudes: number[] = [0, 0, 0, 0];
-  private eegVariances: number[] = [0, 0, 0, 0];
+  private eegAmplitudes!: number[];
+  private eegVariances!: number[];
 
   // Event callbacks
   callbacks: MuseEventCallbacks = {};
@@ -227,7 +225,18 @@ export class MuseHandler {
   isInitialized = false;
 
   constructor() {
-    this.fft = new FFTProcessor(FFT_SIZE);
+    this.fft = new FFTProcessor({
+      fftSize: this.fftWindowSize,
+      sampleRateHz: MUSE2_DEVICE_CAPABILITIES.sampleRateHz,
+    });
+    this.allocateEegChannelState();
+  }
+
+  private allocateEegChannelState(): void {
+    this.eegBuffers = Array.from({ length: this.eegChannelCount }, () => []);
+    this._electrodeQuality = Array(this.eegChannelCount).fill(4);
+    this.eegAmplitudes = Array(this.eegChannelCount).fill(0);
+    this.eegVariances = Array(this.eegChannelCount).fill(0);
   }
 
   /**
@@ -478,7 +487,7 @@ export class MuseHandler {
     }
 
     const channel = reading.electrode;
-    if (channel < 0 || channel > 3) return;
+    if (channel < 0 || channel >= this.eegChannelCount) return;
 
     // Add samples to buffer
     for (const sample of reading.samples) {
@@ -486,7 +495,7 @@ export class MuseHandler {
     }
 
     // Keep buffer at FFT size
-    while (this.eegBuffers[channel].length > FFT_SIZE) {
+    while (this.eegBuffers[channel].length > this.fftWindowSize) {
       this.eegBuffers[channel].shift();
     }
 
@@ -494,7 +503,7 @@ export class MuseHandler {
     this.updateBluetoothElectrodeQuality(channel, reading.samples);
 
     // Process when we have enough samples (only on channel 0)
-    if (channel === 0 && this.eegBuffers[0].length >= FFT_SIZE) {
+    if (channel === 0 && this.eegBuffers[0].length >= this.fftWindowSize) {
       this.processBluetoothFFT();
     }
   }
@@ -540,7 +549,7 @@ export class MuseHandler {
     this._electrodeQuality[channel] = quality;
 
     // Update overall connection quality
-    const avgQuality = this._electrodeQuality.reduce((sum, v) => sum + (v === 1 ? 1 : v === 2 ? 0.5 : 0), 0) / 4;
+    const avgQuality = this._electrodeQuality.reduce((sum, v) => sum + (v === 1 ? 1 : v === 2 ? 0.5 : 0), 0) / this.eegChannelCount;
     this._connectionQuality = avgQuality;
     this._touching = avgQuality > 0.1;
   }
@@ -553,8 +562,8 @@ export class MuseHandler {
     const bandPowersSum = { delta: 0, theta: 0, alpha: 0, beta: 0, gamma: 0 };
     let validChannels = 0;
 
-    for (let ch = 0; ch < 4; ch++) {
-      if (this.eegBuffers[ch].length < FFT_SIZE) continue;
+    for (let ch = 0; ch < this.eegChannelCount; ch++) {
+      if (this.eegBuffers[ch].length < this.fftWindowSize) continue;
 
       const filtered = this.fft.highPassFilter(this.eegBuffers[ch], 1.0);
       const magnitudes = this.fft.compute(filtered);
@@ -667,10 +676,7 @@ export class MuseHandler {
     this._connectionMode = null;
     this._deviceName = null;
     this.isInitialized = false;
-    this.eegBuffers = [[], [], [], []];
-    this._electrodeQuality = [4, 4, 4, 4];
-    this.eegAmplitudes = [0, 0, 0, 0];
-    this.eegVariances = [0, 0, 0, 0];
+    this.allocateEegChannelState();
     this._batteryLevel = -1;
 
     // Reset PPG state on disconnect
@@ -1128,11 +1134,11 @@ export class MuseHandler {
           }
           break;
         case '/muse/elements/horseshoe':
-          if (Array.isArray(args) && args.length >= 4) {
-            // Store individual electrode quality values
-            this._electrodeQuality = [args[0], args[1], args[2], args[3]];
+          if (Array.isArray(args) && args.length >= this.eegChannelCount) {
+            // Store individual electrode quality values (Muse OSC sends one per channel)
+            this._electrodeQuality = Array.from({ length: this.eegChannelCount }, (_, i) => args[i] ?? 4);
             const quality =
-              args.reduce((sum, v) => sum + (v === 1 ? 1 : v === 2 ? 0.5 : 0), 0) / 4;
+              args.reduce((sum, v) => sum + (v === 1 ? 1 : v === 2 ? 0.5 : 0), 0) / this.eegChannelCount;
             this._connectionQuality = quality;
             this._touching = quality > 0.25;
           }
@@ -1351,10 +1357,7 @@ export class MuseHandler {
     this._connectionMode = null;
     this._deviceName = null;
     this.isInitialized = false;
-    this.eegBuffers = [[], [], [], []];
-    this._electrodeQuality = [4, 4, 4, 4];
-    this.eegAmplitudes = [0, 0, 0, 0];
-    this.eegVariances = [0, 0, 0, 0];
+    this.allocateEegChannelState();
     this._batteryLevel = -1;
     this._signalPausedSince = null;
     this._lastDisconnectReason = null;

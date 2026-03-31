@@ -1,16 +1,25 @@
 // Electrode Status Component - Shows individual electrode contact quality
 // UI reference: design/targets/5 - Session.png
-// Design tokens: docs/design-specification.md
+// Renders from `electrodeSites` when provided (device-agnostic); falls back to legacy 4-key Muse `status`.
 
 import { motion } from 'framer-motion';
-import type { ElectrodeStatus as ElectrodeStatusType, ElectrodeQuality } from '../types';
+import type { ElectrodeStatus as ElectrodeStatusType, ElectrodeQuality, ElectrodeSiteContact } from '../types';
+import {
+  overallContactSummaryFromLegacyStatus,
+  overallContactSummaryFromSites,
+} from '../lib/eeg/contact-quality';
 
 interface ElectrodeStatusProps {
+  /** Preferred: ordered sites from the active EEG device (labels + quality). */
+  sites?: ElectrodeSiteContact[];
+  /** Fallback when `sites` is empty: Muse 10–20 four-key map (TP9, AF7, AF8, TP10). */
   status: ElectrodeStatusType;
   compact?: boolean;
 }
 
-const ELECTRODE_LABELS = {
+const LEGACY_KEYS = ['tp9', 'af7', 'af8', 'tp10'] as const;
+
+const ELECTRODE_LABELS: Record<(typeof LEGACY_KEYS)[number], string> = {
   tp9: 'TP9',
   af7: 'AF7',
   af8: 'AF8',
@@ -25,30 +34,41 @@ const QUALITY_COLORS: Record<ElectrodeQuality, string> = {
   off: 'hsl(270 10% 40%)', // Muted grey
 };
 
-/**
- * Overall signal quality from electrode states (matches connectionQuality logic exactly).
- * 3-4 good → Strong signal, 1-2 good → Partial signal, 0 good → Poor signal.
- */
-function getOverallStatus(status: ElectrodeStatusType): { label: string; quality: ElectrodeQuality } {
-  const qualities = [status.tp9, status.af7, status.af8, status.tp10];
-  const goodCount = qualities.filter(q => q === 'good').length;
+type Row = { key: string; label: string; quality: ElectrodeQuality };
 
-  if (goodCount >= 3) return { label: 'Strong signal', quality: 'good' };
-  if (goodCount >= 1) return { label: 'Partial signal', quality: 'medium' };
-  return { label: 'Poor signal', quality: 'off' };
+function buildRenderModel(
+  sites: ElectrodeSiteContact[] | undefined,
+  status: ElectrodeStatusType,
+): { rows: Row[]; overall: { label: string; quality: ElectrodeQuality }; qualityPercentage: number } {
+  if (sites && sites.length > 0) {
+    const overall = overallContactSummaryFromSites(sites);
+    const goodCount = sites.filter((s) => s.quality === 'good').length;
+    const qualityPercentage = (goodCount / sites.length) * 100;
+    const rows: Row[] = sites.map((s) => ({
+      key: s.siteId,
+      label: s.label,
+      quality: s.quality,
+    }));
+    return { rows, overall, qualityPercentage };
+  }
+
+  const overall = overallContactSummaryFromLegacyStatus(status);
+  const goodCount = LEGACY_KEYS.filter((k) => status[k] === 'good').length;
+  const qualityPercentage = (goodCount / 4) * 100;
+  const rows: Row[] = LEGACY_KEYS.map((k) => ({
+    key: k,
+    label: ELECTRODE_LABELS[k],
+    quality: status[k],
+  }));
+  return { rows, overall, qualityPercentage };
 }
 
-export function ElectrodeStatus({ status, compact = false }: ElectrodeStatusProps) {
-  const overall = getOverallStatus(status);
-  const electrodes = ['tp9', 'af7', 'af8', 'tp10'] as const;
+export function ElectrodeStatus({ sites, status, compact = false }: ElectrodeStatusProps) {
+  const { rows, overall, qualityPercentage } = buildRenderModel(sites, status);
 
   // Map overall label to shorter version for pill
   const overallPillLabel = overall.label === 'Strong signal' ? 'Good' : 
                            overall.label === 'Partial signal' ? 'Partial' : 'Poor';
-
-  // Calculate quality percentage based on good electrodes (0-100%)
-  const goodCount = electrodes.filter(e => status[e] === 'good').length;
-  const qualityPercentage = (goodCount / 4) * 100;
 
   // Badge colors based on quality
   const badgeStyles: Record<ElectrodeQuality, { bg: string; border: string; text: string }> = {
@@ -117,13 +137,13 @@ export function ElectrodeStatus({ status, compact = false }: ElectrodeStatusProp
           alignItems: 'center',
         }}
       >
-        {electrodes.map((electrode) => {
-          const quality = status[electrode];
+        {rows.map((row) => {
+          const quality = row.quality;
           const color = QUALITY_COLORS[quality];
           
           return (
             <div 
-              key={electrode} 
+              key={row.key} 
               className="electrode-item-lovable"
               style={{
                 display: 'flex',
@@ -134,7 +154,7 @@ export function ElectrodeStatus({ status, compact = false }: ElectrodeStatusProp
               }}
             >
               <motion.div 
-                key={`${electrode}-${quality}`}
+                key={`${row.key}-${quality}`}
                 className={`electrode-dot-lovable electrode-dot-lovable--${quality}`}
                 style={{ 
                   width: '12px',
@@ -159,7 +179,7 @@ export function ElectrodeStatus({ status, compact = false }: ElectrodeStatusProp
                   fontWeight: 400,
                   color: 'var(--text-muted)',
                 }}
-              >{ELECTRODE_LABELS[electrode]}</span>
+              >{row.label}</span>
             </div>
           );
         })}
