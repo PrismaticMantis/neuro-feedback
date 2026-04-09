@@ -20,6 +20,9 @@ export const DEBUG_CONNECTION_HEALTH = true;
 // To disable: set DEBUG_ACCEL = false
 export const DEBUG_ACCEL = false;
 
+/** Temporary: Muse BLE connect/stream diagnostics (Muse 2 vs Athena). Set false to silence. */
+export const DEBUG_MUSE_BLE_FLOW = true;
+
 type ConnectionMode = 'bluetooth' | 'osc' | null;
 type BrainState = 'disconnected' | 'deep' | 'meditative' | 'relaxed' | 'focused' | 'neutral';
 
@@ -114,6 +117,8 @@ export class MuseHandler {
   private _accelSampleCount = 0;          // Total accelerometer samples received
   private _accelLastLogTime = 0;          // Throttle logging to avoid spam
   private _accelSubscribed = false;       // Whether we successfully subscribed
+  /** DEBUG_MUSE_BLE_FLOW: EEG notification count for first-packet / throttle logs */
+  private _bleDebugEegPacketCount = 0;
 
   // Connection state
   private _connected = false;
@@ -261,23 +266,73 @@ export class MuseHandler {
       return;
     }
 
+    const bleDebugSession = Date.now();
+    let bleDebugPhase = 'init';
+
     try {
       console.log('[Muse] Scanning for BLE devices...');
 
+      if (DEBUG_MUSE_BLE_FLOW) {
+        console.log('[MuseBLE][DEBUG] session start', {
+          session: bleDebugSession,
+          filter: 'Web Bluetooth services [0xfe8d] (muse-js MuseClient.connect)',
+          enablePpgBeforeConnect: ENABLE_PPG_MODULATION,
+        });
+      }
+
       this.museClient = new MuseClient();
+      this._bleDebugEegPacketCount = 0;
       // IMPORTANT: muse-js requires this flag before connect() or ppgReadings stays unavailable.
       // (Muse 2 / Muse S only; Muse 1 does not support PPG.)
       if (ENABLE_PPG_MODULATION) {
         (this.museClient as MuseClient & { enablePpg?: boolean }).enablePpg = true;
+      }
+
+      bleDebugPhase = 'museClient.connect';
+      if (DEBUG_MUSE_BLE_FLOW) {
+        console.log('[MuseBLE][DEBUG] calling museClient.connect()', { session: bleDebugSession, phase: bleDebugPhase });
       }
       await this.museClient.connect();
 
       this._deviceName = this.museClient.deviceName || 'Muse';
       console.log(`[Muse] Connected to ${this._deviceName} via Bluetooth`);
 
+      if (DEBUG_MUSE_BLE_FLOW) {
+        const gatt = (this.museClient as unknown as { gatt?: BluetoothRemoteGATTServer | null }).gatt;
+        const dev = gatt?.device;
+        console.log('[MuseBLE][DEBUG] museClient.connect() OK — GATT open', {
+          session: bleDebugSession,
+          phase: 'post-connect',
+          selectedDeviceName: dev?.name ?? this._deviceName,
+          museClientDeviceName: this.museClient.deviceName,
+          deviceId: dev?.id,
+          gattConnected: gatt?.connected,
+        });
+        console.log(
+          '[MuseBLE][DEBUG] note: muse-js starts BLE notifications on EEG/IMU/telemetry during connect(), before start()'
+        );
+      }
+
+      bleDebugPhase = 'debugLogGattTree';
+      if (DEBUG_MUSE_BLE_FLOW) {
+        void this.debugLogGattTreeAfterConnect(bleDebugSession).catch((err) => {
+          console.warn('[MuseBLE][DEBUG] GATT enumeration (non-fatal)', err);
+        });
+      }
+
+      bleDebugPhase = 'museClient.start';
+      if (DEBUG_MUSE_BLE_FLOW) {
+        console.log('[MuseBLE][DEBUG] calling museClient.start()', { session: bleDebugSession, phase: bleDebugPhase });
+      }
       await this.museClient.start();
+      if (DEBUG_MUSE_BLE_FLOW) {
+        console.log('[MuseBLE][DEBUG] museClient.start() OK', { session: bleDebugSession });
+      }
 
       // Subscribe to EEG readings
+      if (DEBUG_MUSE_BLE_FLOW) {
+        console.log('[MuseBLE][DEBUG] Rx subscribe attempt: eegReadings', { session: bleDebugSession });
+      }
       this.eegSubscription = this.museClient.eegReadings.subscribe(
         (reading: { electrode: number; samples: number[]; timestamp: number }) => {
           this.handleBluetoothEEG(reading);
@@ -293,6 +348,9 @@ export class MuseHandler {
         this._accelSampleCount = 0;
         if (DEBUG_ACCEL) {
           console.log('[Muse][Accel] ✅ Accelerometer observable available — subscribing to notifications');
+        }
+        if (DEBUG_MUSE_BLE_FLOW) {
+          console.log('[MuseBLE][DEBUG] Rx subscribe attempt: accelerometerData', { session: bleDebugSession });
         }
         this.accelerometerSubscription = this.museClient.accelerometerData.subscribe(
           (acc: { samples: { x: number; y: number; z: number }[] }) => {
@@ -331,25 +389,38 @@ export class MuseHandler {
         if (DEBUG_ACCEL) {
           console.warn('[Muse][Accel] ❌ accelerometerData observable NOT available on MuseClient');
         }
+        if (DEBUG_MUSE_BLE_FLOW) {
+          console.warn('[MuseBLE][DEBUG] accelerometerData missing — no Rx subscribe', { session: bleDebugSession });
+        }
       }
 
       // Subscribe to telemetry (battery level)
       if (this.museClient.telemetryData) {
+        if (DEBUG_MUSE_BLE_FLOW) {
+          console.log('[MuseBLE][DEBUG] Rx subscribe attempt: telemetryData', { session: bleDebugSession });
+        }
         this.telemetrySubscription = this.museClient.telemetryData.subscribe(
           (telemetry: { batteryLevel: number; temperature: number }) => {
             this._batteryLevel = Math.round(telemetry.batteryLevel);
           }
         );
+      } else if (DEBUG_MUSE_BLE_FLOW) {
+        console.warn('[MuseBLE][DEBUG] telemetryData missing — no Rx subscribe', { session: bleDebugSession });
       }
 
       // Subscribe to PPG (photoplethysmography) for heart rate (if feature enabled)
       this.ppgStreamAvailable = !!this.museClient.ppgReadings;
       if (ENABLE_PPG_MODULATION && this.museClient.ppgReadings) {
+        if (DEBUG_MUSE_BLE_FLOW) {
+          console.log('[MuseBLE][DEBUG] Rx subscribe attempt: ppgReadings', { session: bleDebugSession });
+        }
         this.ppgSubscription = this.museClient.ppgReadings.subscribe(
           (ppg) => {
             this.handlePPGReading(ppg);
           }
         );
+      } else if (DEBUG_MUSE_BLE_FLOW && ENABLE_PPG_MODULATION) {
+        console.warn('[MuseBLE][DEBUG] ppgReadings missing — no Rx subscribe', { session: bleDebugSession });
       }
 
       this._connected = true;
@@ -386,6 +457,9 @@ export class MuseHandler {
       this.callbacks.onConnect?.();
 
       // Handle disconnection (GATT disconnect event - this is the authoritative disconnect signal)
+      if (DEBUG_MUSE_BLE_FLOW) {
+        console.log('[MuseBLE][DEBUG] Rx subscribe attempt: connectionStatus', { session: bleDebugSession });
+      }
       this.connectionStatusSubscription = this.museClient.connectionStatus.subscribe(
         (status: boolean) => {
           if (!status) {
@@ -395,10 +469,66 @@ export class MuseHandler {
           }
         }
       );
+
+      if (DEBUG_MUSE_BLE_FLOW) {
+        console.log('[MuseBLE][DEBUG] stream setup complete (Rx subscriptions registered)', {
+          session: bleDebugSession,
+          deviceName: this._deviceName,
+        });
+      }
     } catch (error) {
+      if (DEBUG_MUSE_BLE_FLOW) {
+        const err = error as Error & { name?: string };
+        console.error('[MuseBLE][DEBUG] FAILED', {
+          session: bleDebugSession,
+          phase: bleDebugPhase,
+          name: err?.name,
+          message: err instanceof Error ? err.message : String(error),
+          stack: err instanceof Error ? err.stack : undefined,
+        });
+      }
       console.error('[Muse] Bluetooth connection failed:', error);
       this.museClient = null;
       throw error;
+    }
+  }
+
+  /**
+   * Temporary: log primary services and characteristics after muse-js connect (DEBUG_MUSE_BLE_FLOW only).
+   * Does not alter connection state; failures are logged only.
+   */
+  private async debugLogGattTreeAfterConnect(session: number): Promise<void> {
+    if (!DEBUG_MUSE_BLE_FLOW || !this.museClient) return;
+
+    const gatt = (this.museClient as unknown as { gatt?: BluetoothRemoteGATTServer | null }).gatt;
+    if (!gatt) {
+      console.warn('[MuseBLE][DEBUG] no gatt on MuseClient (unexpected)', { session });
+      return;
+    }
+
+    try {
+      const services = await gatt.getPrimaryServices();
+      console.log('[MuseBLE][DEBUG] discovered primary services', { session, count: services.length });
+      for (const svc of services) {
+        console.log('[MuseBLE][DEBUG]  service', { session, uuid: svc.uuid });
+        try {
+          const chars = await svc.getCharacteristics();
+          for (const chr of chars) {
+            console.log('[MuseBLE][DEBUG]    characteristic', {
+              session,
+              uuid: chr.uuid,
+              read: chr.properties.read,
+              write: chr.properties.write,
+              notify: chr.properties.notify,
+              indicate: chr.properties.indicate,
+            });
+          }
+        } catch (e) {
+          console.warn('[MuseBLE][DEBUG]    getCharacteristics failed', { session, service: svc.uuid, e });
+        }
+      }
+    } catch (e) {
+      console.warn('[MuseBLE][DEBUG] getPrimaryServices failed', { session, e });
     }
   }
 
@@ -473,6 +603,19 @@ export class MuseHandler {
     samples: number[];
     timestamp: number;
   }): void {
+    if (DEBUG_MUSE_BLE_FLOW) {
+      this._bleDebugEegPacketCount++;
+      const n = this._bleDebugEegPacketCount;
+      if (n <= 5 || n % 500 === 0) {
+        console.log('[MuseBLE][DEBUG] EEG data packet received', {
+          n,
+          electrode: reading.electrode,
+          sampleCount: reading.samples?.length,
+          timestamp: reading.timestamp,
+        });
+      }
+    }
+
     const now = Date.now();
     this._lastUpdate = now;
     
@@ -671,6 +814,7 @@ export class MuseHandler {
     // Reset accelerometer tracking
     this._accelSubscribed = false;
     this._accelSampleCount = 0;
+    this._bleDebugEegPacketCount = 0;
 
     this._connected = false;
     this._connectionMode = null;

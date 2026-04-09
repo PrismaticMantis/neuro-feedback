@@ -1,0 +1,177 @@
+/* Temporary: Muse BLE in-app log viewer (Bluefy / no Safari inspector) */
+
+.muse-ble-debug-fab {
+  position: fixed;
+  right: 12px;
+  bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+  z-index: 2147483000;
+  padding: 8px 12px;
+  font-family: var(--font-sans, system-ui, sans-serif);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: #e8e4dc;
+  background: rgba(24, 20, 32, 0.92);
+  border: 1px solid rgba(180, 160, 220, 0.35);
+  border-radius: 999px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.45);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.muse-ble-debug-fab:active {
+  opacity: 0.9;
+}
+
+.muse-ble-debug-fab[data-open='true'] {
+  border-color: rgba(140, 200, 255, 0.5);
+}
+
+.muse-ble-debug-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 2147483001;
+  background: rgba(0, 0, 0, 0.35);
+  border: none;
+  padding: 0;
+  margin: 0;
+  cursor: pointer;
+}
+
+.muse-ble-debug-panel {
+  position: fixed;
+  left: 8px;
+  right: 8px;
+  bottom: calc(8px + env(safe-area-inset-bottom, 0px));
+  max-height: min(52vh, 420px);
+  z-index: 2147483002;
+  display: flex;
+  flex-direction: column;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 11px;
+  line-height: 1.35;
+  color: #e8e4dc;
+  background: rgba(16, 12, 22, 0.97);
+  border: 1px solid rgba(180, 160, 220, 0.35);
+  border-radius: 12px;
+  box-shadow: 0 8px 40px rgba(0, 0, 0, 0.55);
+  overflow: hidden;
+}
+
+.muse-ble-debug-panel header {
+  flex-shrink: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  font-family: var(--font-sans, system-ui, sans-serif);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.muse-ble-debug-panel header span.title {
+  flex: 1;
+  min-width: 0;
+}
+
+.muse-ble-debug-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+
+.muse-ble-debug-toolbar label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  user-select: none;
+}
+
+.muse-ble-debug-toolbar button {
+  font-family: var(--font-sans, system-ui, sans-serif);
+  font-size: 12px;
+  font-weight: 500;
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: rgba(255, 255, 255, 0.06);
+  color: #e8e4dc;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.muse-ble-debug-toolbar button:active {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.muse-ble-debug-log {
+  flex: 1;
+  min-height: 120px;
+  overflow: auto;
+  padding: 8px 10px 12px;
+  -webkit-overflow-scrolling: touch;
+}
+
+.muse-ble-debug-line {
+  margin-bottom: 6px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.muse-ble-debug-line:last-child {
+  border-bottom: none;
+  margin-bottom: 0;
+  padding-bottom: 0;
+}
+
+.muse-ble-debug-ts {
+  color: rgba(200, 190, 220, 0.85);
+  margin-right: 6px;
+}
+
+.muse-ble-debug-lvl {
+  display: inline-block;
+  min-width: 2.5rem;
+  margin-right: 6px;
+  font-weight: 700;
+}
+
+.muse-ble-debug-lvl--log {
+  color: #9fd4a4;
+}
+
+.muse-ble-debug-lvl--warn {
+  color: #e8c96a;
+}
+
+.muse-ble-debug-lvl--error {
+  color: #f0a0a0;
+}
+
+.muse-ble-debug-msg {
+  color: #e8e4dc;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.muse-ble-debug-empty {
+  color: rgba(255, 255, 255, 0.4);
+  font-style: italic;
+  padding: 16px 4px;
+}
+
+.muse-ble-debug-hint {
+  flex-shrink: 0;
+  padding: 6px 12px 10px;
+  font-family: var(--font-sans, system-ui, sans-serif);
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.35);
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}

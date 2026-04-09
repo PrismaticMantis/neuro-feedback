@@ -15,6 +15,7 @@ import { SessionDetail } from './components/SessionDetail';
 import { Profile } from './components/Profile';
 import { BottomNav } from './components/BottomNav';
 import { DesignShowcase } from './components/DesignShowcase';
+import { MuseBleDebugPanel } from './components/MuseBleDebugPanel';
 import { audioEngine } from './lib/audio-engine';
 import { useEegDevice } from './lib/eeg/EegDeviceContext';
 import { movementDetector, DEBUG_MOVEMENT } from './lib/movement-detector';
@@ -318,6 +319,7 @@ function App() {
       {/* Bottom Navigation - hide on session/setup/summary pages */}
       {!['/session', '/setup', '/summary'].includes(location.pathname) && 
        !location.pathname.startsWith('/history/') && <BottomNav />}
+      <MuseBleDebugPanel />
     </div>
   );
 }
