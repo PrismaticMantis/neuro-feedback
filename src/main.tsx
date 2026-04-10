@@ -5,6 +5,7 @@ import { EegDeviceProvider } from './lib/eeg/EegDeviceContext'
 import { installMuseBleConsoleCapture } from './lib/muse-ble-debug-capture'
 import { installMuseWebBluetoothConnectInstrumentation } from './lib/muse-wb-connect-instrumentation'
 import './lib/muse-fe8d-enumeration-debug'
+import './lib/athena-ble-probe-debug'
 import App from './App.tsx'
 import './index.css'
 

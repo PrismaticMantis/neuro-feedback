@@ -8,6 +8,11 @@ import {
   DEBUG_MUSE_FE8D_ENUM_UI,
   runMuseFe8dEnumerationDebug,
 } from '../lib/muse-fe8d-enumeration-debug';
+import {
+  DEBUG_ATHENA_BLE_PROBE_UI,
+  startAthenaBleProbeDebug,
+  stopAthenaBleProbeDebug,
+} from '../lib/athena-ble-probe-debug';
 
 interface ConnectionStatusProps {
   museConnected: boolean;
@@ -45,6 +50,8 @@ export function ConnectionStatus({
   const [showOSCHelp, setShowOSCHelp] = useState(false);
   const [oscUrl, setOscUrl] = useState('ws://localhost:8080');
   const [fe8dEnumBusy, setFe8dEnumBusy] = useState(false);
+  const [athenaProbeActive, setAthenaProbeActive] = useState(false);
+  const [athenaProbeBusy, setAthenaProbeBusy] = useState(false);
   const isiOSDevice = isIOS();
   const showIOSWarning = isiOSDevice && !isWebBluetoothBrowser();
 
@@ -360,6 +367,7 @@ export function ConnectionStatus({
               <button 
                 className="btn btn-primary" 
                 onClick={onConnectBluetooth}
+                disabled={athenaProbeActive || athenaProbeBusy}
                 style={{
                   display: 'flex',
                   alignItems: 'center',
@@ -374,9 +382,10 @@ export function ConnectionStatus({
                   fontFamily: 'var(--font-sans)',
                   fontSize: '15px',
                   fontWeight: 500,
-                  cursor: 'pointer',
+                  cursor: athenaProbeActive || athenaProbeBusy ? 'not-allowed' : 'pointer',
                   transition: 'all 0.2s ease',
                   boxShadow: '0 4px 16px hsl(45 55% 70% / 0.25)',
+                  opacity: athenaProbeActive || athenaProbeBusy ? 0.55 : 1,
                 }}
               >
                 <svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18">
@@ -389,7 +398,7 @@ export function ConnectionStatus({
                   type="button"
                   className="btn btn-text"
                   title="Debug: list all FE8D characteristics via Web Bluetooth only (no muse-js). Disconnect app Muse link first if the picker misbehaves."
-                  disabled={fe8dEnumBusy}
+                  disabled={fe8dEnumBusy || athenaProbeActive || athenaProbeBusy}
                   onClick={() => {
                     void (async () => {
                       setFe8dEnumBusy(true);
@@ -412,11 +421,82 @@ export function ConnectionStatus({
                     background: 'transparent',
                     border: '1px dashed hsl(270 15% 28% / 0.6)',
                     borderRadius: '8px',
-                    cursor: fe8dEnumBusy ? 'wait' : 'pointer',
-                    opacity: fe8dEnumBusy ? 0.7 : 1,
+                    cursor: fe8dEnumBusy || athenaProbeActive || athenaProbeBusy ? 'wait' : 'pointer',
+                    opacity: fe8dEnumBusy || athenaProbeActive || athenaProbeBusy ? 0.7 : 1,
                   }}
                 >
                   {fe8dEnumBusy ? 'Enumerating FE8D…' : 'Enumerate FE8D (debug)'}
+                </button>
+              )}
+              {DEBUG_ATHENA_BLE_PROBE_UI && (
+                <button
+                  type="button"
+                  className="btn btn-text"
+                  title="Debug: subscribe to all FE8D notify/indicate characteristics on Muse S Athena — logs raw bytes. No muse-js. Stop before using normal Connect."
+                  disabled={fe8dEnumBusy || athenaProbeBusy}
+                  onClick={() => {
+                    void (async () => {
+                      if (athenaProbeActive) return;
+                      setAthenaProbeBusy(true);
+                      try {
+                        await startAthenaBleProbeDebug();
+                        setAthenaProbeActive(true);
+                      } catch {
+                        setAthenaProbeActive(false);
+                      } finally {
+                        setAthenaProbeBusy(false);
+                      }
+                    })();
+                  }}
+                  style={{
+                    display: athenaProbeActive ? 'none' : 'block',
+                    width: '100%',
+                    padding: '8px 12px',
+                    fontFamily: 'var(--font-sans)',
+                    fontSize: '12px',
+                    fontWeight: 500,
+                    color: 'hsl(280 18% 62%)',
+                    background: 'transparent',
+                    border: '1px dashed hsl(280 20% 32% / 0.7)',
+                    borderRadius: '8px',
+                    cursor: fe8dEnumBusy || athenaProbeBusy ? 'wait' : 'pointer',
+                    opacity: fe8dEnumBusy || athenaProbeBusy ? 0.7 : 1,
+                  }}
+                >
+                  {athenaProbeBusy ? 'Starting Athena probe…' : 'Athena BLE probe (debug)'}
+                </button>
+              )}
+              {DEBUG_ATHENA_BLE_PROBE_UI && athenaProbeActive && (
+                <button
+                  type="button"
+                  className="btn btn-text"
+                  title="Stop notifications and disconnect GATT"
+                  disabled={athenaProbeBusy}
+                  onClick={() => {
+                    void (async () => {
+                      setAthenaProbeBusy(true);
+                      try {
+                        await stopAthenaBleProbeDebug();
+                      } finally {
+                        setAthenaProbeActive(false);
+                        setAthenaProbeBusy(false);
+                      }
+                    })();
+                  }}
+                  style={{
+                    width: '100%',
+                    padding: '8px 12px',
+                    fontFamily: 'var(--font-sans)',
+                    fontSize: '12px',
+                    fontWeight: 600,
+                    color: 'hsl(25 55% 65%)',
+                    background: 'hsl(25 15% 12% / 0.6)',
+                    border: '1px solid hsl(25 35% 35% / 0.5)',
+                    borderRadius: '8px',
+                    cursor: athenaProbeBusy ? 'wait' : 'pointer',
+                  }}
+                >
+                  {athenaProbeBusy ? 'Stopping…' : 'Stop Athena probe'}
                 </button>
               )}
             </>
