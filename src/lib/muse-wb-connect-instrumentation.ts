@@ -16,6 +16,12 @@ export const DEBUG_MUSE_WB_CONNECT_STEPS = true;
 
 const TAG = '[MuseBLE][DEBUG]';
 
+/** DOM lib exposes GATT types as interfaces — no runtime global for TS `typeof`. Resolve via globalThis. */
+function getGlobalConstructor(name: string): ((...args: unknown[]) => unknown) | undefined {
+  const c = (globalThis as Record<string, unknown>)[name];
+  return typeof c === 'function' ? (c as (...args: unknown[]) => unknown) : undefined;
+}
+
 function wb(step: string, detail?: Record<string, unknown>): void {
   if (!DEBUG_MUSE_WB_CONNECT_STEPS) return;
   if (detail !== undefined) {
@@ -74,17 +80,21 @@ export function installMuseWebBluetoothConnectInstrumentation(): void {
     );
   };
 
-  // --- gatt.connect ---
-  if (typeof BluetoothRemoteGATTServer !== 'undefined') {
-    const proto = BluetoothRemoteGATTServer.prototype as BluetoothRemoteGATTServer & {
-      connect?: () => Promise<BluetoothRemoteGATTServer>;
-    };
+  // --- gatt.connect + getPrimaryService (BluetoothRemoteGATTServer.prototype) ---
+  const GattServer = getGlobalConstructor('BluetoothRemoteGATTServer');
+  if (GattServer?.prototype) {
+    const proto = GattServer.prototype as Record<string, unknown>;
+
     const origConnect = proto.connect;
     if (typeof origConnect === 'function') {
-      proto.connect = function (this: BluetoothRemoteGATTServer) {
+      proto.connect = function (this: unknown) {
         const n = nextSeq();
         wb('gatt.connect begin', { n });
-        return origConnect.call(this).then(
+        const p = origConnect.call(this) as Promise<{
+          connected: boolean;
+          device: { name?: string; id: string };
+        }>;
+        return p.then(
           (server) => {
             wb('gatt.connect ok', {
               n,
@@ -102,16 +112,13 @@ export function installMuseWebBluetoothConnectInstrumentation(): void {
       };
     }
 
-    // --- getPrimaryService ---
     const origGetPrimaryService = proto.getPrimaryService;
     if (typeof origGetPrimaryService === 'function') {
-      proto.getPrimaryService = function (
-        this: BluetoothRemoteGATTServer,
-        service: BluetoothServiceUUID
-      ) {
+      proto.getPrimaryService = function (this: unknown, service: BluetoothServiceUUID) {
         const n = nextSeq();
         wb('getPrimaryService begin', { n, service: String(service) });
-        return origGetPrimaryService.call(this, service).then(
+        const p = origGetPrimaryService.call(this, service) as Promise<{ uuid: string }>;
+        return p.then(
           (svc) => {
             wb('getPrimaryService ok', { n, serviceUuid: svc.uuid });
             return svc;
@@ -125,20 +132,22 @@ export function installMuseWebBluetoothConnectInstrumentation(): void {
     }
   }
 
-  // --- getCharacteristic ---
-  if (typeof BluetoothRemoteGATTService !== 'undefined') {
-    const svcProto = BluetoothRemoteGATTService.prototype;
+  // --- getCharacteristic (BluetoothRemoteGATTService.prototype) ---
+  const GattService = getGlobalConstructor('BluetoothRemoteGATTService');
+  if (GattService?.prototype) {
+    const svcProto = GattService.prototype as Record<string, unknown>;
     const origGetChar = svcProto.getCharacteristic;
     if (typeof origGetChar === 'function') {
       svcProto.getCharacteristic = function (
-        this: BluetoothRemoteGATTService,
+        this: { uuid: string },
         characteristic: BluetoothCharacteristicUUID
       ) {
         const n = nextSeq();
         const cu = String(characteristic);
         wb('getCharacteristic begin', { n, parentServiceUuid: this.uuid, characteristic: cu });
-        return origGetChar.call(this, characteristic).then(
-          (ch) => {
+        const p = origGetChar.call(this, characteristic) as Promise<{ uuid: string }>;
+        return p.then(
+          (ch: { uuid: string }) => {
             wb('getCharacteristic ok', { n, characteristicUuid: ch.uuid, serviceUuid: this.uuid });
             return ch;
           },
@@ -156,22 +165,27 @@ export function installMuseWebBluetoothConnectInstrumentation(): void {
     }
   }
 
-  // --- startNotifications (inside muse-js observableCharacteristic) ---
-  if (typeof BluetoothRemoteGATTCharacteristic !== 'undefined') {
-    const chProto = BluetoothRemoteGATTCharacteristic.prototype;
+  // --- startNotifications (BluetoothRemoteGATTCharacteristic.prototype) ---
+  const GattCharacteristic = getGlobalConstructor('BluetoothRemoteGATTCharacteristic');
+  if (GattCharacteristic?.prototype) {
+    const chProto = GattCharacteristic.prototype as Record<string, unknown>;
     const origStart = chProto.startNotifications;
     if (typeof origStart === 'function') {
-      chProto.startNotifications = function (this: BluetoothRemoteGATTCharacteristic) {
+      chProto.startNotifications = function (this: {
+        uuid: string;
+        service: { uuid: string } | null;
+      }) {
         const n = nextSeq();
         wb('startNotifications begin', {
           n,
           characteristicUuid: this.uuid,
           serviceUuid: this.service?.uuid,
         });
-        return origStart.call(this).then(
-          (ch: BluetoothRemoteGATTCharacteristic) => {
+        const p = origStart.call(this) as Promise<BluetoothRemoteGATTCharacteristic>;
+        return p.then(
+          (resolved: BluetoothRemoteGATTCharacteristic) => {
             wb('startNotifications ok', { n, characteristicUuid: this.uuid });
-            return ch;
+            return resolved;
           },
           (err: unknown) => {
             wbFail('startNotifications fail', {
