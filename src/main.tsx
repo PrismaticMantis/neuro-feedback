@@ -3,10 +3,12 @@ import { createRoot } from 'react-dom/client'
 import { BrowserRouter } from 'react-router-dom'
 import { EegDeviceProvider } from './lib/eeg/EegDeviceContext'
 import { installMuseBleConsoleCapture } from './lib/muse-ble-debug-capture'
+import { installMuseWebBluetoothConnectInstrumentation } from './lib/muse-wb-connect-instrumentation'
 import App from './App.tsx'
 import './index.css'
 
 installMuseBleConsoleCapture()
+installMuseWebBluetoothConnectInstrumentation()
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
