@@ -12,6 +12,10 @@
  * assignment `device = result` then evaluation of `device.gatt.connect()`. If `device.gatt` is nullish,
  * accessing `.connect` throws **before** any GATT prototype `connect` runs (so prototype-only hooks miss it).
  *
+ * Post–gatt.connect: muse-js calls `this.gatt.getPrimaryService(0xfe8d)` then getCharacteristic / startNotifications
+ * on the **same server object** returned by `connect()`. Some WebKit/Bluefy builds may not hit patched prototypes
+ * on that instance — we also install **instance chain** wraps on the resolved server from `gatt.connect` (instance wrap).
+ *
  * Does not change connection behavior — only wraps prototypes and logs. Safe no-op if Web Bluetooth missing.
  */
 
@@ -98,14 +102,14 @@ export function installMuseWebBluetoothConnectInstrumentation(): void {
     if (typeof origConnect === 'function') {
       proto.connect = function (this: unknown) {
         const n = nextSeq();
-        wb('gatt.connect begin', { n });
+        wb('gatt.connect begin (prototype)', { n });
         const p = origConnect.call(this) as Promise<{
           connected: boolean;
           device: { name?: string; id: string };
         }>;
         return p.then(
           (server) => {
-            wb('gatt.connect ok', {
+            wb('gatt.connect ok (prototype)', {
               n,
               connected: server.connected,
               device: server.device?.name,
@@ -114,7 +118,7 @@ export function installMuseWebBluetoothConnectInstrumentation(): void {
             return server;
           },
           (err: unknown) => {
-            wbFail('gatt.connect fail', { n, err: formatErr(err) });
+            wbFail('gatt.connect fail (prototype)', { n, err: formatErr(err) });
             throw err;
           }
         );
@@ -125,15 +129,15 @@ export function installMuseWebBluetoothConnectInstrumentation(): void {
     if (typeof origGetPrimaryService === 'function') {
       proto.getPrimaryService = function (this: unknown, service: BluetoothServiceUUID) {
         const n = nextSeq();
-        wb('getPrimaryService begin', { n, service: String(service) });
+        wb('getPrimaryService begin (prototype)', { n, service: String(service) });
         const p = origGetPrimaryService.call(this, service) as Promise<{ uuid: string }>;
         return p.then(
           (svc) => {
-            wb('getPrimaryService ok', { n, serviceUuid: svc.uuid });
+            wb('getPrimaryService ok (prototype)', { n, serviceUuid: svc.uuid });
             return svc;
           },
           (err: unknown) => {
-            wbFail('getPrimaryService fail', { n, service: String(service), err: formatErr(err) });
+            wbFail('getPrimaryService fail (prototype)', { n, service: String(service), err: formatErr(err) });
             throw err;
           }
         );
@@ -153,15 +157,15 @@ export function installMuseWebBluetoothConnectInstrumentation(): void {
       ) {
         const n = nextSeq();
         const cu = String(characteristic);
-        wb('getCharacteristic begin', { n, parentServiceUuid: this.uuid, characteristic: cu });
+        wb('getCharacteristic begin (prototype)', { n, parentServiceUuid: this.uuid, characteristic: cu });
         const p = origGetChar.call(this, characteristic) as Promise<{ uuid: string }>;
         return p.then(
           (ch: { uuid: string }) => {
-            wb('getCharacteristic ok', { n, characteristicUuid: ch.uuid, serviceUuid: this.uuid });
+            wb('getCharacteristic ok (prototype)', { n, characteristicUuid: ch.uuid, serviceUuid: this.uuid });
             return ch;
           },
           (err: unknown) => {
-            wbFail('getCharacteristic fail', {
+            wbFail('getCharacteristic fail (prototype)', {
               n,
               parentServiceUuid: this.uuid,
               characteristic: cu,
@@ -185,7 +189,7 @@ export function installMuseWebBluetoothConnectInstrumentation(): void {
         service: { uuid: string } | null;
       }) {
         const n = nextSeq();
-        wb('startNotifications begin', {
+        wb('startNotifications begin (prototype)', {
           n,
           characteristicUuid: this.uuid,
           serviceUuid: this.service?.uuid,
@@ -193,11 +197,11 @@ export function installMuseWebBluetoothConnectInstrumentation(): void {
         const p = origStart.call(this) as Promise<BluetoothRemoteGATTCharacteristic>;
         return p.then(
           (resolved: BluetoothRemoteGATTCharacteristic) => {
-            wb('startNotifications ok', { n, characteristicUuid: this.uuid });
+            wb('startNotifications ok (prototype)', { n, characteristicUuid: this.uuid });
             return resolved;
           },
           (err: unknown) => {
-            wbFail('startNotifications fail', {
+            wbFail('startNotifications fail (prototype)', {
               n,
               characteristicUuid: this.uuid,
               serviceUuid: this.service?.uuid,
@@ -227,6 +231,150 @@ function formatErr(err: unknown): Record<string, unknown> {
     return { type: 'primitive', primitiveType: typeof err, value: err };
   }
   return { type: typeof err, value: String(err), raw: err };
+}
+
+/** Muse UUID suffix (muse-js uses full 128-bit UUIDs). */
+const MUSE_SERVICE_STR = '0000fe8d-0000-1000-8000-00805f9b34fb';
+
+function wrapConnectedGattServerInstance(
+  server: BluetoothRemoteGATTServer,
+  ctx: { connectSeq: number; requestSeq: number }
+): void {
+  wb('instanceChain: installing getPrimaryService/getCharacteristic/startNotifications wraps on connected server', {
+    connectSeq: ctx.connectSeq,
+    requestSeq: ctx.requestSeq,
+  });
+
+  const origGetPrimaryService = server.getPrimaryService.bind(server);
+  if (typeof origGetPrimaryService !== 'function') {
+    wbFail('instanceChain: server.getPrimaryService is not a function', ctx);
+    return;
+  }
+
+  server.getPrimaryService = function (service: BluetoothServiceUUID) {
+    const n = nextSeq();
+    const svcStr = String(service);
+    wb('getPrimaryService begin (instance chain)', {
+      n,
+      ...ctx,
+      service: svcStr,
+      serviceIsFe8d:
+        svcStr.toLowerCase() === MUSE_SERVICE_STR ||
+        svcStr === '65165' ||
+        svcStr === String(0xfe8d),
+    });
+    return origGetPrimaryService(service).then(
+      (svc: BluetoothRemoteGATTService) => {
+        wb('getPrimaryService ok (instance chain)', {
+          n,
+          ...ctx,
+          serviceUuid: svc.uuid,
+        });
+        wrapGattServiceInstanceForLogs(svc, { ...ctx, primaryServiceSeq: n });
+        return svc;
+      },
+      (err: unknown) => {
+        wbFail('getPrimaryService fail (instance chain)', {
+          n,
+          ...ctx,
+          service: svcStr,
+          err: formatErr(err),
+        });
+        throw err;
+      }
+    );
+  };
+}
+
+function wrapGattServiceInstanceForLogs(
+  service: BluetoothRemoteGATTService,
+  ctx: Record<string, unknown>
+): void {
+  const origGetChar = service.getCharacteristic.bind(service);
+  if (typeof origGetChar !== 'function') {
+    wbFail('instanceChain: service.getCharacteristic is not a function', {
+      ...ctx,
+      serviceUuid: service.uuid,
+    });
+    return;
+  }
+
+  service.getCharacteristic = function (characteristic: BluetoothCharacteristicUUID) {
+    const n = nextSeq();
+    const cu = String(characteristic);
+    wb('getCharacteristic begin (instance chain)', {
+      n,
+      ...ctx,
+      parentServiceUuid: service.uuid,
+      characteristic: cu,
+    });
+    return origGetChar(characteristic).then(
+      (ch: BluetoothRemoteGATTCharacteristic) => {
+        wb('getCharacteristic ok (instance chain)', {
+          n,
+          ...ctx,
+          characteristicUuid: ch.uuid,
+          serviceUuid: service.uuid,
+        });
+        wrapCharacteristicInstanceForLogs(ch, { ...ctx, charGetSeq: n, characteristicUuid: cu });
+        return ch;
+      },
+      (err: unknown) => {
+        wbFail('getCharacteristic fail (instance chain)', {
+          n,
+          ...ctx,
+          parentServiceUuid: service.uuid,
+          characteristic: cu,
+          err: formatErr(err),
+        });
+        throw err;
+      }
+    );
+  };
+}
+
+function wrapCharacteristicInstanceForLogs(
+  ch: BluetoothRemoteGATTCharacteristic,
+  ctx: Record<string, unknown>
+): void {
+  const origStart = ch.startNotifications.bind(ch);
+  if (typeof origStart !== 'function') {
+    wbFail('instanceChain: characteristic.startNotifications is not a function', {
+      ...ctx,
+      characteristicUuid: ch.uuid,
+    });
+    return;
+  }
+
+  ch.startNotifications = function () {
+    const n = nextSeq();
+    wb('startNotifications begin (instance chain)', {
+      n,
+      ...ctx,
+      characteristicUuid: ch.uuid,
+      serviceUuid: ch.service?.uuid,
+    });
+    return origStart().then(
+      (resolved: BluetoothRemoteGATTCharacteristic) => {
+        wb('startNotifications ok (instance chain)', {
+          n,
+          ...ctx,
+          characteristicUuid: ch.uuid,
+        });
+        return resolved;
+      },
+      (err: unknown) => {
+        wbFail('startNotifications fail (instance chain)', {
+          n,
+          ...ctx,
+          characteristicUuid: ch.uuid,
+          serviceUuid: ch.service?.uuid,
+          err: formatErr(err),
+        });
+        throw err;
+      }
+    );
+  };
 }
 
 /**
@@ -289,6 +437,15 @@ function snapshotDeviceAfterRequestDevice(device: BluetoothDevice, requestSeq: n
             device: server.device?.name,
             deviceId: server.device?.id,
           });
+          try {
+            wrapConnectedGattServerInstance(server, { connectSeq: n, requestSeq });
+          } catch (e) {
+            wbFail('instanceChain: wrap after connect threw (non-fatal)', {
+              connectSeq: n,
+              requestSeq,
+              err: formatErr(e),
+            });
+          }
           return server;
         },
         (err: unknown) => {
