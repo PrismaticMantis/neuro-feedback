@@ -8,6 +8,10 @@
  * 4. For each stream: getCharacteristic(uuid) then observableCharacteristic() → startNotifications()
  *    Order: control → telemetry → gyro → accel → [PPG×3 if enablePpg] → EEG×4 (or ×5 if enableAux)
  *
+ * Gap note: muse-js has **no** logic between requestDevice resolving and `device.gatt.connect()` — only
+ * assignment `device = result` then evaluation of `device.gatt.connect()`. If `device.gatt` is nullish,
+ * accessing `.connect` throws **before** any GATT prototype `connect` runs (so prototype-only hooks miss it).
+ *
  * Does not change connection behavior — only wraps prototypes and logs. Safe no-op if Web Bluetooth missing.
  */
 
@@ -71,6 +75,11 @@ export function installMuseWebBluetoothConnectInstrumentation(): void {
           deviceId: device.id,
           deviceName: device.name,
         });
+        try {
+          snapshotDeviceAfterRequestDevice(device, n);
+        } catch (e) {
+          wbFail('postRequestDevice snapshot threw (non-fatal)', { n, err: formatErr(e) });
+        }
         return device;
       },
       (err: unknown) => {
@@ -214,5 +223,85 @@ function formatErr(err: unknown): Record<string, unknown> {
   if (err instanceof Error) {
     return { type: 'Error', name: err.name, message: err.message, stack: err.stack };
   }
+  if (typeof err === 'number' || typeof err === 'boolean' || typeof err === 'string') {
+    return { type: 'primitive', primitiveType: typeof err, value: err };
+  }
   return { type: typeof err, value: String(err), raw: err };
+}
+
+/**
+ * muse-js does nothing to the device between requestDevice and gatt.connect — snapshot the real device
+ * and optionally wrap this instance's gatt.connect so we still log if prototype patching misses (e.g. null gatt).
+ */
+function snapshotDeviceAfterRequestDevice(device: BluetoothDevice, requestSeq: number): void {
+  const detail: Record<string, unknown> = {
+    requestSeq,
+    deviceId: device.id,
+    deviceName: device.name,
+  };
+
+  try {
+    detail.hasGattProperty = 'gatt' in device;
+    const gatt = device.gatt;
+    detail.gattIsNull = gatt === null;
+    detail.gattIsUndefined = gatt === undefined;
+    detail.gattNullish = gatt == null;
+
+    if (gatt != null) {
+      detail.gattConnected = gatt.connected;
+      detail.gattConnectType = typeof gatt.connect;
+      detail.gattConnectIsFunction = typeof gatt.connect === 'function';
+    }
+  } catch (e) {
+    detail.snapshotReadError = formatErr(e);
+  }
+
+  wb('postRequestDevice snapshot (muse-js runs no steps between this and device.gatt.connect)', detail);
+
+  if (detail.gattNullish === true) {
+    wbFail(
+      'gap: device.gatt is null/undefined — muse-js will throw when evaluating device.gatt.connect (prototype gatt.connect hook never runs)',
+      { requestSeq }
+    );
+    return;
+  }
+
+  const gatt = device.gatt as BluetoothRemoteGATTServer;
+  if (typeof gatt.connect !== 'function') {
+    wbFail('gap: device.gatt.connect is not a function', {
+      requestSeq,
+      gattConnectType: typeof gatt.connect,
+    });
+    return;
+  }
+
+  try {
+    const origConnect = gatt.connect.bind(gatt);
+    gatt.connect = function museWbGapLoggedConnect() {
+      const n = nextSeq();
+      wb('gatt.connect begin (instance wrap)', { n, requestSeq });
+      return origConnect().then(
+        (server) => {
+          wb('gatt.connect ok (instance wrap)', {
+            n,
+            requestSeq,
+            connected: server.connected,
+            device: server.device?.name,
+            deviceId: server.device?.id,
+          });
+          return server;
+        },
+        (err: unknown) => {
+          wbFail('gatt.connect fail (instance wrap)', { n, requestSeq, err: formatErr(err) });
+          throw err;
+        }
+      );
+    };
+    wb('postRequestDevice instance wrap installed on device.gatt.connect', { requestSeq });
+  } catch (e) {
+    wbFail('postRequestDevice could not install instance wrap on gatt.connect (rely on prototype hook)', {
+      requestSeq,
+      err: formatErr(e),
+    });
+  }
 }
