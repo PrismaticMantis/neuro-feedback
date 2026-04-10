@@ -4,6 +4,10 @@
 
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import {
+  DEBUG_MUSE_FE8D_ENUM_UI,
+  runMuseFe8dEnumerationDebug,
+} from '../lib/muse-fe8d-enumeration-debug';
 
 interface ConnectionStatusProps {
   museConnected: boolean;
@@ -40,6 +44,7 @@ export function ConnectionStatus({
 }: ConnectionStatusProps) {
   const [showOSCHelp, setShowOSCHelp] = useState(false);
   const [oscUrl, setOscUrl] = useState('ws://localhost:8080');
+  const [fe8dEnumBusy, setFe8dEnumBusy] = useState(false);
   const isiOSDevice = isIOS();
   const showIOSWarning = isiOSDevice && !isWebBluetoothBrowser();
 
@@ -351,33 +356,70 @@ export function ConnectionStatus({
           }}
         >
           {isBluetoothAvailable && (
-            <button 
-              className="btn btn-primary" 
-              onClick={onConnectBluetooth}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '8px',
-                width: '100%',
-                padding: '14px 24px',
-                background: 'linear-gradient(135deg, #D9C478, #C9B468)',
-                color: '#0c0a0e',
-                border: 'none',
-                borderRadius: '10px',
-                fontFamily: 'var(--font-sans)',
-                fontSize: '15px',
-                fontWeight: 500,
-                cursor: 'pointer',
-                transition: 'all 0.2s ease',
-                boxShadow: '0 4px 16px hsl(45 55% 70% / 0.25)',
-              }}
-            >
-              <svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18">
-                <path d="M17.71 7.71L12 2h-1v7.59L6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 11 14.41V22h1l5.71-5.71-4.3-4.29 4.3-4.29zM13 5.83l1.88 1.88L13 9.59V5.83zm1.88 10.46L13 18.17v-3.76l1.88 1.88z" />
-              </svg>
-              Connect Bluetooth
-            </button>
+            <>
+              <button 
+                className="btn btn-primary" 
+                onClick={onConnectBluetooth}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '8px',
+                  width: '100%',
+                  padding: '14px 24px',
+                  background: 'linear-gradient(135deg, #D9C478, #C9B468)',
+                  color: '#0c0a0e',
+                  border: 'none',
+                  borderRadius: '10px',
+                  fontFamily: 'var(--font-sans)',
+                  fontSize: '15px',
+                  fontWeight: 500,
+                  cursor: 'pointer',
+                  transition: 'all 0.2s ease',
+                  boxShadow: '0 4px 16px hsl(45 55% 70% / 0.25)',
+                }}
+              >
+                <svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18">
+                  <path d="M17.71 7.71L12 2h-1v7.59L6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 11 14.41V22h1l5.71-5.71-4.3-4.29 4.3-4.29zM13 5.83l1.88 1.88L13 9.59V5.83zm1.88 10.46L13 18.17v-3.76l1.88 1.88z" />
+                </svg>
+                Connect Bluetooth
+              </button>
+              {DEBUG_MUSE_FE8D_ENUM_UI && (
+                <button
+                  type="button"
+                  className="btn btn-text"
+                  title="Debug: list all FE8D characteristics via Web Bluetooth only (no muse-js). Disconnect app Muse link first if the picker misbehaves."
+                  disabled={fe8dEnumBusy}
+                  onClick={() => {
+                    void (async () => {
+                      setFe8dEnumBusy(true);
+                      try {
+                        await runMuseFe8dEnumerationDebug();
+                      } catch {
+                        /* logged in util */
+                      } finally {
+                        setFe8dEnumBusy(false);
+                      }
+                    })();
+                  }}
+                  style={{
+                    width: '100%',
+                    padding: '8px 12px',
+                    fontFamily: 'var(--font-sans)',
+                    fontSize: '12px',
+                    fontWeight: 500,
+                    color: 'hsl(270 12% 55%)',
+                    background: 'transparent',
+                    border: '1px dashed hsl(270 15% 28% / 0.6)',
+                    borderRadius: '8px',
+                    cursor: fe8dEnumBusy ? 'wait' : 'pointer',
+                    opacity: fe8dEnumBusy ? 0.7 : 1,
+                  }}
+                >
+                  {fe8dEnumBusy ? 'Enumerating FE8D…' : 'Enumerate FE8D (debug)'}
+                </button>
+              )}
+            </>
           )}
           <button 
             className="btn btn-secondary" 
