@@ -6,6 +6,7 @@ import { installMuseBleConsoleCapture } from './lib/muse-ble-debug-capture'
 import { installMuseWebBluetoothConnectInstrumentation } from './lib/muse-wb-connect-instrumentation'
 import './lib/muse-fe8d-enumeration-debug'
 import './lib/athena-ble-probe-debug'
+import './lib/athena-write-tester-debug'
 import App from './App.tsx'
 import './index.css'
 

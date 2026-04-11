@@ -2,7 +2,7 @@
 // UI reference: design/targets/3 - Session Setup.png, design/targets/4 - Session Setup (Muse Connected).png
 // Lovable design: Device Connection card with Muse/Headphone status
 
-import { useState } from 'react';
+import { useReducer, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   DEBUG_MUSE_FE8D_ENUM_UI,
@@ -13,6 +13,11 @@ import {
   startAthenaBleProbeDebug,
   stopAthenaBleProbeDebug,
 } from '../lib/athena-ble-probe-debug';
+import {
+  DEBUG_ATHENA_WRITE_TESTER_UI,
+  isAthenaWriteTesterActive,
+} from '../lib/athena-write-tester-debug';
+import { AthenaWriteTesterPanel } from './AthenaWriteTesterPanel';
 
 interface ConnectionStatusProps {
   museConnected: boolean;
@@ -52,6 +57,8 @@ export function ConnectionStatus({
   const [fe8dEnumBusy, setFe8dEnumBusy] = useState(false);
   const [athenaProbeActive, setAthenaProbeActive] = useState(false);
   const [athenaProbeBusy, setAthenaProbeBusy] = useState(false);
+  const [, bumpAthenaDebugTools] = useReducer((x: number) => x + 1, 0);
+  const athenaWriteTesterActive = isAthenaWriteTesterActive();
   const isiOSDevice = isIOS();
   const showIOSWarning = isiOSDevice && !isWebBluetoothBrowser();
 
@@ -367,7 +374,7 @@ export function ConnectionStatus({
               <button 
                 className="btn btn-primary" 
                 onClick={onConnectBluetooth}
-                disabled={athenaProbeActive || athenaProbeBusy}
+                disabled={athenaProbeActive || athenaProbeBusy || athenaWriteTesterActive}
                 style={{
                   display: 'flex',
                   alignItems: 'center',
@@ -382,10 +389,10 @@ export function ConnectionStatus({
                   fontFamily: 'var(--font-sans)',
                   fontSize: '15px',
                   fontWeight: 500,
-                  cursor: athenaProbeActive || athenaProbeBusy ? 'not-allowed' : 'pointer',
+                  cursor: athenaProbeActive || athenaProbeBusy || athenaWriteTesterActive ? 'not-allowed' : 'pointer',
                   transition: 'all 0.2s ease',
                   boxShadow: '0 4px 16px hsl(45 55% 70% / 0.25)',
-                  opacity: athenaProbeActive || athenaProbeBusy ? 0.55 : 1,
+                  opacity: athenaProbeActive || athenaProbeBusy || athenaWriteTesterActive ? 0.55 : 1,
                 }}
               >
                 <svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18">
@@ -398,7 +405,7 @@ export function ConnectionStatus({
                   type="button"
                   className="btn btn-text"
                   title="Debug: list all FE8D characteristics via Web Bluetooth only (no muse-js). Disconnect app Muse link first if the picker misbehaves."
-                  disabled={fe8dEnumBusy || athenaProbeActive || athenaProbeBusy}
+                  disabled={fe8dEnumBusy || athenaProbeActive || athenaProbeBusy || athenaWriteTesterActive}
                   onClick={() => {
                     void (async () => {
                       setFe8dEnumBusy(true);
@@ -421,8 +428,8 @@ export function ConnectionStatus({
                     background: 'transparent',
                     border: '1px dashed hsl(270 15% 28% / 0.6)',
                     borderRadius: '8px',
-                    cursor: fe8dEnumBusy || athenaProbeActive || athenaProbeBusy ? 'wait' : 'pointer',
-                    opacity: fe8dEnumBusy || athenaProbeActive || athenaProbeBusy ? 0.7 : 1,
+                    cursor: fe8dEnumBusy || athenaProbeActive || athenaProbeBusy || athenaWriteTesterActive ? 'wait' : 'pointer',
+                    opacity: fe8dEnumBusy || athenaProbeActive || athenaProbeBusy || athenaWriteTesterActive ? 0.7 : 1,
                   }}
                 >
                   {fe8dEnumBusy ? 'Enumerating FE8D…' : 'Enumerate FE8D (debug)'}
@@ -433,7 +440,7 @@ export function ConnectionStatus({
                   type="button"
                   className="btn btn-text"
                   title="Debug: subscribe to all FE8D notify/indicate characteristics on Muse S Athena — logs raw bytes. No muse-js. Stop before using normal Connect."
-                  disabled={fe8dEnumBusy || athenaProbeBusy}
+                  disabled={fe8dEnumBusy || athenaProbeBusy || athenaWriteTesterActive}
                   onClick={() => {
                     void (async () => {
                       if (athenaProbeActive) return;
@@ -459,11 +466,11 @@ export function ConnectionStatus({
                     background: 'transparent',
                     border: '1px dashed hsl(280 20% 32% / 0.7)',
                     borderRadius: '8px',
-                    cursor: fe8dEnumBusy || athenaProbeBusy ? 'wait' : 'pointer',
-                    opacity: fe8dEnumBusy || athenaProbeBusy ? 0.7 : 1,
+                    cursor: fe8dEnumBusy || athenaProbeBusy || athenaWriteTesterActive ? 'wait' : 'pointer',
+                    opacity: fe8dEnumBusy || athenaProbeBusy || athenaWriteTesterActive ? 0.7 : 1,
                   }}
                 >
-                  {athenaProbeBusy ? 'Starting Athena probe…' : 'Athena BLE probe (debug)'}
+                  {athenaWriteTesterActive ? 'Stop write tester first' : athenaProbeBusy ? 'Starting Athena probe…' : 'Athena BLE probe (debug)'}
                 </button>
               )}
               {DEBUG_ATHENA_BLE_PROBE_UI && athenaProbeActive && (
@@ -498,6 +505,9 @@ export function ConnectionStatus({
                 >
                   {athenaProbeBusy ? 'Stopping…' : 'Stop Athena probe'}
                 </button>
+              )}
+              {DEBUG_ATHENA_WRITE_TESTER_UI && (
+                <AthenaWriteTesterPanel onSessionChange={() => bumpAthenaDebugTools()} />
               )}
             </>
           )}
