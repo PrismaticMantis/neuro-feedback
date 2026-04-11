@@ -22,9 +22,14 @@ export type {
   SessionHeartSummary,
   PPGDiagnostics,
 } from './eeg-device-types';
-export { MUSE2_DEVICE_CAPABILITIES } from './eeg-device-types';
+export { MUSE2_DEVICE_CAPABILITIES, ATHENA_DEVICE_CAPABILITIES } from './eeg-device-types';
 
 export { Muse2EEGDevice, muse2EegDevice } from './muse2-adapter';
+export {
+  AthenaEEGDevice,
+  athenaEegDevice,
+  ATHENA_FE8D_CHARACTERISTIC_UUID_SUFFIXES,
+} from './athena-adapter';
 export { createEegDevice, DEFAULT_EEG_DEVICE_KIND } from './eeg-device-factory';
 export type { EegDeviceKind } from './eeg-device-factory';
 export { EegDeviceProvider, useEegDevice } from './EegDeviceContext';

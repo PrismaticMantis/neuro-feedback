@@ -103,3 +103,28 @@ export const MUSE2_DEVICE_CAPABILITIES: EEGDeviceCapabilities = {
     battery: true,
   },
 };
+
+/**
+ * Muse S (Athena) — GATT layout and streaming protocol differ from Muse 2 / muse-js.
+ * Numeric fields are placeholders for type compatibility; replace when the stream is characterized.
+ *
+ * Observed FE8D (16-bit UUID short form): 0001 (control), 0013–0015 (data paths TBD). Passive notify alone
+ * does not yield EEG until a control/start handshake is implemented.
+ */
+export const ATHENA_DEVICE_CAPABILITIES: EEGDeviceCapabilities = {
+  deviceKind: 'muse_s_athena',
+  displayName: 'Muse S (Athena)',
+  supportedTransports: ['bluetooth'],
+  sampleRateHz: 256,
+  fftSize: 256,
+  eegChannelCount: 4,
+  eegChannelLabels: ['TP9', 'AF7', 'AF8', 'TP10'],
+  sensors: {
+    eeg: true,
+    contactQuality: false,
+    accelerometer: false,
+    gyroscope: false,
+    ppg: false,
+    battery: false,
+  },
+};
