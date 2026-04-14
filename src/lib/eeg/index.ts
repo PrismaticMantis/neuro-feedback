@@ -46,6 +46,17 @@ export {
 } from './contact-quality';
 export { ENABLE_PPG_MODULATION, DEBUG_PPG } from './eeg-feature-flags';
 
+export type {
+  AthenaBridgeEegPacket,
+  AthenaBridgeEegPacketV1,
+  AthenaBridgeEegPacketV2,
+} from './athena-bridge-packet';
+export {
+  ATHENA_BRIDGE_SCHEMA_VERSION,
+  isAthenaBridgeEegPacketV1,
+  isAthenaBridgeEegPacketV2,
+} from './athena-bridge-packet';
+
 export type { FftPipelineConfig } from '../fft-processor';
 export { DEFAULT_FFT_PIPELINE, FFT_SIZE, SAMPLE_RATE } from '../fft-processor';
 

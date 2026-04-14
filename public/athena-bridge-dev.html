@@ -40,6 +40,18 @@
     const urlInput = document.getElementById('url');
     let lines = 0;
     const MAX_LINES = 500;
+    /** UI-side rate limit so a fast sender does not freeze the log. */
+    let lastUiLogMs = 0;
+    const MIN_UI_LOG_MS = 40;
+    let uiSuppressed = 0;
+
+    function formatBridgeMessage(j) {
+      if (j && typeof j === 'object' && j.v === 2 && j.k === 'eeg') {
+        const u = Array.isArray(j.u) ? j.u.map(function (x) { return Number(x).toFixed(1); }).join(',') : '';
+        return 'v2 seq=' + j.seq + ' labels=' + JSON.stringify(j.labels) + ' u=[' + u + '] td=' + (j.td == null ? 'null' : j.td) + ' sr=' + (j.sr == null ? 'null' : j.sr);
+      }
+      return JSON.stringify(j, null, 2);
+    }
 
     function log(msg, cls) {
       lines++;
@@ -73,7 +85,20 @@
       ws.onmessage = function (ev) {
         try {
           const j = JSON.parse(ev.data);
-          log(JSON.stringify(j, null, 2), 'ok');
+          if (j && typeof j === 'object' && j.v === 2 && j.k === 'eeg' && typeof j.seq === 'number') {
+            statusEl.textContent = 'Connected — last seq ' + j.seq;
+          }
+          const now = Date.now();
+          if (now - lastUiLogMs < MIN_UI_LOG_MS) {
+            uiSuppressed++;
+            return;
+          }
+          if (uiSuppressed > 0) {
+            log('(suppressed ' + uiSuppressed + ' fast messages for UI)', 'ok');
+            uiSuppressed = 0;
+          }
+          lastUiLogMs = now;
+          log(formatBridgeMessage(j), 'ok');
         } catch {
           log(String(ev.data).slice(0, 2000), 'ok');
         }

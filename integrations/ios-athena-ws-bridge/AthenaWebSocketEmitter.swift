@@ -1,7 +1,7 @@
 import Foundation
 
-/// Minimal WebSocket client for sending JSON text to the NeuroFlo relay (`npm run athena-bridge`).
-/// Thread-safe enough for PoC: call `send` from the main queue / LibMuse callback queue only.
+/// WebSocket client for the NeuroFlo relay (`npm run athena-bridge`).
+/// Throttles outbound packets to reduce relay/browser load; `seq` increments only for sends that go out.
 public final class AthenaWebSocketEmitter: NSObject, URLSessionWebSocketDelegate {
     private var task: URLSessionWebSocketTask?
     private lazy var session: URLSession = {
@@ -10,9 +10,16 @@ public final class AthenaWebSocketEmitter: NSObject, URLSessionWebSocketDelegate
 
     public private(set) var isConnected = false
 
-    /// Example: `URL(string: "ws://192.168.1.10:8765")` — use your Mac LAN IP while relay runs.
+    /// Minimum time between sends. Default ~50 Hz cap (20 ms).
+    public var minSendInterval: TimeInterval = 1.0 / 50.0
+
+    private var seqCounter: Int = 0
+    private var lastSendAt: CFAbsoluteTime = 0
+
     public func connect(url: URL) {
         disconnect()
+        seqCounter = 0
+        lastSendAt = 0
         let t = session.webSocketTask(with: url)
         task = t
         t.resume()
@@ -38,8 +45,35 @@ public final class AthenaWebSocketEmitter: NSObject, URLSessionWebSocketDelegate
         }
     }
 
-    public func send(packet: AthenaBridgePacketV1) {
+    /// Sends one v2 packet if throttle allows; otherwise drops silently (spam reduction).
+    public func send(
+        td: Double?,
+        tdUnit: String,
+        packetTypeRaw: Int?,
+        packetTypeName: String?,
+        labels: [String],
+        microvolts: [Double],
+        nominalSampleRateHz: Double?,
+        sampleRateAssumed: Bool
+    ) {
         guard let t = task else { return }
+        let now = CFAbsoluteTimeGetCurrent()
+        if now - lastSendAt < minSendInterval {
+            return
+        }
+        lastSendAt = now
+        seqCounter += 1
+        let packet = AthenaBridgePacket(
+            seq: seqCounter,
+            td: td,
+            tdUnit: tdUnit,
+            packetTypeRaw: packetTypeRaw,
+            packetTypeName: packetTypeName,
+            labels: labels,
+            microvolts: microvolts,
+            nominalSampleRateHz: nominalSampleRateHz,
+            sampleRateAssumed: sampleRateAssumed
+        )
         do {
             let s = try packet.jsonString()
             t.send(.string(s)) { err in
