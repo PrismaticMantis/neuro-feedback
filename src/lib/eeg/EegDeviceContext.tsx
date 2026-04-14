@@ -5,18 +5,23 @@
 
 import { createContext, useContext, type ReactNode } from 'react';
 import type { EEGDevice } from './eeg-device';
-import { createEegDevice, DEFAULT_EEG_DEVICE_KIND } from './eeg-device-factory';
+import {
+  createEegDevice,
+  DEFAULT_EEG_DEVICE_KIND,
+  resolveEegDeviceFromEnv,
+} from './eeg-device-factory';
 
 const EegDeviceReactContext = createContext<EEGDevice | null>(null);
 
 export interface EegDeviceProviderProps {
   children: ReactNode;
-  /** Override for tests or when multiple devices are selectable — defaults to Muse 2. */
+  /** Override for tests or when multiple devices are selectable — defaults to Muse 2 or `VITE_EEG_DEVICE_KIND`. */
   device?: EEGDevice;
 }
 
 export function EegDeviceProvider({ children, device }: EegDeviceProviderProps) {
-  const value = device ?? createEegDevice(DEFAULT_EEG_DEVICE_KIND);
+  const value =
+    device ?? resolveEegDeviceFromEnv() ?? createEegDevice(DEFAULT_EEG_DEVICE_KIND);
   return (
     <EegDeviceReactContext.Provider value={value}>{children}</EegDeviceReactContext.Provider>
   );

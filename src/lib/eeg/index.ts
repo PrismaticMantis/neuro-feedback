@@ -22,7 +22,11 @@ export type {
   SessionHeartSummary,
   PPGDiagnostics,
 } from './eeg-device-types';
-export { MUSE2_DEVICE_CAPABILITIES, ATHENA_DEVICE_CAPABILITIES } from './eeg-device-types';
+export {
+  MUSE2_DEVICE_CAPABILITIES,
+  ATHENA_DEVICE_CAPABILITIES,
+  ATHENA_BRIDGE_WS_DEVICE_CAPABILITIES,
+} from './eeg-device-types';
 
 export { Muse2EEGDevice, muse2EegDevice } from './muse2-adapter';
 export {
@@ -30,7 +34,11 @@ export {
   athenaEegDevice,
   ATHENA_FE8D_CHARACTERISTIC_UUID_SUFFIXES,
 } from './athena-adapter';
-export { createEegDevice, DEFAULT_EEG_DEVICE_KIND } from './eeg-device-factory';
+export {
+  createEegDevice,
+  DEFAULT_EEG_DEVICE_KIND,
+  resolveEegDeviceFromEnv,
+} from './eeg-device-factory';
 export type { EegDeviceKind } from './eeg-device-factory';
 export { EegDeviceProvider, useEegDevice } from './EegDeviceContext';
 export { horseshoeToElectrodeModel } from './electrode-sites';
@@ -44,7 +52,11 @@ export {
   overallContactSummaryFromSites,
   overallContactSummaryFromLegacyStatus,
 } from './contact-quality';
-export { ENABLE_PPG_MODULATION, DEBUG_PPG } from './eeg-feature-flags';
+export {
+  ENABLE_PPG_MODULATION,
+  DEBUG_PPG,
+  ENABLE_ATHENA_BRIDGE_EEG_DEVICE,
+} from './eeg-feature-flags';
 
 export type {
   AthenaBridgeEegPacket,
@@ -55,7 +67,14 @@ export {
   ATHENA_BRIDGE_SCHEMA_VERSION,
   isAthenaBridgeEegPacketV1,
   isAthenaBridgeEegPacketV2,
+  parseAthenaBridgeEegPacketV2,
 } from './athena-bridge-packet';
+export {
+  AthenaBridgeEEGDevice,
+  athenaBridgeEegDevice,
+  isAthenaBridgeEEGDevice,
+} from './athena-bridge-eeg-device';
+export type { AthenaBridgeLatestSample } from './athena-bridge-eeg-device';
 
 export type { FftPipelineConfig } from '../fft-processor';
 export { DEFAULT_FFT_PIPELINE, FFT_SIZE, SAMPLE_RATE } from '../fft-processor';
