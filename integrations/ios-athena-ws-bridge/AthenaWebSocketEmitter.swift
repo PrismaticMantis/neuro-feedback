@@ -1,8 +1,10 @@
 import Foundation
+import os
 
 /// WebSocket client for the NeuroFlo relay (`npm run athena-bridge`).
 /// Throttles outbound packets to reduce relay/browser load; `seq` increments only for sends that go out.
 public final class AthenaWebSocketEmitter: NSObject, URLSessionWebSocketDelegate {
+    private static let log = Logger(subsystem: "AthenaBridge", category: "websocket")
     private var task: URLSessionWebSocketTask?
     private lazy var session: URLSession = {
         URLSession(configuration: .default, delegate: self, delegateQueue: OperationQueue.main)
@@ -78,20 +80,39 @@ public final class AthenaWebSocketEmitter: NSObject, URLSessionWebSocketDelegate
             let s = try packet.jsonString()
             t.send(.string(s)) { err in
                 if let err = err {
-                    NSLog("[AthenaBridge] send error: \(err.localizedDescription)")
+                    if AthenaBridgeWsLogThrottle.shouldEmit(key: "send", minInterval: 1.0) {
+                        Self.log.error("send error: \(err.localizedDescription, privacy: .public)")
+                    }
                 }
             }
         } catch {
-            NSLog("[AthenaBridge] encode error: \(error.localizedDescription)")
+            if AthenaBridgeWsLogThrottle.shouldEmit(key: "encode", minInterval: 1.0) {
+                Self.log.error("encode error: \(error.localizedDescription, privacy: .public)")
+            }
         }
     }
 
     public func urlSession(_ session: URLSession, webSocketTask: URLSessionWebSocketTask, didOpenWithProtocol protocol: String?) {
-        NSLog("[AthenaBridge] WebSocket open")
+        Self.log.info("WebSocket open")
     }
 
     public func urlSession(_ session: URLSession, webSocketTask: URLSessionWebSocketTask, didCloseWith closeCode: URLSessionWebSocketTask.CloseCode, reason: Data?) {
         isConnected = false
-        NSLog("[AthenaBridge] WebSocket closed: \(closeCode.rawValue)")
+        Self.log.info("WebSocket closed: \(closeCode.rawValue, privacy: .public)")
+    }
+}
+
+private enum AthenaBridgeWsLogThrottle {
+    private static var lastAt: [String: CFAbsoluteTime] = [:]
+    private static let lock = NSLock()
+
+    static func shouldEmit(key: String, minInterval: TimeInterval) -> Bool {
+        let now = CFAbsoluteTimeGetCurrent()
+        lock.lock()
+        defer { lock.unlock() }
+        let last = lastAt[key, default: 0]
+        if now - last < minInterval { return false }
+        lastAt[key] = now
+        return true
     }
 }

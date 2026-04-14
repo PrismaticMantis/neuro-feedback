@@ -35,11 +35,21 @@ If only the phone is connected, messages are relayed to **zero** peers.
 
 ## Xcode integration
 
-1. Drag **`AthenaBridgePacket.swift`** and **`AthenaWebSocketEmitter.swift`** into the app target (check “Copy items if needed”).
+1. Drag **`AthenaBridgePacket.swift`**, **`AthenaWebSocketEmitter.swift`**, and **`AthenaBridgeDebugLogging.swift`** into the app target (check “Copy items if needed”).
 2. **iOS 13+** for `URLSessionWebSocketTask`.
 3. In the class that receives `IXNMuseDataPacket`, create **`AthenaWebSocketEmitter()`**, call **`connect(url:)`** when you want bridging (e.g. after Muse connects). Use your Mac’s **LAN IP**: `ws://192.168.x.x:8765` while **`npm run athena-bridge`** runs on the Mac.
 4. On each **EEG** packet (filter by your `IXNMuseDataPacketType`), call **`emitter.send(...)`** (throttling is built in; tune `minSendInterval` if needed).
 5. **Local network:** If the connection fails from device to Mac, add **`NSLocalNetworkUsageDescription`** and **`NSBonjourServices`** only if required by Apple review docs; often a direct TCP `ws://IP:port` works on LAN without Bonjour.
+
+## Logging / performance (important)
+
+Per-packet **`NSLog` / `print` in `receive(_ packet: IXNMuseDataPacket, …)`** can flood unified logging and contribute to **“network queue has many pending events”** warnings (heavy main-queue / logging work while WebSocket sends are in flight).
+
+- **Keep** full-rate updates for your **graph / UI** as today.
+- **Remove** verbose per-sample console output, or replace it with **`AthenaBridgeDebugLog.throttled("eeg", interval: 2.0) { "…" }`** (see snippet below).
+- For deeper traces, set **`AthenaBridgeDebugLog.verboseEegEnabled = true`** (still capped by **`verboseMinInterval`**, default 0.5s — not every packet).
+
+The bridge **`emitter.send`** path does not log on successful sends; WebSocket open/close and **throttled** encode/send errors use **`os.Logger`**.
 
 ## Wire to your sample
 
@@ -47,7 +57,7 @@ Replace `YOUR_VIEW_CONTROLLER` / listener names in comments with your actual typ
 
 ## Reversal
 
-Remove the two Swift files and all `AthenaWebSocketEmitter` references from the Xcode project.
+Remove the three Swift bridge files and all `AthenaWebSocketEmitter` / `AthenaBridgeDebugLogging` references from the Xcode project.
 
 ## Wire-up snippet (adapt to your listener)
 
@@ -79,6 +89,10 @@ athenaBridge.send(
     nominalSampleRateHz: 256, // or nil / your preset
     sampleRateAssumed: true
 )
+// Optional: at most ~1 line / 2s — do not NSLog every packet here.
+AthenaBridgeDebugLog.throttled("eeg", interval: 2.0) {
+    "EEG uV0=\(uV[0]) … count=\(uV.count)"
+}
 ```
 
 Disconnect in your teardown: `athenaBridge.disconnect()`.
