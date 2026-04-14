@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Athena bridge (dev)</title>
+  <style>
+    body { font-family: system-ui, sans-serif; background: #0c0a0e; color: #e8e4dc; margin: 0; padding: 16px; }
+    h1 { font-size: 16px; margin: 0 0 12px; color: #b8a0c8; }
+    p { font-size: 12px; color: #888; line-height: 1.4; max-width: 52rem; }
+    label { font-size: 12px; display: block; margin-bottom: 4px; }
+    input { width: 100%; max-width: 28rem; padding: 8px; margin-bottom: 8px; background: #1a1520; border: 1px solid #333; color: #eee; border-radius: 6px; box-sizing: border-box; }
+    button { padding: 8px 14px; margin-right: 8px; border-radius: 6px; border: 1px solid #555; background: #2a2030; color: #e8e4dc; cursor: pointer; }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    #log { margin-top: 12px; font-family: ui-monospace, monospace; font-size: 11px; white-space: pre-wrap; word-break: break-all; background: #120e18; border: 1px solid #2a2530; border-radius: 8px; padding: 10px; max-height: 60vh; overflow: auto; }
+    .ok { color: #8fd4a4; }
+    .err { color: #f0a0a0; }
+  </style>
+</head>
+<body>
+  <h1>Athena → NeuroFlo bridge (dev only)</h1>
+  <p>
+    Start the relay: <code>npm run athena-bridge</code>. Default URL targets this machine.
+    From another device, use <code>ws://&lt;your-computer-LAN-IP&gt;:8765</code>.
+    Not linked from the main app — production Muse 2 flow unchanged.
+  </p>
+  <label for="url">WebSocket URL</label>
+  <input id="url" type="text" value="ws://localhost:8765" autocomplete="off" />
+  <div>
+    <button type="button" id="connect">Connect</button>
+    <button type="button" id="disconnect" disabled>Disconnect</button>
+    <button type="button" id="clear">Clear log</button>
+  </div>
+  <div id="status" class="ok" style="margin-top:8px;font-size:12px;">Disconnected</div>
+  <div id="log"></div>
+  <script>
+    let ws = null;
+    const logEl = document.getElementById('log');
+    const statusEl = document.getElementById('status');
+    const urlInput = document.getElementById('url');
+    let lines = 0;
+    const MAX_LINES = 500;
+
+    function log(msg, cls) {
+      lines++;
+      if (lines > MAX_LINES) {
+        logEl.textContent = '(log truncated)\n';
+        lines = 1;
+      }
+      const span = document.createElement('span');
+      if (cls) span.className = cls;
+      span.textContent = new Date().toISOString() + ' ' + msg + '\n';
+      logEl.appendChild(span);
+      logEl.scrollTop = logEl.scrollHeight;
+    }
+
+    document.getElementById('connect').onclick = function () {
+      if (ws && ws.readyState === WebSocket.OPEN) return;
+      const url = urlInput.value.trim();
+      try {
+        ws = new WebSocket(url);
+      } catch (e) {
+        log('Failed: ' + e, 'err');
+        return;
+      }
+      statusEl.textContent = 'Connecting…';
+      statusEl.className = 'ok';
+      ws.onopen = function () {
+        statusEl.textContent = 'Connected — waiting for JSON from iOS…';
+        document.getElementById('connect').disabled = true;
+        document.getElementById('disconnect').disabled = false;
+      };
+      ws.onmessage = function (ev) {
+        try {
+          const j = JSON.parse(ev.data);
+          log(JSON.stringify(j, null, 2), 'ok');
+        } catch {
+          log(String(ev.data).slice(0, 2000), 'ok');
+        }
+      };
+      ws.onerror = function () {
+        log('WebSocket error', 'err');
+        statusEl.textContent = 'Error';
+        statusEl.className = 'err';
+      };
+      ws.onclose = function () {
+        statusEl.textContent = 'Disconnected';
+        statusEl.className = 'ok';
+        document.getElementById('connect').disabled = false;
+        document.getElementById('disconnect').disabled = true;
+        ws = null;
+      };
+    };
+
+    document.getElementById('disconnect').onclick = function () {
+      if (ws) ws.close();
+    };
+
+    document.getElementById('clear').onclick = function () {
+      logEl.textContent = '';
+      lines = 0;
+    };
+  </script>
+</body>
+</html>
