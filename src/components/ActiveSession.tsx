@@ -63,6 +63,7 @@ export function ActiveSession({
   onEndSession,
 }: ActiveSessionProps) {
   const eegDevice = useEegDevice();
+  const isAthenaBridge = isAthenaBridgeEEGDevice(eegDevice);
   
   // Debug: Track update timestamps
   const [debugInfo, setDebugInfo] = useState<{
@@ -296,7 +297,13 @@ export function ActiveSession({
             backdropFilter: 'blur(20px)',
           }}
         >
-          <ElectrodeStatus sites={electrodeSites} status={electrodeStatus} compact />
+          <ElectrodeStatus
+            sites={electrodeSites}
+            status={electrodeStatus}
+            compact
+            sectionTitle={isAthenaBridge ? 'Channel quality (bridge)' : 'ELECTRODE CONTACT'}
+            weightedContactPercent={isAthenaBridge}
+          />
           
           {/* Band Power / Greeks Row */}
           <div 

@@ -21,7 +21,7 @@ Single JSON object per **sent** frame. The emitter **throttles** outbound WebSoc
 | `sr` | `number?` | Nominal sample rate (Hz) when set |
 | `srAssumed` | `boolean` | `true` when `sr` is from preset/docs, not measured |
 
-TypeScript types: `src/lib/eeg/athena-bridge-packet.ts`. The browser also **normalizes** legacy v1 or partial v2 (missing `tdUnit` / `srAssumed` / `labels`); emit full v2 from Swift when possible.
+TypeScript types: `src/lib/eeg/athena-bridge-packet.ts`. NeuroFlo accepts **v:2** strictly (explicit `v`, `seq` ≥ 1, `labels.length === u.length`, `tdUnit`, `srAssumed`, finite `th`) or legacy **v:1** with lenient defaults. Prefer **v2** from iOS; use **`sendQuadEeg`** for four Muse channels with correct labels.
 
 ## Relay order (important)
 
@@ -79,16 +79,16 @@ var uV: [Double] = []
 for i in 0..<n {
     uV.append(packet.getEegChannelValue(i)) // or documented accessor
 }
-athenaBridge.send(
+athenaBridge.sendQuadEeg(
     td: packet.timestamp(), // match SDK
-    tdUnit: "unknown",
+    tdUnit: "unknown", // set to documented LibMuse unit when known
     packetTypeRaw: packet.packetType().rawValue,
     packetTypeName: String(describing: packet.packetType()),
-    labels: ["TP9", "AF7", "AF8", "TP10"],
     microvolts: uV,
-    nominalSampleRateHz: 256, // or nil / your preset
+    nominalSampleRateHz: 256,
     sampleRateAssumed: true
 )
+// Non–four-channel: use `send(..., labels: yourLabels, microvolts: uV, ...)` with labels.count == uV.count.
 // Optional: at most ~1 line / 2s — do not NSLog every packet here.
 AthenaBridgeDebugLog.throttled("eeg", interval: 2.0) {
     "EEG uV0=\(uV[0]) … count=\(uV.count)"

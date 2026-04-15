@@ -3,13 +3,16 @@
  * Does not use muse-js or muse-handler. Reversible PoC: remove flag + this file to drop the path.
  *
  * Signal path: each v2 frame appends one sample per channel → ring buffers → same FFT/band math as Muse BLE
- * (`athena-bridge-signal-pipeline`). Effective sample rate is inferred from packet spacing (~50 Hz typical).
+ * (`athena-bridge-signal-pipeline`). Channel count and labels follow the packet; FFT rate blends `sr` with inter-arrival.
+ *
+ * Contact / horseshoe integers (1–4) are **heuristic** from rolling µV stats — not LibMuse or official Muse contact.
  */
 
 import type { BrainwaveBandsDb, ConnectionHealthState, MuseState } from '../../types';
 import { FFTProcessor } from '../fft-processor';
 import type { EEGDevice } from './eeg-device';
 import { DEBUG_ATHENA_BANDS } from './eeg-feature-flags';
+import type { AthenaBridgeEegPacketV2 } from './athena-bridge-packet';
 import { tryNormalizeAthenaBridgeEegPacket } from './athena-bridge-packet';
 import {
   ATHENA_BRIDGE_WS_DEVICE_CAPABILITIES,
@@ -24,8 +27,23 @@ import { deriveBridgeIndices, snapshotBandsFromBridgeBuffers } from './athena-br
 const STALL_MS = 4000;
 const ZERO_BANDS = { delta: 0, theta: 0, alpha: 0, beta: 0, gamma: 0 };
 
-const BRIDGE_CH = ATHENA_BRIDGE_WS_DEVICE_CAPABILITIES.eegChannelCount;
 const BRIDGE_WIN = ATHENA_BRIDGE_WS_DEVICE_CAPABILITIES.fftSize;
+const DEFAULT_BRIDGE_LABELS = [...ATHENA_BRIDGE_WS_DEVICE_CAPABILITIES.eegChannelLabels];
+
+/** EMA factor for rolling mean / |dev| / variance (per channel, µV domain). */
+const BRIDGE_CONTACT_SMOOTH = 0.82;
+/** Samples before trusting heuristic (warm-up → medium). */
+const BRIDGE_CONTACT_WARMUP_SAMPLES = 8;
+/** µV — sample treated as clipped / saturated. */
+const BRIDGE_CLIP_UV = 2800;
+/** Flatline: near-DC channel (approximate). */
+const BRIDGE_FLAT_ABS_UV = 4;
+const BRIDGE_FLAT_VAR = 45;
+/** Strong motion / artifact (µV and µV² scale, order-of-magnitude). */
+const BRIDGE_ARTIFACT_ABS_UV = 900;
+const BRIDGE_ARTIFACT_VAR = 120_000;
+const BRIDGE_WEAK_ABS_UV = 450;
+const BRIDGE_WEAK_VAR = 35_000;
 
 const EMPTY_PPG: HeartRateMetrics = { bpm: null, confidence: 0, lastBeatMs: null };
 const EMPTY_SESSION_HR: SessionHeartSummary = { avgHR: null, avgHRV: null };
@@ -44,6 +62,8 @@ export type AthenaBridgeLatestSample = {
   readonly deviceTime: number | null;
   readonly hostTimeSec: number;
   readonly receivedAtMs: number;
+  readonly nominalSampleRateHz: number | null;
+  readonly sampleRateAssumed: boolean;
 };
 
 function baseState(connected: boolean, deviceName: string | null, health: ConnectionHealthState): MuseState {
@@ -66,7 +86,19 @@ function baseState(connected: boolean, deviceName: string | null, health: Connec
 }
 
 export class AthenaBridgeEEGDevice implements EEGDevice {
-  readonly capabilities: EEGDeviceCapabilities = ATHENA_BRIDGE_WS_DEVICE_CAPABILITIES;
+  /** Defaults until first accepted frame; then matches last packet’s channel count and labels. */
+  private _runtimeChannelCount = ATHENA_BRIDGE_WS_DEVICE_CAPABILITIES.eegChannelCount;
+  private _runtimeLabels: readonly string[] = DEFAULT_BRIDGE_LABELS;
+  private _lastNominalSr: number | null = null;
+
+  get capabilities(): EEGDeviceCapabilities {
+    return {
+      ...ATHENA_BRIDGE_WS_DEVICE_CAPABILITIES,
+      eegChannelCount: this._runtimeChannelCount,
+      eegChannelLabels: this._runtimeLabels,
+      sampleRateHz: this._lastNominalSr ?? ATHENA_BRIDGE_WS_DEVICE_CAPABILITIES.sampleRateHz,
+    };
+  }
 
   /** Same EMA as MuseHandler for comparable UI smoothing. */
   private readonly smoothingFactor = 0.7;
@@ -81,7 +113,13 @@ export class AthenaBridgeEEGDevice implements EEGDevice {
     fftSize: BRIDGE_WIN,
     sampleRateHz: 50,
   });
-  private eegBuffers: number[][] = Array.from({ length: BRIDGE_CH }, () => []);
+  private eegBuffers: number[][] = this.allocBuffers(this._runtimeChannelCount);
+  /** Rolling stats per channel → horseshoe 1–4 (heuristic). */
+  private contactMean: number[] = [];
+  private contactAbsAmp: number[] = [];
+  private contactVar: number[] = [];
+  private contactHorseshoe: number[] = [];
+  private contactSampleCount: number[] = [];
   private lastRxForRateMs = 0;
   private emaDtMs = 20;
   private lastFftRateHz = 50;
@@ -170,7 +208,9 @@ export class AthenaBridgeEEGDevice implements EEGDevice {
   }
 
   getElectrodeQuality(): number[] {
-    return Array.from({ length: this.capabilities.eegChannelCount }, () => 4);
+    const n = this._runtimeChannelCount;
+    if (this.contactHorseshoe.length === n) return [...this.contactHorseshoe];
+    return Array.from({ length: n }, () => 4);
   }
 
   getConnectionStateDetail(): EEGConnectionStateDetail {
@@ -220,38 +260,129 @@ export class AthenaBridgeEEGDevice implements EEGDevice {
     return { ...this._state.bandsDbSmooth };
   }
 
+  private allocBuffers(n: number): number[][] {
+    return Array.from({ length: Math.max(1, n) }, () => []);
+  }
+
   private resetSignalPipeline(): void {
-    this.eegBuffers = Array.from({ length: BRIDGE_CH }, () => []);
+    this._runtimeChannelCount = ATHENA_BRIDGE_WS_DEVICE_CAPABILITIES.eegChannelCount;
+    this._runtimeLabels = DEFAULT_BRIDGE_LABELS;
+    this._lastNominalSr = null;
+    this.eegBuffers = this.allocBuffers(this._runtimeChannelCount);
+    this.resetContactArrays(this._runtimeChannelCount);
     this.lastRxForRateMs = 0;
     this.emaDtMs = 20;
     this.lastFftRateHz = 50;
     this.fft = new FFTProcessor({ fftSize: BRIDGE_WIN, sampleRateHz: 50 });
   }
 
-  private retuneFftIfNeeded(nowMs: number): void {
+  private resetContactArrays(n: number): void {
+    const c = Math.max(1, n);
+    this.contactMean = Array(c).fill(0);
+    this.contactAbsAmp = Array(c).fill(0);
+    this.contactVar = Array(c).fill(0);
+    this.contactHorseshoe = Array(c).fill(4);
+    this.contactSampleCount = Array(c).fill(0);
+  }
+
+  private ensureChannelLayout(channels: number, labels: readonly string[]): void {
+    if (channels !== this._runtimeChannelCount) {
+      this._runtimeChannelCount = channels;
+      this.eegBuffers = this.allocBuffers(channels);
+      this.resetContactArrays(channels);
+    } else if (this.contactHorseshoe.length !== channels) {
+      this.resetContactArrays(channels);
+    }
+    this._runtimeLabels = [...labels];
+  }
+
+  /**
+   * Map rolling µV statistics to horseshoe-style 1=good … 4=off for UI compatibility.
+   * Calibrated loosely against typical Muse-scale µV; not validated against Athena hardware.
+   */
+  private refineContactQuality(ch: number, sample: number): void {
+    const s = BRIDGE_CONTACT_SMOOTH;
+    const prevMean = this.contactMean[ch] ?? 0;
+    const mean = prevMean * s + sample * (1 - s);
+    const absAmp = this.contactAbsAmp[ch] * s + Math.abs(sample - mean) * (1 - s);
+    const vari = this.contactVar[ch] * s + (sample - mean) ** 2 * (1 - s);
+    this.contactMean[ch] = mean;
+    this.contactAbsAmp[ch] = absAmp;
+    this.contactVar[ch] = vari;
+    this.contactSampleCount[ch] = (this.contactSampleCount[ch] ?? 0) + 1;
+
+    let q: number;
+    const n = this.contactSampleCount[ch];
+    if (n < BRIDGE_CONTACT_WARMUP_SAMPLES) {
+      q = 2;
+    } else if (Math.abs(sample) >= BRIDGE_CLIP_UV) {
+      q = 3;
+    } else if (absAmp < BRIDGE_FLAT_ABS_UV && vari < BRIDGE_FLAT_VAR) {
+      q = 4;
+    } else if (absAmp > BRIDGE_ARTIFACT_ABS_UV || vari > BRIDGE_ARTIFACT_VAR) {
+      q = 3;
+    } else if (absAmp > BRIDGE_WEAK_ABS_UV || vari > BRIDGE_WEAK_VAR) {
+      q = 2;
+    } else {
+      q = 1;
+    }
+    this.contactHorseshoe[ch] = q;
+  }
+
+  private syncContactDerivedState(): void {
+    const n = this.contactHorseshoe.length;
+    if (n === 0) return;
+    let score = 0;
+    for (let i = 0; i < n; i++) {
+      const h = this.contactHorseshoe[i];
+      if (h === 1) score += 1;
+      else if (h === 2) score += 0.5;
+    }
+    const cq = score / n;
+    this._state.touching = cq > 0.05;
+    this._state.connectionQuality = cq;
+  }
+
+  /** Blends declared `sr` with measured inter-arrival; trusts `sr` more when `srAssumed` is false. */
+  private retuneFftFromPacket(nowMs: number, sr: number | null, srAssumed: boolean): void {
     if (this.lastRxForRateMs > 0) {
       const dt = Math.max(5, Math.min(250, nowMs - this.lastRxForRateMs));
       this.emaDtMs = 0.92 * this.emaDtMs + 0.08 * dt;
     }
     this.lastRxForRateMs = nowMs;
-    const effHz = 1000 / Math.max(this.emaDtMs, 1);
-    const clamped = Math.min(100, Math.max(20, effHz));
-    if (Math.abs(clamped - this.lastFftRateHz) > 3) {
+    const arrivalHz = 1000 / Math.max(this.emaDtMs, 1);
+    let targetHz = Math.min(120, Math.max(15, arrivalHz));
+
+    if (sr != null && sr > 0 && Number.isFinite(sr)) {
+      const srUse = Math.min(500, Math.max(15, sr));
+      this._lastNominalSr = srUse;
+      const wNom = srAssumed ? 0.45 : 0.78;
+      targetHz = wNom * srUse + (1 - wNom) * arrivalHz;
+    }
+
+    const clamped = Math.min(120, Math.max(15, targetHz));
+    if (Math.abs(clamped - this.lastFftRateHz) > 2) {
       this.lastFftRateHz = clamped;
       this.fft = new FFTProcessor({ fftSize: BRIDGE_WIN, sampleRateHz: clamped });
     }
   }
 
-  private ingestBridgeSample(microvolts: readonly number[], nowMs: number): void {
-    this.retuneFftIfNeeded(nowMs);
-    for (let ch = 0; ch < BRIDGE_CH; ch++) {
-      const v = ch < microvolts.length ? microvolts[ch] : 0;
+  private ingestBridgePacket(pkt: AthenaBridgeEegPacketV2, nowMs: number): void {
+    const n = pkt.u.length;
+    this.ensureChannelLayout(n, pkt.labels);
+    this.retuneFftFromPacket(nowMs, pkt.sr, pkt.srAssumed);
+
+    for (let ch = 0; ch < n; ch++) {
+      const v = pkt.u[ch];
+      this.refineContactQuality(ch, v);
       this.eegBuffers[ch].push(v);
       while (this.eegBuffers[ch].length > BRIDGE_WIN) {
         this.eegBuffers[ch].shift();
       }
     }
-    const snap = snapshotBandsFromBridgeBuffers(this.eegBuffers, this.fft, BRIDGE_CH, BRIDGE_WIN);
+    this.syncContactDerivedState();
+
+    const snap = snapshotBandsFromBridgeBuffers(this.eegBuffers, this.fft, n, BRIDGE_WIN);
     if (!snap) return;
 
     const sf = this.smoothingFactor;
@@ -340,8 +471,10 @@ export class AthenaBridgeEEGDevice implements EEGDevice {
           deviceTime: pkt.td,
           hostTimeSec: pkt.th,
           receivedAtMs: now,
+          nominalSampleRateHz: pkt.sr,
+          sampleRateAssumed: pkt.srAssumed,
         };
-        this.ingestBridgeSample(pkt.u, now);
+        this.ingestBridgePacket(pkt, now);
         this._state = {
           ...this._state,
           connected: true,

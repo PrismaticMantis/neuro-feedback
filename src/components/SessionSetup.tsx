@@ -10,6 +10,7 @@ import { ElectrodeStatus } from './ElectrodeStatus';
 import { BINAURAL_PRESETS } from '../hooks/useAudio';
 import { DEBUG_ELECTRODES_OVERLAY } from '../lib/feature-flags';
 import { useEegDevice } from '../lib/eeg/EegDeviceContext';
+import { isAthenaBridgeEEGDevice } from '../lib/eeg/athena-bridge-eeg-device';
 import {
   overallContactSummaryFromLegacyStatus,
   overallContactSummaryFromSites,
@@ -97,6 +98,7 @@ export function SessionSetup({
   athenaBandDebug,
 }: SessionSetupProps) {
   const eegDevice = useEegDevice();
+  const isAthenaBridge = isAthenaBridgeEEGDevice(eegDevice);
   const [newUserName, setNewUserName] = useState('');
   // showUserForm state removed - Lovable design doesn't show user switcher inline
 
@@ -194,7 +196,28 @@ export function SessionSetup({
         boxShadow: '0 4px 20px hsl(270 20% 2% / 0.5)',
       }}
     >
-      <ElectrodeStatus sites={electrodeSites} status={electrodeStatus} />
+      {isAthenaBridge && (
+        <p
+          style={{
+            fontFamily: 'var(--font-sans)',
+            fontSize: '11px',
+            fontWeight: 400,
+            color: 'var(--text-subtle)',
+            margin: '0 0 12px 0',
+            lineHeight: 1.45,
+          }}
+        >
+          Channel quality is an approximate estimate from bridge µV (rolling stats). It is not Muse firmware
+          horseshoe contact.
+        </p>
+      )}
+      <ElectrodeStatus
+        sites={electrodeSites}
+        status={electrodeStatus}
+        sectionTitle={isAthenaBridge ? 'Channel quality (bridge)' : 'ELECTRODE CONTACT'}
+        qualityBarLabel={isAthenaBridge ? 'Estimated contact' : 'Contact Quality'}
+        weightedContactPercent={isAthenaBridge}
+      />
       {athenaBandDebug && (
         <div
           style={{

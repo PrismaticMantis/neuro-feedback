@@ -5,6 +5,9 @@ import os
 /// Throttles outbound packets to reduce relay/browser load; `seq` increments only for sends that go out.
 public final class AthenaWebSocketEmitter: NSObject, URLSessionWebSocketDelegate {
     private static let log = Logger(subsystem: "AthenaBridge", category: "websocket")
+
+    /// Standard four-channel Muse order; `microvolts.count` must match.
+    public static let defaultQuadLabels: [String] = ["TP9", "AF7", "AF8", "TP10"]
     private var task: URLSessionWebSocketTask?
     private lazy var session: URLSession = {
         URLSession(configuration: .default, delegate: self, delegateQueue: OperationQueue.main)
@@ -45,6 +48,32 @@ public final class AthenaWebSocketEmitter: NSObject, URLSessionWebSocketDelegate
                 self.receiveLoop()
             }
         }
+    }
+
+    /// Convenience for four Muse EEG channels — emits full v2 with `labels` = `defaultQuadLabels`.
+    public func sendQuadEeg(
+        td: Double?,
+        tdUnit: String,
+        packetTypeRaw: Int?,
+        packetTypeName: String?,
+        microvolts: [Double],
+        nominalSampleRateHz: Double?,
+        sampleRateAssumed: Bool
+    ) {
+        precondition(
+            microvolts.count == Self.defaultQuadLabels.count,
+            "sendQuadEeg: expected \(Self.defaultQuadLabels.count) channels, got \(microvolts.count)"
+        )
+        send(
+            td: td,
+            tdUnit: tdUnit,
+            packetTypeRaw: packetTypeRaw,
+            packetTypeName: packetTypeName,
+            labels: Self.defaultQuadLabels,
+            microvolts: microvolts,
+            nominalSampleRateHz: nominalSampleRateHz,
+            sampleRateAssumed: sampleRateAssumed
+        )
     }
 
     /// Sends one v2 packet if throttle allows; otherwise drops silently (spam reduction).

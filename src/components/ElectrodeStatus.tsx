@@ -15,6 +15,14 @@ interface ElectrodeStatusProps {
   /** Fallback when `sites` is empty: Muse 10–20 four-key map (TP9, AF7, AF8, TP10). */
   status: ElectrodeStatusType;
   compact?: boolean;
+  /** Override header (e.g. Athena bridge estimate). Default: ELECTRODE CONTACT */
+  sectionTitle?: string;
+  /** Bar label (default: Contact Quality). */
+  qualityBarLabel?: string;
+  /**
+   * When true, % = weighted good/medium/poor. When false (default), only “good” electrodes count — Muse 2 behavior.
+   */
+  weightedContactPercent?: boolean;
 }
 
 const LEGACY_KEYS = ['tp9', 'af7', 'af8', 'tp10'] as const;
@@ -36,14 +44,27 @@ const QUALITY_COLORS: Record<ElectrodeQuality, string> = {
 
 type Row = { key: string; label: string; quality: ElectrodeQuality };
 
+function siteWeightedPercent(sites: ElectrodeSiteContact[]): number {
+  const score = sites.reduce((acc, s) => {
+    if (s.quality === 'good') return acc + 1;
+    if (s.quality === 'medium') return acc + 0.55;
+    if (s.quality === 'poor') return acc + 0.2;
+    return acc;
+  }, 0);
+  return (score / sites.length) * 100;
+}
+
 function buildRenderModel(
   sites: ElectrodeSiteContact[] | undefined,
   status: ElectrodeStatusType,
+  weightedContactPercent: boolean,
 ): { rows: Row[]; overall: { label: string; quality: ElectrodeQuality }; qualityPercentage: number } {
   if (sites && sites.length > 0) {
     const overall = overallContactSummaryFromSites(sites);
     const goodCount = sites.filter((s) => s.quality === 'good').length;
-    const qualityPercentage = (goodCount / sites.length) * 100;
+    const qualityPercentage = weightedContactPercent
+      ? siteWeightedPercent(sites)
+      : (goodCount / sites.length) * 100;
     const rows: Row[] = sites.map((s) => ({
       key: s.siteId,
       label: s.label,
@@ -63,8 +84,15 @@ function buildRenderModel(
   return { rows, overall, qualityPercentage };
 }
 
-export function ElectrodeStatus({ sites, status, compact = false }: ElectrodeStatusProps) {
-  const { rows, overall, qualityPercentage } = buildRenderModel(sites, status);
+export function ElectrodeStatus({
+  sites,
+  status,
+  compact = false,
+  sectionTitle = 'ELECTRODE CONTACT',
+  qualityBarLabel = 'Contact Quality',
+  weightedContactPercent = false,
+}: ElectrodeStatusProps) {
+  const { rows, overall, qualityPercentage } = buildRenderModel(sites, status, weightedContactPercent);
 
   // Map overall label to shorter version for pill
   const overallPillLabel = overall.label === 'Strong signal' ? 'Good' : 
@@ -107,7 +135,7 @@ export function ElectrodeStatus({ sites, status, compact = false }: ElectrodeSta
             letterSpacing: '0.05em',
             textTransform: 'uppercase',
           }}
-        >ELECTRODE CONTACT</span>
+        >{sectionTitle}</span>
         <motion.span 
           className={`electrode-badge-lovable electrode-badge-lovable--${overall.quality}`}
           initial={{ scale: 0.9, opacity: 0 }}
@@ -133,8 +161,10 @@ export function ElectrodeStatus({ sites, status, compact = false }: ElectrodeSta
         className="electrode-row-lovable"
         style={{
           display: 'flex',
+          flexWrap: rows.length > 4 ? 'wrap' : 'nowrap',
           justifyContent: 'space-between',
           alignItems: 'center',
+          gap: rows.length > 4 ? '10px' : undefined,
         }}
       >
         {rows.map((row) => {
@@ -150,7 +180,8 @@ export function ElectrodeStatus({ sites, status, compact = false }: ElectrodeSta
                 flexDirection: 'column',
                 alignItems: 'center',
                 gap: '6px',
-                flex: 1,
+                flex: rows.length > 4 ? '1 1 36px' : 1,
+                minWidth: rows.length > 4 ? '36px' : undefined,
               }}
             >
               <motion.div 
@@ -207,7 +238,7 @@ export function ElectrodeStatus({ sites, status, compact = false }: ElectrodeSta
               color: 'var(--text-muted)',
               whiteSpace: 'nowrap',
             }}
-          >Contact Quality</span>
+          >{qualityBarLabel}</span>
           <div 
             className="quality-track"
             style={{

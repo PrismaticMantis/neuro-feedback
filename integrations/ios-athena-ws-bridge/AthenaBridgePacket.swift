@@ -35,6 +35,11 @@ public struct AthenaBridgePacket: Encodable {
         nominalSampleRateHz: Double?,
         sampleRateAssumed: Bool
     ) {
+        precondition(
+            labels.count == microvolts.count,
+            "AthenaBridgePacket: labels.count (\(labels.count)) must equal microvolts.count (\(microvolts.count))"
+        )
+        precondition(seq >= 1, "AthenaBridgePacket: seq must be >= 1")
         self.v = 2
         self.k = "eeg"
         self.seq = seq

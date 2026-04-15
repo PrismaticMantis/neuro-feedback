@@ -10,10 +10,11 @@ export type AthenaBridgeEegPacketKind = 'eeg';
 
 /**
  * Normalized EEG frame over the bridge (v2).
- * - `u`: microvolts, same order as `labels`.
+ * - `u`: microvolts, same order as `labels` (any channel count ≥ 1).
  * - `td` / `tdUnit`: device timestamp from LibMuse when available (unit documented per SDK).
  * - `th`: host Unix time in seconds.
- * - `sr` / `srAssumed`: nominal rate from preset/docs when not measured.
+ * - `sr` / `srAssumed`: nominal **source** EEG rate (Hz); receiver blends with inter-arrival for FFT.
+ * Emitter must set `v: 2` explicitly; `seq` ≥ 1; `labels.length === u.length`; `tdUnit` and `srAssumed` required.
  */
 export type AthenaBridgeEegPacketV2 = {
   v: 2;
@@ -134,31 +135,84 @@ export type AthenaBridgePacketNormalizeResult =
   | { ok: true; packet: AthenaBridgeEegPacketV2 }
   | { ok: false; reason: string };
 
-/**
- * Accepts strict v2, legacy v1, and partial v2 (missing `tdUnit` / `srAssumed` / matching `labels`).
- * Use for the live WebSocket path; `isAthenaBridgeEegPacketV2` stays strict for type checks.
- */
-export function tryNormalizeAthenaBridgeEegPacket(raw: unknown): AthenaBridgePacketNormalizeResult {
-  if (raw === null || typeof raw !== 'object') {
-    return { ok: false, reason: 'not_an_object' };
+function parseV2Strict(o: Record<string, unknown>, u: number[]): AthenaBridgePacketNormalizeResult {
+  if (coerceWireVersion(o.v) !== 2) {
+    return { ok: false, reason: 'v2_requires_v_field_2' };
   }
-  const o = raw as Record<string, unknown>;
-  if (o.k !== 'eeg') {
-    return { ok: false, reason: 'k_not_eeg' };
+  const seqRaw = o.seq;
+  if (typeof seqRaw !== 'number' || !Number.isFinite(seqRaw)) {
+    return { ok: false, reason: 'v2_seq_required_number' };
   }
-  let wireV = coerceWireVersion(o.v);
-  if (wireV == null && o.k === 'eeg' && Array.isArray(o.u) && o.u.length > 0) {
-    wireV = 1;
+  const seq = Math.trunc(seqRaw);
+  if (seq < 1) return { ok: false, reason: 'v2_seq_must_be_positive' };
+
+  if (!Array.isArray(o.labels) || o.labels.length !== u.length || u.length === 0) {
+    return { ok: false, reason: 'v2_labels_must_match_u' };
   }
-  if (wireV == null) {
-    return { ok: false, reason: 'v_not_1_or_2' };
+  if (!isStringArray(o.labels as unknown[])) {
+    return { ok: false, reason: 'v2_labels_must_be_strings' };
+  }
+  const labels = [...(o.labels as string[])];
+  for (const lab of labels) {
+    if (lab.trim().length === 0) return { ok: false, reason: 'v2_label_empty' };
   }
 
-  const u = coerceMicrovoltsArray(o.u);
-  if (!u) {
-    return { ok: false, reason: 'u_invalid_or_empty' };
+  if (typeof o.tdUnit !== 'string' || o.tdUnit.trim().length === 0) {
+    return { ok: false, reason: 'v2_tdUnit_required' };
+  }
+  if (typeof o.srAssumed !== 'boolean') {
+    return { ok: false, reason: 'v2_srAssumed_required_boolean' };
   }
 
+  let td: number | null = null;
+  if (o.td != null) {
+    if (typeof o.td === 'number' && Number.isFinite(o.td)) td = o.td;
+    else return { ok: false, reason: 'td_not_finite' };
+  }
+
+  if (typeof o.th !== 'number' || !Number.isFinite(o.th)) {
+    return { ok: false, reason: 'th_missing_or_invalid' };
+  }
+  const th = o.th;
+
+  let sr: number | null = null;
+  if (o.sr != null) {
+    if (typeof o.sr === 'number' && Number.isFinite(o.sr)) sr = o.sr;
+    else return { ok: false, reason: 'sr_not_finite' };
+  }
+
+  let pr: number | undefined;
+  if (o.pr != null) {
+    if (typeof o.pr === 'number' && Number.isFinite(o.pr)) pr = Math.trunc(o.pr);
+    else return { ok: false, reason: 'pr_invalid' };
+  }
+
+  let pn: string | undefined;
+  if (o.pn != null) {
+    if (typeof o.pn === 'string') pn = o.pn;
+    else return { ok: false, reason: 'pn_invalid' };
+  }
+
+  return {
+    ok: true,
+    packet: {
+      v: 2,
+      k: 'eeg',
+      seq,
+      td,
+      tdUnit: o.tdUnit as string,
+      th,
+      pr,
+      pn,
+      labels,
+      u,
+      sr,
+      srAssumed: o.srAssumed as boolean,
+    },
+  };
+}
+
+function parseV1Lenient(o: Record<string, unknown>, u: number[]): AthenaBridgePacketNormalizeResult {
   const seq = coerceSeq(o);
 
   let labels: string[];
@@ -181,13 +235,13 @@ export function tryNormalizeAthenaBridgeEegPacket(raw: unknown): AthenaBridgePac
   let th: number;
   if (typeof o.th === 'number' && Number.isFinite(o.th)) {
     th = o.th;
-  } else if (wireV === 1 && o.th == null) {
+  } else if (o.th == null) {
     th = Date.now() / 1000;
   } else {
     return { ok: false, reason: 'th_missing_or_invalid' };
   }
 
-  const tdUnit = typeof o.tdUnit === 'string' && o.tdUnit.length > 0 ? o.tdUnit : 'unknown';
+  const tdUnit = typeof o.tdUnit === 'string' && o.tdUnit.trim().length > 0 ? o.tdUnit : 'unknown';
   const srAssumed = typeof o.srAssumed === 'boolean' ? o.srAssumed : true;
 
   let sr: number | null = null;
@@ -228,7 +282,35 @@ export function tryNormalizeAthenaBridgeEegPacket(raw: unknown): AthenaBridgePac
 }
 
 /**
- * Safe parse: normalized v2 (legacy v1 / partial v2 tolerated) or null.
+ * **v:2** — strict: explicit version, seq ≥ 1, `labels` must match `u`, `tdUnit` & `srAssumed` required.
+ * **v:1** — legacy lenient path (synthetic labels / defaults); prefer upgrading emitters to v2.
+ */
+export function tryNormalizeAthenaBridgeEegPacket(raw: unknown): AthenaBridgePacketNormalizeResult {
+  if (raw === null || typeof raw !== 'object') {
+    return { ok: false, reason: 'not_an_object' };
+  }
+  const o = raw as Record<string, unknown>;
+  if (o.k !== 'eeg') {
+    return { ok: false, reason: 'k_not_eeg' };
+  }
+  const wireV = coerceWireVersion(o.v);
+  if (wireV == null) {
+    return { ok: false, reason: 'v_required_1_or_2' };
+  }
+
+  const u = coerceMicrovoltsArray(o.u);
+  if (!u) {
+    return { ok: false, reason: 'u_invalid_or_empty' };
+  }
+
+  if (wireV === 2) {
+    return parseV2Strict(o, u);
+  }
+  return parseV1Lenient(o, u);
+}
+
+/**
+ * Safe parse: strict v2 or legacy v1 normalized to v2 shape, or null.
  */
 export function parseAthenaBridgeEegPacketV2(raw: unknown): AthenaBridgeEegPacketV2 | null {
   const r = tryNormalizeAthenaBridgeEegPacket(raw);

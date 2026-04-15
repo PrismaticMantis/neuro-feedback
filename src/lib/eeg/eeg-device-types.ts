@@ -132,6 +132,7 @@ export const ATHENA_DEVICE_CAPABILITIES: EEGDeviceCapabilities = {
 /**
  * Athena iOS SDK → WebSocket relay (`npm run athena-bridge`). Not BLE in-browser.
  * `connectBluetooth()` opens the default relay URL; `connectOSC(wsUrl)` accepts ws/wss.
+ * `eegChannelCount` / `eegChannelLabels` here are **defaults** until the first v2 frame; `AthenaBridgeEEGDevice` exposes runtime values via its `capabilities` getter.
  */
 export const ATHENA_BRIDGE_WS_DEVICE_CAPABILITIES: EEGDeviceCapabilities = {
   deviceKind: 'athena_ws_bridge',
