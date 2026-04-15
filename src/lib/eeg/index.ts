@@ -66,6 +66,7 @@ export type {
 } from './athena-bridge-packet';
 export {
   ATHENA_BRIDGE_SCHEMA_VERSION,
+  interpretDeviceTimeDeltaSeconds,
   isAthenaBridgeEegPacketV1,
   isAthenaBridgeEegPacketV2,
   parseAthenaBridgeEegPacketV2,

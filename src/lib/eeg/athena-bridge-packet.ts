@@ -11,9 +11,12 @@ export type AthenaBridgeEegPacketKind = 'eeg';
 /**
  * Normalized EEG frame over the bridge (v2).
  * - `u`: microvolts, same order as `labels` (any channel count ≥ 1).
- * - `td` / `tdUnit`: device timestamp from LibMuse when available (unit documented per SDK).
- * - `th`: host Unix time in seconds.
- * - `sr` / `srAssumed`: nominal **source** EEG rate (Hz); receiver blends with inter-arrival for FFT.
+ * - `td` / `tdUnit`: device timestamp from LibMuse when available. Use a **known** unit string (e.g. `ms`, `s`)
+ *   so the receiver can derive per-step seconds; `unknown` means NeuroFlo will not use `td` for the time base.
+ * - `th`: host Unix time in seconds (set on the emitter immediately before send — stable inter-packet spacing).
+ * - `sr` / `srAssumed`: **effective rate of `u` rows** (Hz), i.e. one row per packet ⇒ ~send rate after throttle.
+ *   Legacy emitters may still send the headset’s native rate (e.g. 256); the receiver **ignores** that for FFT when
+ *   it is much higher than the measured stream rate.
  * Emitter must set `v: 2` explicitly; `seq` ≥ 1; `labels.length === u.length`; `tdUnit` and `srAssumed` required.
  */
 export type AthenaBridgeEegPacketV2 = {
@@ -134,6 +137,22 @@ function coerceSeq(o: Record<string, unknown>): number {
 export type AthenaBridgePacketNormalizeResult =
   | { ok: true; packet: AthenaBridgeEegPacketV2 }
   | { ok: false; reason: string };
+
+/**
+ * Convert a **consecutive** device timestamp difference `tdNext - tdPrev` to seconds when `tdUnit` is recognized.
+ * Returns `null` for `unknown`/unlisted units so callers fall back to host `th` deltas.
+ */
+export function interpretDeviceTimeDeltaSeconds(tdDelta: number, tdUnit: string): number | null {
+  if (!Number.isFinite(tdDelta)) return null;
+  const u = tdUnit.trim().toLowerCase();
+  if (u === '' || u === 'unknown') return null;
+  if (u === 's' || u === 'sec' || u === 'second' || u === 'seconds') return tdDelta;
+  if (u === 'ms' || u === 'millisecond' || u === 'milliseconds') return tdDelta / 1000;
+  if (u === 'us' || u === 'microsecond' || u === 'microseconds') return tdDelta / 1_000_000;
+  if (u === 'libmuse_seconds') return tdDelta;
+  if (u === 'libmuse_ms') return tdDelta / 1000;
+  return null;
+}
 
 function parseV2Strict(o: Record<string, unknown>, u: number[]): AthenaBridgePacketNormalizeResult {
   if (coerceWireVersion(o.v) !== 2) {

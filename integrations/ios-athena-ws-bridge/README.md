@@ -12,14 +12,14 @@ Single JSON object per **sent** frame. The emitter **throttles** outbound WebSoc
 | `k` | `"eeg"` | Message kind |
 | `seq` | `number` | Monotonic send index (1-based) after connect; increments only when a packet is actually transmitted |
 | `td` | `number?` | Device/SDK packet timestamp if available |
-| `tdUnit` | `string` | How to read `td` (use `"unknown"` until LibMuse units are verified) |
+| `tdUnit` | `string` | How to read `td`: use `unknown` if unsure; NeuroFlo can use `s`, `ms`, `us`, `libmuse_seconds`, `libmuse_ms` for stream timing |
 | `th` | `number` | Host Unix time in seconds |
 | `pr` | `number?` | Raw `packetType` enum value |
 | `pn` | `string?` | Packet type name string |
 | `labels` | `[string]` | Channel names matching `u` order (e.g. `["TP9","AF7","AF8","TP10"]`) |
 | `u` | `[number]` | EEG microvolts per channel |
-| `sr` | `number?` | Nominal sample rate (Hz) when set |
-| `srAssumed` | `boolean` | `true` when `sr` is from preset/docs, not measured |
+| `sr` | `number?` | Effective stream rate: one `u` row per packet (Hz). iOS emitter measures send spacing. |
+| `srAssumed` | `boolean` | `true` during short warmup; then `false` when `sr` is from measured spacing |
 
 TypeScript types: `src/lib/eeg/athena-bridge-packet.ts`. NeuroFlo accepts **v:2** strictly (explicit `v`, `seq` ≥ 1, `labels.length === u.length`, `tdUnit`, `srAssumed`, finite `th`) or legacy **v:1** with lenient defaults. Prefer **v2** from iOS; use **`sendQuadEeg`** for four Muse channels with correct labels.
 
@@ -55,6 +55,10 @@ The bridge **`emitter.send`** path does not log on successful sends; WebSocket o
 
 Replace `YOUR_VIEW_CONTROLLER` / listener names in comments with your actual types. The sample’s graph code stays; you only **add** sends alongside existing handlers.
 
+## Breaking changes (timing pass)
+
+- `send` / `sendQuadEeg` no longer take `nominalSampleRateHz` / `sampleRateAssumed`. Wire `sr` is measured from actual send spacing. Update any calls that still pass the old arguments.
+
 ## Reversal
 
 Remove the three Swift bridge files and all `AthenaWebSocketEmitter` / `AthenaBridgeDebugLogging` references from the Xcode project.
@@ -81,12 +85,10 @@ for i in 0..<n {
 }
 athenaBridge.sendQuadEeg(
     td: packet.timestamp(), // match SDK
-    tdUnit: "unknown", // set to documented LibMuse unit when known
+    tdUnit: "unknown", // or e.g. "ms" / "s" when verified — improves NeuroFlo time base vs host `th` alone
     packetTypeRaw: packet.packetType().rawValue,
     packetTypeName: String(describing: packet.packetType()),
-    microvolts: uV,
-    nominalSampleRateHz: 256,
-    sampleRateAssumed: true
+    microvolts: uV
 )
 // Non–four-channel: use `send(..., labels: yourLabels, microvolts: uV, ...)` with labels.count == uV.count.
 // Optional: at most ~1 line / 2s — do not NSLog every packet here.

@@ -20,11 +20,16 @@ public final class AthenaWebSocketEmitter: NSObject, URLSessionWebSocketDelegate
 
     private var seqCounter: Int = 0
     private var lastSendAt: CFAbsoluteTime = 0
+    /// EMA of seconds between **accepted** sends (matches NeuroFlo’s one-row-per-packet stream rate).
+    private var emaSendDeltaSec: TimeInterval = 1.0 / 50.0
+    private var completedSends: Int = 0
 
     public func connect(url: URL) {
         disconnect()
         seqCounter = 0
         lastSendAt = 0
+        emaSendDeltaSec = 1.0 / 50.0
+        completedSends = 0
         let t = session.webSocketTask(with: url)
         task = t
         t.resume()
@@ -56,9 +61,7 @@ public final class AthenaWebSocketEmitter: NSObject, URLSessionWebSocketDelegate
         tdUnit: String,
         packetTypeRaw: Int?,
         packetTypeName: String?,
-        microvolts: [Double],
-        nominalSampleRateHz: Double?,
-        sampleRateAssumed: Bool
+        microvolts: [Double]
     ) {
         precondition(
             microvolts.count == Self.defaultQuadLabels.count,
@@ -70,30 +73,39 @@ public final class AthenaWebSocketEmitter: NSObject, URLSessionWebSocketDelegate
             packetTypeRaw: packetTypeRaw,
             packetTypeName: packetTypeName,
             labels: Self.defaultQuadLabels,
-            microvolts: microvolts,
-            nominalSampleRateHz: nominalSampleRateHz,
-            sampleRateAssumed: sampleRateAssumed
+            microvolts: microvolts
         )
     }
 
     /// Sends one v2 packet if throttle allows; otherwise drops silently (spam reduction).
+    /// `sr` / `srAssumed` on the wire are derived from measured send spacing (one `u` row per packet).
     public func send(
         td: Double?,
         tdUnit: String,
         packetTypeRaw: Int?,
         packetTypeName: String?,
         labels: [String],
-        microvolts: [Double],
-        nominalSampleRateHz: Double?,
-        sampleRateAssumed: Bool
+        microvolts: [Double]
     ) {
         guard let t = task else { return }
         let now = CFAbsoluteTimeGetCurrent()
         if now - lastSendAt < minSendInterval {
             return
         }
+        let prevSendAt = lastSendAt
+        if prevSendAt > 0 {
+            let rawDt = now - prevSendAt
+            let clamped = min(max(rawDt, 1.0 / 500.0), 0.35)
+            emaSendDeltaSec = 0.82 * emaSendDeltaSec + 0.18 * clamped
+        }
         lastSendAt = now
         seqCounter += 1
+        completedSends += 1
+        let measuredHz = 1.0 / max(emaSendDeltaSec, 1e-6)
+        let effectiveSr = min(120, max(15, measuredHz))
+        // Measured bridge Hz for NeuroFlo FFT; first few frames still flagged srAssumed for the receiver.
+        let srOut = effectiveSr
+        let assumedOut = completedSends < 4
         let packet = AthenaBridgePacket(
             seq: seqCounter,
             td: td,
@@ -102,8 +114,8 @@ public final class AthenaWebSocketEmitter: NSObject, URLSessionWebSocketDelegate
             packetTypeName: packetTypeName,
             labels: labels,
             microvolts: microvolts,
-            nominalSampleRateHz: nominalSampleRateHz,
-            sampleRateAssumed: sampleRateAssumed
+            nominalSampleRateHz: srOut,
+            sampleRateAssumed: assumedOut
         )
         do {
             let s = try packet.jsonString()

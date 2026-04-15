@@ -13,7 +13,10 @@ import { FFTProcessor } from '../fft-processor';
 import type { EEGDevice } from './eeg-device';
 import { DEBUG_ATHENA_BANDS } from './eeg-feature-flags';
 import type { AthenaBridgeEegPacketV2 } from './athena-bridge-packet';
-import { tryNormalizeAthenaBridgeEegPacket } from './athena-bridge-packet';
+import {
+  interpretDeviceTimeDeltaSeconds,
+  tryNormalizeAthenaBridgeEegPacket,
+} from './athena-bridge-packet';
 import {
   ATHENA_BRIDGE_WS_DEVICE_CAPABILITIES,
   type EEGConnectionStateDetail,
@@ -96,7 +99,7 @@ export class AthenaBridgeEEGDevice implements EEGDevice {
       ...ATHENA_BRIDGE_WS_DEVICE_CAPABILITIES,
       eegChannelCount: this._runtimeChannelCount,
       eegChannelLabels: this._runtimeLabels,
-      sampleRateHz: this._lastNominalSr ?? ATHENA_BRIDGE_WS_DEVICE_CAPABILITIES.sampleRateHz,
+      sampleRateHz: this._lastNominalSr ?? this.lastFftRateHz,
     };
   }
 
@@ -120,8 +123,13 @@ export class AthenaBridgeEEGDevice implements EEGDevice {
   private contactVar: number[] = [];
   private contactHorseshoe: number[] = [];
   private contactSampleCount: number[] = [];
-  private lastRxForRateMs = 0;
-  private emaDtMs = 20;
+  /** Wall clock at last accepted packet (fallback when `th`/`td` unusable). */
+  private lastRecvWallMs = 0;
+  /** Sender `th` from previous packet (seconds). */
+  private lastStreamThSec: number | null = null;
+  private lastStreamTd: number | null = null;
+  /** EMA of seconds between consecutive rows of `u` (one packet = one row). */
+  private emaStreamDtSec = 1 / 50;
   private lastFftRateHz = 50;
 
   /** Last parse failure reason from `tryNormalizeAthenaBridgeEegPacket` (debug). */
@@ -270,8 +278,10 @@ export class AthenaBridgeEEGDevice implements EEGDevice {
     this._lastNominalSr = null;
     this.eegBuffers = this.allocBuffers(this._runtimeChannelCount);
     this.resetContactArrays(this._runtimeChannelCount);
-    this.lastRxForRateMs = 0;
-    this.emaDtMs = 20;
+    this.lastRecvWallMs = 0;
+    this.lastStreamThSec = null;
+    this.lastStreamTd = null;
+    this.emaStreamDtSec = 1 / 50;
     this.lastFftRateHz = 50;
     this.fft = new FFTProcessor({ fftSize: BRIDGE_WIN, sampleRateHz: 50 });
   }
@@ -343,21 +353,57 @@ export class AthenaBridgeEEGDevice implements EEGDevice {
     this._state.connectionQuality = cq;
   }
 
-  /** Blends declared `sr` with measured inter-arrival; trusts `sr` more when `srAssumed` is false. */
-  private retuneFftFromPacket(nowMs: number, sr: number | null, srAssumed: boolean): void {
-    if (this.lastRxForRateMs > 0) {
-      const dt = Math.max(5, Math.min(250, nowMs - this.lastRxForRateMs));
-      this.emaDtMs = 0.92 * this.emaDtMs + 0.08 * dt;
-    }
-    this.lastRxForRateMs = nowMs;
-    const arrivalHz = 1000 / Math.max(this.emaDtMs, 1);
-    let targetHz = Math.min(120, Math.max(15, arrivalHz));
+  /**
+   * FFT bin mapping needs the **stream** sample rate (one multichannel sample per packet), not the headset’s
+   * native Hz. Prefer `td` step when `tdUnit` is known, else Δ`th` (emitter host clock at send), else receive jitter.
+   * Declared `sr` is blended only when it matches measured stream Hz (legacy 256 Hz is ignored for FFT).
+   */
+  private retuneFftFromPacket(pkt: AthenaBridgeEegPacketV2, recvNowMs: number): void {
+    let dtSec: number | null = null;
 
-    if (sr != null && sr > 0 && Number.isFinite(sr)) {
-      const srUse = Math.min(500, Math.max(15, sr));
-      this._lastNominalSr = srUse;
-      const wNom = srAssumed ? 0.45 : 0.78;
-      targetHz = wNom * srUse + (1 - wNom) * arrivalHz;
+    if (pkt.td != null && this.lastStreamTd != null) {
+      const step = interpretDeviceTimeDeltaSeconds(pkt.td - this.lastStreamTd, pkt.tdUnit);
+      if (step != null && step > 1e-4 && step < 0.45) {
+        dtSec = step;
+      }
+    }
+
+    if (dtSec == null && this.lastStreamThSec != null) {
+      const hostStep = pkt.th - this.lastStreamThSec;
+      if (hostStep > 1e-4 && hostStep < 0.45) {
+        dtSec = hostStep;
+      }
+    }
+
+    if (dtSec == null && this.lastRecvWallMs > 0) {
+      const recvStep = (recvNowMs - this.lastRecvWallMs) / 1000;
+      if (recvStep > 1e-4 && recvStep < 0.45) {
+        dtSec = recvStep;
+      }
+    }
+
+    if (dtSec != null) {
+      this.emaStreamDtSec = 0.85 * this.emaStreamDtSec + 0.15 * dtSec;
+    }
+
+    this.lastStreamThSec = pkt.th;
+    this.lastStreamTd = pkt.td;
+    this.lastRecvWallMs = recvNowMs;
+
+    let streamHz = 1 / Math.max(this.emaStreamDtSec, 1e-6);
+    streamHz = Math.min(120, Math.max(15, streamHz));
+
+    let targetHz = streamHz;
+
+    if (pkt.sr != null && pkt.sr > 0 && Number.isFinite(pkt.sr)) {
+      const srDecl = Math.min(500, Math.max(15, pkt.sr));
+      const ratio = srDecl / streamHz;
+      const agrees = ratio >= 0.62 && ratio <= 1.45;
+      if (agrees) {
+        this._lastNominalSr = srDecl;
+        const w = pkt.srAssumed ? 0.12 : 0.2;
+        targetHz = (1 - w) * streamHz + w * srDecl;
+      }
     }
 
     const clamped = Math.min(120, Math.max(15, targetHz));
@@ -370,7 +416,7 @@ export class AthenaBridgeEEGDevice implements EEGDevice {
   private ingestBridgePacket(pkt: AthenaBridgeEegPacketV2, nowMs: number): void {
     const n = pkt.u.length;
     this.ensureChannelLayout(n, pkt.labels);
-    this.retuneFftFromPacket(nowMs, pkt.sr, pkt.srAssumed);
+    this.retuneFftFromPacket(pkt, nowMs);
 
     for (let ch = 0; ch < n; ch++) {
       const v = pkt.u[ch];

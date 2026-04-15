@@ -3,8 +3,10 @@
  * Logic mirrors `MuseHandler.processBluetoothFFT` without importing muse-handler (Muse 2 path unchanged).
  *
  * **Real:** FFT, Hann window, high-pass, Mind-Monitor-style dB, relative band ratios,1/f weighting.
- * **Approximate:** effective sample rate comes from inter-arrival times (~50 Hz after iOS throttle),
- *   not the headset’s native 256 Hz; absolute frequency labels are therefore fuzzy vs Muse 2 BLE.
+ * **Approximate:** FFT `sampleRateHz` tracks the **bridge stream** (one sample per packet), derived from
+ *   `td` deltas when `tdUnit` is known, else emitter `th` spacing, else receive time. This is not the headset’s
+ *   native 256 Hz unless you send multi-sample frames (not supported here). Band edges are therefore approximate
+ *   vs Muse 2 BLE.
  */
 
 import type { BrainwaveBands, BrainwaveBandsDb } from '../../types';

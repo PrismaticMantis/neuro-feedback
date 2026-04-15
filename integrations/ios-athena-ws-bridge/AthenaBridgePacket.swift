@@ -19,9 +19,9 @@ public struct AthenaBridgePacket: Encodable {
     public let labels: [String]
     /// Microvolts per channel, same order as `labels`.
     public let u: [Double]
-    /// Nominal EEG rate (Hz) when known; nil if not set.
+    /// Effective rate of `u` rows on this bridge (Hz) — one row per packet, typically ~throttle rate (~50 Hz).
     public let sr: Double?
-    /// True when `sr` is from preset/docs, not measured.
+    /// `true` during brief warmup before measured send spacing is stable.
     public let srAssumed: Bool
 
     public init(
