@@ -21,7 +21,7 @@ Single JSON object per **sent** frame. The emitter **throttles** outbound WebSoc
 | `sr` | `number?` | Nominal sample rate (Hz) when set |
 | `srAssumed` | `boolean` | `true` when `sr` is from preset/docs, not measured |
 
-TypeScript types: `src/lib/eeg/athena-bridge-packet.ts`.
+TypeScript types: `src/lib/eeg/athena-bridge-packet.ts`. The browser also **normalizes** legacy v1 or partial v2 (missing `tdUnit` / `srAssumed` / `labels`); emit full v2 from Swift when possible.
 
 ## Relay order (important)
 

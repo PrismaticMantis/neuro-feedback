@@ -1,11 +1,16 @@
 /**
  * EEGDevice implementation for the Athena iOS → WebSocket relay (v2 packets).
  * Does not use muse-js or muse-handler. Reversible PoC: remove flag + this file to drop the path.
+ *
+ * Signal path: each v2 frame appends one sample per channel → ring buffers → same FFT/band math as Muse BLE
+ * (`athena-bridge-signal-pipeline`). Effective sample rate is inferred from packet spacing (~50 Hz typical).
  */
 
 import type { BrainwaveBandsDb, ConnectionHealthState, MuseState } from '../../types';
+import { FFTProcessor } from '../fft-processor';
 import type { EEGDevice } from './eeg-device';
-import { parseAthenaBridgeEegPacketV2 } from './athena-bridge-packet';
+import { DEBUG_ATHENA_BANDS } from './eeg-feature-flags';
+import { tryNormalizeAthenaBridgeEegPacket } from './athena-bridge-packet';
 import {
   ATHENA_BRIDGE_WS_DEVICE_CAPABILITIES,
   type EEGConnectionStateDetail,
@@ -14,10 +19,13 @@ import {
   type PPGDiagnostics,
   type SessionHeartSummary,
 } from './eeg-device-types';
+import { deriveBridgeIndices, snapshotBandsFromBridgeBuffers } from './athena-bridge-signal-pipeline';
 
 const STALL_MS = 4000;
 const ZERO_BANDS = { delta: 0, theta: 0, alpha: 0, beta: 0, gamma: 0 };
-const ZERO_BANDS_DB: BrainwaveBandsDb = { ...ZERO_BANDS };
+
+const BRIDGE_CH = ATHENA_BRIDGE_WS_DEVICE_CAPABILITIES.eegChannelCount;
+const BRIDGE_WIN = ATHENA_BRIDGE_WS_DEVICE_CAPABILITIES.fftSize;
 
 const EMPTY_PPG: HeartRateMetrics = { bpm: null, confidence: 0, lastBeatMs: null };
 const EMPTY_SESSION_HR: SessionHeartSummary = { avgHR: null, avgHRV: null };
@@ -60,15 +68,46 @@ function baseState(connected: boolean, deviceName: string | null, health: Connec
 export class AthenaBridgeEEGDevice implements EEGDevice {
   readonly capabilities: EEGDeviceCapabilities = ATHENA_BRIDGE_WS_DEVICE_CAPABILITIES;
 
+  /** Same EMA as MuseHandler for comparable UI smoothing. */
+  private readonly smoothingFactor = 0.7;
+
   private ws: WebSocket | null = null;
   private _connected = false;
   private latest: AthenaBridgeLatestSample | null = null;
   private lastWsError: string | null = null;
   private _state: MuseState = baseState(false, null, 'disconnected');
 
+  private fft: FFTProcessor = new FFTProcessor({
+    fftSize: BRIDGE_WIN,
+    sampleRateHz: 50,
+  });
+  private eegBuffers: number[][] = Array.from({ length: BRIDGE_CH }, () => []);
+  private lastRxForRateMs = 0;
+  private emaDtMs = 20;
+  private lastFftRateHz = 50;
+
+  /** Last parse failure reason from `tryNormalizeAthenaBridgeEegPacket` (debug). */
+  private lastRxRejectReason: string | null = null;
+  private lastRxAcceptSeq: number | null = null;
+  private bridgeAcceptedTotal = 0;
+  private lastRejectLogMs = 0;
+
   /** Last validated v2 frame (microvolts + metadata). */
   getLatestBridgeSample(): AthenaBridgeLatestSample | null {
     return this.latest;
+  }
+
+  /** RX debug for Session Setup strip (`VITE_DEBUG_ATHENA_BANDS`). */
+  getAthenaBridgeRxDebug(): {
+    lastReject: string | null;
+    lastAcceptSeq: number | null;
+    acceptedTotal: number;
+  } {
+    return {
+      lastReject: this.lastRxRejectReason,
+      lastAcceptSeq: this.lastRxAcceptSeq,
+      acceptedTotal: this.bridgeAcceptedTotal,
+    };
   }
 
   isBluetoothAvailable(): boolean {
@@ -98,6 +137,10 @@ export class AthenaBridgeEEGDevice implements EEGDevice {
     this._connected = false;
     this.latest = null;
     this.lastWsError = null;
+    this.lastRxRejectReason = null;
+    this.lastRxAcceptSeq = null;
+    this.bridgeAcceptedTotal = 0;
+    this.resetSignalPipeline();
     this._state = baseState(false, null, 'disconnected');
   }
 
@@ -174,7 +217,57 @@ export class AthenaBridgeEEGDevice implements EEGDevice {
   }
 
   get bandsDb(): BrainwaveBandsDb {
-    return ZERO_BANDS_DB;
+    return { ...this._state.bandsDbSmooth };
+  }
+
+  private resetSignalPipeline(): void {
+    this.eegBuffers = Array.from({ length: BRIDGE_CH }, () => []);
+    this.lastRxForRateMs = 0;
+    this.emaDtMs = 20;
+    this.lastFftRateHz = 50;
+    this.fft = new FFTProcessor({ fftSize: BRIDGE_WIN, sampleRateHz: 50 });
+  }
+
+  private retuneFftIfNeeded(nowMs: number): void {
+    if (this.lastRxForRateMs > 0) {
+      const dt = Math.max(5, Math.min(250, nowMs - this.lastRxForRateMs));
+      this.emaDtMs = 0.92 * this.emaDtMs + 0.08 * dt;
+    }
+    this.lastRxForRateMs = nowMs;
+    const effHz = 1000 / Math.max(this.emaDtMs, 1);
+    const clamped = Math.min(100, Math.max(20, effHz));
+    if (Math.abs(clamped - this.lastFftRateHz) > 3) {
+      this.lastFftRateHz = clamped;
+      this.fft = new FFTProcessor({ fftSize: BRIDGE_WIN, sampleRateHz: clamped });
+    }
+  }
+
+  private ingestBridgeSample(microvolts: readonly number[], nowMs: number): void {
+    this.retuneFftIfNeeded(nowMs);
+    for (let ch = 0; ch < BRIDGE_CH; ch++) {
+      const v = ch < microvolts.length ? microvolts[ch] : 0;
+      this.eegBuffers[ch].push(v);
+      while (this.eegBuffers[ch].length > BRIDGE_WIN) {
+        this.eegBuffers[ch].shift();
+      }
+    }
+    const snap = snapshotBandsFromBridgeBuffers(this.eegBuffers, this.fft, BRIDGE_CH, BRIDGE_WIN);
+    if (!snap) return;
+
+    const sf = this.smoothingFactor;
+    const bands = ['delta', 'theta', 'alpha', 'beta', 'gamma'] as const;
+    for (const b of bands) {
+      const v = Math.max(0, Math.min(1, snap.bands[b]));
+      this._state.bands[b] = v;
+      this._state.bandsSmooth[b] = this._state.bandsSmooth[b] * sf + v * (1 - sf);
+      const db = snap.bandsDb[b];
+      this._state.bandsDb[b] = db;
+      this._state.bandsDbSmooth[b] = this._state.bandsDbSmooth[b] * sf + db * (1 - sf);
+    }
+    const idx = deriveBridgeIndices(this._state.bandsSmooth);
+    this._state.relaxationIndex = idx.relaxationIndex;
+    this._state.meditationIndex = idx.meditationIndex;
+    this._state.focusIndex = idx.focusIndex;
   }
 
   private connectWs(url: string): Promise<void> {
@@ -199,6 +292,7 @@ export class AthenaBridgeEEGDevice implements EEGDevice {
         if (settled) return;
         settled = true;
         this._connected = true;
+        this.resetSignalPipeline();
         this._state = baseState(true, 'Athena WebSocket bridge', 'healthy');
         resolve();
       };
@@ -211,6 +305,7 @@ export class AthenaBridgeEEGDevice implements EEGDevice {
         this._connected = false;
         this.ws = null;
         if (!settled) finishErr('WebSocket closed before open');
+        this.resetSignalPipeline();
         this._state = baseState(false, null, 'disconnected');
       };
 
@@ -222,8 +317,20 @@ export class AthenaBridgeEEGDevice implements EEGDevice {
         } catch {
           return;
         }
-        const pkt = parseAthenaBridgeEegPacketV2(raw);
-        if (!pkt) return;
+        const normalized = tryNormalizeAthenaBridgeEegPacket(raw);
+        if (!normalized.ok) {
+          this.lastRxRejectReason = normalized.reason;
+          const t = Date.now();
+          if (DEBUG_ATHENA_BANDS && t - this.lastRejectLogMs >= 1500) {
+            this.lastRejectLogMs = t;
+            console.warn('[AthenaBridge] packet rejected:', normalized.reason, raw);
+          }
+          return;
+        }
+        const pkt = normalized.packet;
+        this.lastRxRejectReason = null;
+        this.lastRxAcceptSeq = pkt.seq;
+        this.bridgeAcceptedTotal += 1;
 
         const now = Date.now();
         this.latest = {
@@ -234,6 +341,7 @@ export class AthenaBridgeEEGDevice implements EEGDevice {
           hostTimeSec: pkt.th,
           receivedAtMs: now,
         };
+        this.ingestBridgeSample(pkt.u, now);
         this._state = {
           ...this._state,
           connected: true,

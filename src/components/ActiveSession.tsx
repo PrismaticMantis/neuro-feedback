@@ -10,6 +10,8 @@ import { CoherenceGraph } from './CoherenceGraph';
 import { ElectrodeStatus } from './ElectrodeStatus';
 import { DEBUG_SESSION_TELEMETRY } from '../lib/feature-flags';
 import { useEegDevice } from '../lib/eeg/EegDeviceContext';
+import { isAthenaBridgeEEGDevice } from '../lib/eeg/athena-bridge-eeg-device';
+import { DEBUG_ATHENA_BANDS } from '../lib/eeg/eeg-feature-flags';
 import { getJourneys, getLastJourneyId } from '../lib/session-storage';
 import { useSession } from '../hooks/useSession';
 import type {
@@ -52,7 +54,7 @@ export function ActiveSession({
   touching,
   electrodeStatus,
   electrodeSites,
-  bands: _bands, // Keep for potential future use
+  bands: _bands,
   bandsDb,
   batteryLevel,
   connectionHealthState = 'healthy', // Default to healthy for backward compat
@@ -60,7 +62,6 @@ export function ActiveSession({
   onEntrainmentToggle,
   onEndSession,
 }: ActiveSessionProps) {
-  void _bands; // Silence unused warning
   const eegDevice = useEegDevice();
   
   // Debug: Track update timestamps
@@ -260,6 +261,12 @@ export function ActiveSession({
             <div>raw horseshoe: [{eegDevice.getElectrodeQuality().join(', ')}]</div>
             <div>electrodeStatus: {JSON.stringify(electrodeStatus)}</div>
             <div>bandsDb: δ={bandsDb.delta.toFixed(0)} θ={bandsDb.theta.toFixed(0)} α={bandsDb.alpha.toFixed(0)} β={bandsDb.beta.toFixed(0)} γ={bandsDb.gamma.toFixed(0)}</div>
+            {DEBUG_ATHENA_BANDS && isAthenaBridgeEEGDevice(eegDevice) && (
+              <div>
+                Athena bridge seq: {eegDevice.getLatestBridgeSample()?.seq ?? '—'} · bandsSmooth α=
+                {_bands.alpha.toFixed(3)}
+              </div>
+            )}
             <div>coherenceHistory: {coherenceHistory.length} points</div>
             <div>lastHistoryAppend: {debugInfo.lastHistoryAppend > 5000 ? 'stale' : `${Math.round(debugInfo.lastHistoryAppend)}ms ago`}</div>
             <div>coherenceZone: {coherenceZone}</div>

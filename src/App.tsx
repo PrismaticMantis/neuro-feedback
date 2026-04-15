@@ -18,6 +18,8 @@ import { DesignShowcase } from './components/DesignShowcase';
 import { MuseBleDebugPanel } from './components/MuseBleDebugPanel';
 import { audioEngine } from './lib/audio-engine';
 import { useEegDevice } from './lib/eeg/EegDeviceContext';
+import { DEBUG_ATHENA_BANDS } from './lib/eeg/eeg-feature-flags';
+import { isAthenaBridgeEEGDevice } from './lib/eeg/athena-bridge-eeg-device';
 import { movementDetector, DEBUG_MOVEMENT } from './lib/movement-detector';
 import { calculateCalmScore, calculateCreativeFlowScore } from './lib/flow-state';
 import { deriveRecoveryPoints } from './lib/summary-pdf';
@@ -50,6 +52,15 @@ function sensitivityToTimeThreshold(sensitivity: number): number {
 function App() {
   const eegDevice = useEegDevice();
   const muse = useMuse();
+  const athenaBandDebug =
+    DEBUG_ATHENA_BANDS && isAthenaBridgeEEGDevice(eegDevice)
+      ? {
+          bandsSmooth: muse.state.bandsSmooth,
+          bandsDbSmooth: muse.state.bandsDbSmooth,
+          bridgeSeq: eegDevice.getLatestBridgeSample()?.seq ?? null,
+          rx: eegDevice.getAthenaBridgeRxDebug(),
+        }
+      : undefined;
   const audio = useAudio();
   const session = useSession();
   const navigate = useNavigate();
@@ -251,6 +262,7 @@ function App() {
               onCreateUser={session.createUser}
               onSelectUser={session.selectUser}
               onStartSession={handleStartSession}
+              athenaBandDebug={athenaBandDebug}
             />
           }
         />

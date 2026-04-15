@@ -20,6 +20,8 @@ import type {
   ElectrodeStatus as ElectrodeStatusType,
   ElectrodeSiteContact,
   ThresholdSettings,
+  BrainwaveBands,
+  BrainwaveBandsDb,
 } from '../types';
 
 interface SessionSetupProps {
@@ -57,6 +59,14 @@ interface SessionSetupProps {
 
   // Session
   onStartSession: () => void;
+
+  /** When set (`VITE_DEBUG_ATHENA_BANDS` + Athena device), shows live band readout on Setup. */
+  athenaBandDebug?: {
+    bandsSmooth: BrainwaveBands;
+    bandsDbSmooth: BrainwaveBandsDb;
+    bridgeSeq: number | null;
+    rx: { lastReject: string | null; lastAcceptSeq: number | null; acceptedTotal: number };
+  };
 }
 
 export function SessionSetup({
@@ -84,6 +94,7 @@ export function SessionSetup({
   onCreateUser,
   onSelectUser,
   onStartSession,
+  athenaBandDebug,
 }: SessionSetupProps) {
   const eegDevice = useEegDevice();
   const [newUserName, setNewUserName] = useState('');
@@ -184,6 +195,41 @@ export function SessionSetup({
       }}
     >
       <ElectrodeStatus sites={electrodeSites} status={electrodeStatus} />
+      {athenaBandDebug && (
+        <div
+          style={{
+            marginTop: '14px',
+            padding: '10px 12px',
+            borderRadius: '8px',
+            background: 'hsl(200 40% 12% / 0.55)',
+            border: '1px solid hsl(200 30% 28% / 0.5)',
+            fontFamily: 'ui-monospace, monospace',
+            fontSize: '11px',
+            lineHeight: 1.5,
+            color: 'var(--text-muted)',
+          }}
+        >
+          <div style={{ fontWeight: 600, color: 'hsl(190 70% 72%)', marginBottom: '6px' }}>
+            Athena bridge · band debug
+          </div>
+          <div>seq {athenaBandDebug.bridgeSeq ?? '—'} · accepted {athenaBandDebug.rx.acceptedTotal}</div>
+          {athenaBandDebug.rx.lastReject && (
+            <div style={{ color: 'hsl(0 70% 65%)', marginTop: '4px' }}>
+              reject: {athenaBandDebug.rx.lastReject}
+            </div>
+          )}
+          <div>
+            rel (smooth) δ={athenaBandDebug.bandsSmooth.delta.toFixed(3)} θ={athenaBandDebug.bandsSmooth.theta.toFixed(3)}{' '}
+            α={athenaBandDebug.bandsSmooth.alpha.toFixed(3)} β={athenaBandDebug.bandsSmooth.beta.toFixed(3)} γ=
+            {athenaBandDebug.bandsSmooth.gamma.toFixed(3)}
+          </div>
+          <div>
+            dB (smooth) δ={athenaBandDebug.bandsDbSmooth.delta.toFixed(0)} θ={athenaBandDebug.bandsDbSmooth.theta.toFixed(0)}{' '}
+            α={athenaBandDebug.bandsDbSmooth.alpha.toFixed(0)} β={athenaBandDebug.bandsDbSmooth.beta.toFixed(0)} γ=
+            {athenaBandDebug.bandsDbSmooth.gamma.toFixed(0)}
+          </div>
+        </div>
+      )}
       {batteryLevel >= 0 && (
         <div 
           className={`battery-display ${batteryLevel <= 20 ? 'low' : ''}`}

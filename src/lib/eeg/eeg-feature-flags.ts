@@ -16,3 +16,6 @@ export const DEBUG_PPG = false;
  */
 export const ENABLE_ATHENA_BRIDGE_EEG_DEVICE =
   import.meta.env.VITE_ENABLE_ATHENA_BRIDGE_EEG_DEVICE === 'true';
+
+/** Console + Session Setup strip for Athena FFT/band verification. Does not affect Muse 2. */
+export const DEBUG_ATHENA_BANDS = import.meta.env.VITE_DEBUG_ATHENA_BANDS === 'true';

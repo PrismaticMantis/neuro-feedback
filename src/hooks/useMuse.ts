@@ -9,6 +9,8 @@ import {
 } from '../lib/eeg/contact-quality';
 import { CoherenceDetector, calculateCoherence, getCoherenceZone } from '../lib/flow-state';
 import { DEBUG_ELECTRODES } from '../lib/feature-flags';
+import { DEBUG_ATHENA_BANDS } from '../lib/eeg/eeg-feature-flags';
+import { isAthenaBridgeEEGDevice } from '../lib/eeg/athena-bridge-eeg-device';
 import type {
   MuseState,
   CoherenceStatus,
@@ -89,6 +91,7 @@ export function useMuse(): UseMuseReturn {
   const lastElectrodeUpdate = useRef<number>(0);
   const lastStateUpdate = useRef<number>(0);
   const lastDebugLog = useRef<number>(0);
+  const lastAthenaBandLog = useRef<number>(0);
   const wasConnectedRef = useRef<boolean>(false);
 
   // Electrode contact: horseshoe integers + channel labels from device capabilities
@@ -148,6 +151,16 @@ export function useMuse(): UseMuseReturn {
             bandsDb: { ...museState.bandsDb },
             bandsDbSmooth: { ...museState.bandsDbSmooth },
           });
+
+          if (
+            DEBUG_ATHENA_BANDS &&
+            isAthenaBridgeEEGDevice(eegDevice) &&
+            tNow - lastAthenaBandLog.current >= 2000
+          ) {
+            lastAthenaBandLog.current = tNow;
+            const seq = eegDevice.getLatestBridgeSample()?.seq;
+            console.log('[AthenaBands] bridge seq', seq, 'bandsSmooth', museState.bandsSmooth, 'bandsDbSmooth', museState.bandsDbSmooth);
+          }
         }
 
         // Calculate motion level from accelerometer

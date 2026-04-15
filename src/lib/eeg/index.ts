@@ -56,6 +56,7 @@ export {
   ENABLE_PPG_MODULATION,
   DEBUG_PPG,
   ENABLE_ATHENA_BRIDGE_EEG_DEVICE,
+  DEBUG_ATHENA_BANDS,
 } from './eeg-feature-flags';
 
 export type {
@@ -68,7 +69,9 @@ export {
   isAthenaBridgeEegPacketV1,
   isAthenaBridgeEegPacketV2,
   parseAthenaBridgeEegPacketV2,
+  tryNormalizeAthenaBridgeEegPacket,
 } from './athena-bridge-packet';
+export type { AthenaBridgePacketNormalizeResult } from './athena-bridge-packet';
 export {
   AthenaBridgeEEGDevice,
   athenaBridgeEegDevice,
