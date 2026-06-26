@@ -31,9 +31,17 @@ export function snapshotBandsFromBridgeBuffers(
   eegBuffers: number[][],
   fft: FFTProcessor,
   channelCount: number,
-  windowSize: number
+  windowSize: number,
+  channelIndices?: readonly number[]
 ): AthenaBridgeFftSnapshot | null {
-  for (let ch = 0; ch < channelCount; ch++) {
+  const selectedChannels =
+    channelIndices && channelIndices.length > 0
+      ? channelIndices.filter((ch) => ch >= 0 && ch < channelCount)
+      : Array.from({ length: channelCount }, (_, ch) => ch);
+
+  if (selectedChannels.length === 0) return null;
+
+  for (const ch of selectedChannels) {
     if ((eegBuffers[ch]?.length ?? 0) < windowSize) return null;
   }
 
@@ -41,7 +49,7 @@ export function snapshotBandsFromBridgeBuffers(
   const bandPowersSum = { delta: 0, theta: 0, alpha: 0, beta: 0, gamma: 0 };
   let validChannels = 0;
 
-  for (let ch = 0; ch < channelCount; ch++) {
+  for (const ch of selectedChannels) {
     const buf = eegBuffers[ch];
     if (buf.length < windowSize) continue;
 

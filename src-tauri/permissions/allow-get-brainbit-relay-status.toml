@@ -1,0 +1,4 @@
+[[permission]]
+identifier = "allow-get-brainbit-relay-status"
+description = "Allows querying BrainBit relay sidecar status."
+commands.allow = ["get_brainbit_relay_status"]

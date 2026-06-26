@@ -8,9 +8,26 @@
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "athena-bridge": "node scripts/athena-bridge-relay.mjs"
+    "athena-bridge": "node scripts/athena-bridge-relay.mjs",
+    "dev:brainbit": "node scripts/dev-brainbit.mjs",
+    "brainbit-relay:smoke": "node scripts/brainbit-relay-smoke.mjs",
+    "brainbit-ios-relay:smoke": "node scripts/brainbit-ios-relay-smoke.mjs",
+    "brainbit-ios-relay:run": "cd native/brainbit-ios-relay && swift run brainbit-ios-relay-cli",
+    "brainbit-truth-test:run": "cd native/brainbit-ios-relay && swift run headphones2-truth-test",
+    "brainbit-truth-test:open-package": "open native/brainbit-ios-relay/Package.swift",
+    "brainbit-truth-test:open-ipad": "open native/Headphones2TruthTestHost/Headphones2TruthTestHost.xcodeproj",
+    "setup-neurosdk2-vendor": "bash scripts/setup-neurosdk2-vendor.sh",
+    "build:brainbit-ipad": "tsc -b && vite build --mode brainbit-ipad",
+    "cap:sync:ios": "npm run build:brainbit-ipad && npx cap sync ios && npm run cap:resolve:ios",
+    "cap:resolve:ios": "xcodebuild -resolvePackageDependencies -workspace ios/App/App.xcworkspace -scheme App",
+    "cap:open:ios": "npm run cap:resolve:ios && npx cap open ios",
+    "cap:run:ios": "npm run cap:sync:ios && npx cap open ios",
+    "dev:brainbit-ipad:ios": "npm run build:brainbit-ipad && npx cap run ios",
+    "desktop:dev": "tauri dev"
   },
   "dependencies": {
+    "@capacitor/core": "^7.6.5",
+    "@capacitor/ios": "^7.6.5",
     "@vercel/node": "^3.0.0",
     "framer-motion": "^12.24.7",
     "html2canvas": "^1.4.1",
@@ -25,7 +42,10 @@
     "uuid": "^13.0.0"
   },
   "devDependencies": {
+    "@capacitor/cli": "^7.6.5",
     "@eslint/js": "^9.39.1",
+    "@tauri-apps/api": "^2.11.0",
+    "@tauri-apps/cli": "^2.11.1",
     "@types/node": "^24.10.1",
     "@types/react": "^19.2.5",
     "@types/react-dom": "^19.2.3",

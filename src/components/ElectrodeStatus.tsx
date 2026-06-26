@@ -5,6 +5,7 @@
 import { motion } from 'framer-motion';
 import type { ElectrodeStatus as ElectrodeStatusType, ElectrodeQuality, ElectrodeSiteContact } from '../types';
 import {
+  overallContactSummaryFromAverage,
   overallContactSummaryFromLegacyStatus,
   overallContactSummaryFromSites,
 } from '../lib/eeg/contact-quality';
@@ -23,6 +24,14 @@ interface ElectrodeStatusProps {
    * When true, % = weighted good/medium/poor. When false (default), only “good” electrodes count — Muse 2 behavior.
    */
   weightedContactPercent?: boolean;
+  /** BrainBit bridge: overall pill from weighted average (counts medium), not Muse good-count rules. */
+  bridgeOverallFromAverage?: boolean;
+  /**
+   * BrainBit signal-only: reframe dots as channel activity confidence, not Muse electrode contact.
+   */
+  signalOnlyActivityMode?: boolean;
+  /** BrainBit: hide per-channel dots — show summary bar only (not validated contact). */
+  hideChannelDots?: boolean;
 }
 
 const LEGACY_KEYS = ['tp9', 'af7', 'af8', 'tp10'] as const;
@@ -58,9 +67,12 @@ function buildRenderModel(
   sites: ElectrodeSiteContact[] | undefined,
   status: ElectrodeStatusType,
   weightedContactPercent: boolean,
+  bridgeOverallFromAverage: boolean,
 ): { rows: Row[]; overall: { label: string; quality: ElectrodeQuality }; qualityPercentage: number } {
   if (sites && sites.length > 0) {
-    const overall = overallContactSummaryFromSites(sites);
+    const overall = bridgeOverallFromAverage
+      ? overallContactSummaryFromAverage(sites)
+      : overallContactSummaryFromSites(sites);
     const goodCount = sites.filter((s) => s.quality === 'good').length;
     const qualityPercentage = weightedContactPercent
       ? siteWeightedPercent(sites)
@@ -91,12 +103,40 @@ export function ElectrodeStatus({
   sectionTitle = 'ELECTRODE CONTACT',
   qualityBarLabel = 'Contact Quality',
   weightedContactPercent = false,
+  bridgeOverallFromAverage = false,
+  signalOnlyActivityMode = false,
+  hideChannelDots = false,
 }: ElectrodeStatusProps) {
-  const { rows, overall, qualityPercentage } = buildRenderModel(sites, status, weightedContactPercent);
+  const { rows, overall, qualityPercentage } = buildRenderModel(
+    sites,
+    status,
+    weightedContactPercent,
+    bridgeOverallFromAverage,
+  );
+
+  const resolvedTitle = signalOnlyActivityMode
+    ? hideChannelDots
+      ? 'SIGNAL SUMMARY'
+      : 'CHANNEL ACTIVITY'
+    : sectionTitle;
+  const resolvedBarLabel = signalOnlyActivityMode ? 'Activity estimate' : qualityBarLabel;
+
+  const showDots = !hideChannelDots;
 
   // Map overall label to shorter version for pill
-  const overallPillLabel = overall.label === 'Strong signal' ? 'Good' : 
-                           overall.label === 'Partial signal' ? 'Partial' : 'Poor';
+  const overallPillLabel = signalOnlyActivityMode
+    ? overall.label === 'Strong signal'
+      ? 'Active'
+      : overall.label === 'Partial signal'
+        ? 'Usable'
+        : overall.label === 'Low signal'
+          ? 'Low'
+          : 'Minimal'
+    : overall.label === 'Strong signal'
+      ? 'Good'
+      : overall.label === 'Partial signal'
+        ? 'Partial'
+        : 'Poor';
 
   // Badge colors based on quality
   const badgeStyles: Record<ElectrodeQuality, { bg: string; border: string; text: string }> = {
@@ -135,7 +175,7 @@ export function ElectrodeStatus({
             letterSpacing: '0.05em',
             textTransform: 'uppercase',
           }}
-        >{sectionTitle}</span>
+        >{resolvedTitle}</span>
         <motion.span 
           className={`electrode-badge-lovable electrode-badge-lovable--${overall.quality}`}
           initial={{ scale: 0.9, opacity: 0 }}
@@ -156,7 +196,8 @@ export function ElectrodeStatus({
         </motion.span>
       </div>
       
-      {/* Electrode Dots Row */}
+      {/* Electrode Dots Row — optional; BrainBit setup de-emphasizes per-channel dots */}
+      {showDots && (
       <div 
         className="electrode-row-lovable"
         style={{
@@ -188,10 +229,11 @@ export function ElectrodeStatus({
                 key={`${row.key}-${quality}`}
                 className={`electrode-dot-lovable electrode-dot-lovable--${quality}`}
                 style={{ 
-                  width: '12px',
-                  height: '12px',
+                  width: signalOnlyActivityMode ? '10px' : '12px',
+                  height: signalOnlyActivityMode ? '10px' : '12px',
                   borderRadius: '50%',
                   backgroundColor: color,
+                  opacity: signalOnlyActivityMode && quality === 'poor' ? 0.85 : 1,
                 }}
                 animate={quality === 'good' ? {
                   boxShadow: [
@@ -215,6 +257,21 @@ export function ElectrodeStatus({
           );
         })}
       </div>
+      )}
+
+      {hideChannelDots && signalOnlyActivityMode && (
+        <p
+          style={{
+            margin: 0,
+            fontFamily: 'var(--font-sans)',
+            fontSize: '11px',
+            lineHeight: 1.45,
+            color: 'var(--text-subtle)',
+          }}
+        >
+          Per-channel pad contact is not validated on BrainBit — use stream health above.
+        </p>
+      )}
 
       {/* Quality Bar - only shown in non-compact mode */}
       {!compact && (
@@ -238,7 +295,7 @@ export function ElectrodeStatus({
               color: 'var(--text-muted)',
               whiteSpace: 'nowrap',
             }}
-          >{qualityBarLabel}</span>
+          >{resolvedBarLabel}</span>
           <div 
             className="quality-track"
             style={{
@@ -253,7 +310,7 @@ export function ElectrodeStatus({
               className="quality-fill"
               style={{
                 height: '100%',
-                background: qualityPercentage >= 75 ? '#22c55e' : qualityPercentage >= 25 ? '#f59e0b' : '#ef4444',
+                background: qualityPercentage >= 75 ? '#22c55e' : qualityPercentage >= 25 ? '#f59e0b' : signalOnlyActivityMode ? '#94a3b8' : '#ef4444',
                 borderRadius: '3px',
               }}
               initial={{ width: 0 }}

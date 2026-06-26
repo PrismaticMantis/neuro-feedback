@@ -53,6 +53,8 @@ interface CoherenceGraphProps {
   coherenceHistory: number[];
   coherenceZone: 'flow' | 'stabilizing' | 'noise';
   duration: number; // Current session duration in ms
+  /** Top “Coherence” band starts here (default 0.7 = Muse `getCoherenceZone`). Athena passes lower. */
+  flowZoneMin?: number;
 }
 
 // Smoothing function for display (visual only, doesn't affect raw data)
@@ -64,8 +66,9 @@ export function CoherenceGraph({
   coherenceHistory,
   coherenceZone: _coherenceZone,
   duration,
+  flowZoneMin,
 }: CoherenceGraphProps) {
-  void _coherenceZone; // Keep prop for API compatibility
+  void _coherenceZone; // Parent uses zone for copy; bands follow flowZoneMin / defaults
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [smoothedHistory, setSmoothedHistory] = useState<number[]>([]);
   const previousSmoothedRef = useRef<number | null>(null);
@@ -123,7 +126,8 @@ export function CoherenceGraph({
     ctx.clearRect(0, 0, width, height);
 
     // Y positions for zone boundaries within the chart area
-    const coherenceLineY = chartY + chartHeight * (1 - ZONE_THRESHOLDS.coherenceMin);
+    const coherenceBandMin = flowZoneMin ?? ZONE_THRESHOLDS.coherenceMin;
+    const coherenceLineY = chartY + chartHeight * (1 - coherenceBandMin);
     const stabilizingLineY = chartY + chartHeight * (1 - ZONE_THRESHOLDS.stabilizingMin);
 
     // Draw zone bands (3 horizontal regions within chart area)
@@ -243,7 +247,7 @@ export function CoherenceGraph({
         ctx.restore(); // Remove clip
       }
     }
-  }, [coherenceHistory, smoothedHistory, duration]);
+  }, [coherenceHistory, smoothedHistory, duration, flowZoneMin]);
 
   // Format time display
   const formatTime = (ms: number) => {

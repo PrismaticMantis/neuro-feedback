@@ -24,6 +24,18 @@ export default async function handler(
   req: VercelRequest,
   res: VercelResponse
 ) {
+  // CORS — the iPad app runs in a Capacitor WKWebView (e.g. capacitor://localhost),
+  // a cross-origin caller to this Vercel function. No cookies/credentials are used,
+  // so a permissive origin is safe here.
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+
+  // Preflight
+  if (req.method === 'OPTIONS') {
+    return res.status(204).end();
+  }
+
   // Only allow POST requests
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });

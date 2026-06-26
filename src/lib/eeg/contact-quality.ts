@@ -6,6 +6,7 @@
  */
 
 import type { ElectrodeQuality, ElectrodeSiteContact, ElectrodeStatus } from '../../types';
+import { BRAINBIT_MVP_MIN_GOOD_OR_MEDIUM_CHANNELS } from './brainbit-coherence-stability';
 
 /** Fraction of channels that must read "good" for a "Strong" overall summary (Muse: 3/4). */
 const STRONG_GOOD_FRACTION = 0.75;
@@ -80,6 +81,15 @@ export function hasEnoughGoodOrMediumContactLegacy(status: ElectrodeStatus): boo
   return vals.filter((q) => q === 'good' || q === 'medium').length >= 3;
 }
 
+/** BrainBit Headphones: 2 of 4 good|medium (A1/A2 ear refs often read weaker than C3/C4). */
+export function hasEnoughGoodOrMediumContactBrainBit(sites: ElectrodeSiteContact[]): boolean {
+  const n = sites.length;
+  if (n === 0) return false;
+  const ok = sites.filter((s) => s.quality === 'good' || s.quality === 'medium').length;
+  const need = Math.min(BRAINBIT_MVP_MIN_GOOD_OR_MEDIUM_CHANNELS, n);
+  return ok >= need;
+}
+
 /**
  * Overall pill summary (Strong / Partial / Poor) — same rules as previous ElectrodeStatus UI.
  */
@@ -110,4 +120,19 @@ export function overallContactSummaryFromLegacyStatus(status: ElectrodeStatus): 
     quality: status[siteId],
   }));
   return overallContactSummaryFromSites(sites);
+}
+
+/** BrainBit bridge estimate: good/medium/poor/off weighted mean → Strong / Partial / Poor. */
+export function overallContactSummaryFromAverage(sites: ElectrodeSiteContact[]): {
+  label: string;
+  quality: ElectrodeQuality;
+} {
+  if (sites.length === 0) {
+    return { label: 'Poor signal', quality: 'off' };
+  }
+  const avg = averageContactScore01(sites);
+  if (avg >= 0.65) return { label: 'Strong signal', quality: 'good' };
+  if (avg >= 0.28) return { label: 'Partial signal', quality: 'medium' };
+  if (avg >= 0.12) return { label: 'Low signal', quality: 'medium' };
+  return { label: 'Poor signal', quality: 'off' };
 }

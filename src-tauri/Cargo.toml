@@ -1,0 +1,19 @@
+[package]
+name = "neuro-feedback-desktop"
+version = "0.0.0"
+description = "Neuro feedback desktop wrapper"
+authors = ["Neuro Feedback"]
+edition = "2021"
+rust-version = "1.77.2"
+build = "build.rs"
+
+[lib]
+name = "neuro_feedback_desktop_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+tauri = { version = "2", features = [] }

@@ -18,8 +18,14 @@ import { DesignShowcase } from './components/DesignShowcase';
 import { MuseBleDebugPanel } from './components/MuseBleDebugPanel';
 import { audioEngine } from './lib/audio-engine';
 import { useEegDevice } from './lib/eeg/EegDeviceContext';
-import { DEBUG_ATHENA_BANDS } from './lib/eeg/eeg-feature-flags';
+import { DEBUG_ATHENA_BANDS, DEBUG_BRAINBIT_BRIDGE } from './lib/eeg/eeg-feature-flags';
 import { isAthenaBridgeEEGDevice } from './lib/eeg/athena-bridge-eeg-device';
+import { isBrainBitBridgeEEGDevice } from './lib/eeg/brainbit-bridge-eeg-device';
+import { ATHENA_UI_FLOW_ZONE_MIN } from './lib/eeg/athena-coherence-stability';
+import {
+  BRAINBIT_UI_FLOW_ZONE_MIN_EASY,
+  BRAINBIT_UI_FLOW_ZONE_MIN_MED,
+} from './lib/eeg/brainbit-coherence-stability';
 import { movementDetector, DEBUG_MOVEMENT } from './lib/movement-detector';
 import { calculateCalmScore, calculateCreativeFlowScore } from './lib/flow-state';
 import { deriveRecoveryPoints } from './lib/summary-pdf';
@@ -61,6 +67,18 @@ function App() {
           rx: eegDevice.getAthenaBridgeRxDebug(),
         }
       : undefined;
+
+  const brainbitBridgeDebug =
+    DEBUG_BRAINBIT_BRIDGE && isBrainBitBridgeEEGDevice(eegDevice)
+      ? {
+          bandsSmooth: muse.state.bandsSmooth,
+          bandsDbSmooth: muse.state.bandsDbSmooth,
+          chunkSeq: eegDevice.getLatestBrainBitSample()?.seq ?? null,
+          rx: eegDevice.getBrainBitBridgeRxDebug(),
+          lastSamplePreview:
+            eegDevice.getLatestBrainBitSample()?.microvolts.map((n) => n.toFixed(0)).join(', ') ?? '—',
+        }
+      : undefined;
   const audio = useAudio();
   const session = useSession();
   const navigate = useNavigate();
@@ -86,9 +104,21 @@ function App() {
       // Relative mode can feel inconsistent at absolute minimum due to baseline calibration.
       // Keep easy mode relative behavior for normal-low settings, but use absolute mode at minimum.
       useRelativeMode: isEasyMode && !isAbsoluteMinimum,
+      isEasyPreset: isEasyMode,
     });
-    audioEngine.setDifficultyPreset(thresholdSettings.coherenceSensitivity);
-  }, [thresholdSettings.coherenceSensitivity, muse.setThresholdSettings]);
+    audioEngine.setDifficultyPreset(thresholdSettings.coherenceSensitivity, {
+      athenaBridge: isAthenaBridgeEEGDevice(eegDevice),
+      brainBitBridge: isBrainBitBridgeEEGDevice(eegDevice),
+    });
+  }, [thresholdSettings.coherenceSensitivity, muse.setThresholdSettings, eegDevice]);
+
+  const sessionFlowZoneMin = isAthenaBridgeEEGDevice(eegDevice)
+    ? ATHENA_UI_FLOW_ZONE_MIN
+    : isBrainBitBridgeEEGDevice(eegDevice)
+      ? thresholdSettings.coherenceSensitivity < 0.33
+        ? BRAINBIT_UI_FLOW_ZONE_MIN_EASY
+        : BRAINBIT_UI_FLOW_ZONE_MIN_MED
+      : undefined;
 
   const hasGoodContact =
     muse.electrodeSites.length > 0
@@ -175,13 +205,28 @@ function App() {
       if (DEBUG_MOVEMENT) {
         console.log('[Move] ✅ Pipeline wired: detector -> callback -> audioEngine.playMovementCue()');
       }
-      
+
+      // BrainBit-only: re-apply CoherenceDetector bridge tuning after audio/movement wiring so the
+      // in-session pipeline matches setup (variance dedupe, minVariance, dwell diagnostics). Idempotent.
+      if (isBrainBitBridgeEEGDevice(eegDevice)) {
+        const coherenceThreshold = sensitivityToCoherenceThreshold(thresholdSettings.coherenceSensitivity);
+        const timeThreshold = sensitivityToTimeThreshold(thresholdSettings.coherenceSensitivity);
+        const isEasyMode = thresholdSettings.coherenceSensitivity < 0.33;
+        const isAbsoluteMinimum = thresholdSettings.coherenceSensitivity <= 0.05;
+        muse.setThresholdSettings({
+          coherenceThreshold,
+          timeThreshold,
+          useRelativeMode: isEasyMode && !isAbsoluteMinimum,
+          isEasyPreset: isEasyMode,
+        });
+      }
+
       session.startSession();
       navigate('/session');
     } catch (e) {
       console.error('[App] Begin session failed:', e);
     }
-  }, [audio, session, navigate, eegDevice]);
+  }, [audio, session, navigate, eegDevice, muse.setThresholdSettings, thresholdSettings.coherenceSensitivity]);
 
   const handleEndSession = useCallback(() => {
     // Stop movement detection
@@ -263,6 +308,8 @@ function App() {
               onSelectUser={session.selectUser}
               onStartSession={handleStartSession}
               athenaBandDebug={athenaBandDebug}
+              brainbitBridgeDebug={brainbitBridgeDebug}
+              athenaCoherenceDebug={muse.athenaCoherenceDebug}
             />
           }
         />
@@ -273,6 +320,7 @@ function App() {
               duration={session.sessionDuration}
               coherenceHistory={session.coherenceHistory}
               coherenceZone={muse.coherenceZone}
+              flowZoneMin={sessionFlowZoneMin}
               museConnected={muse.state.connected}
               touching={muse.state.touching}
               electrodeStatus={muse.electrodeStatus}
@@ -284,6 +332,7 @@ function App() {
               entrainmentEnabled={audio.entrainmentEnabled}
               onEntrainmentToggle={handleEntrainmentToggle}
               onEndSession={handleEndSession}
+              athenaCoherenceDebug={muse.athenaCoherenceDebug}
             />
           }
         />

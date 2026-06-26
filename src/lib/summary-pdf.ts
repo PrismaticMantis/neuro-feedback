@@ -38,9 +38,11 @@ export interface FallbackPdfData {
   coherencePercent: number;
   peakCoherence: number;      // 0-1
   stability: string;          // "High" | "Medium" | "Low"
-  avgHeartRate: number | null;
-  avgHRV: number | null;
-  recoveryPoints: number;
+  /** Body/heart metrics — only present for PPG-capable devices (e.g. Muse 2).
+   *  Omit entirely for BrainBit (no PPG); the matching rows are then hidden. */
+  avgHeartRate?: number | null;
+  avgHRV?: number | null;
+  recoveryPoints?: number | null;
   longestStreakFormatted: string;
   interpretation: string;
 }
@@ -231,10 +233,11 @@ function generateFallbackPdf(data: FallbackPdfData): Blob {
     ['Peak Coherence', `${Math.round(data.peakCoherence * 100)}%`],
     ['Longest Streak', data.longestStreakFormatted],
     ['Stability', data.stability],
-    ['Avg Heart Rate', data.avgHeartRate != null ? `${Math.round(data.avgHeartRate)} bpm` : '—'],
-    ['Avg HRV', data.avgHRV != null ? `${Math.round(data.avgHRV)} ms` : '—'],
-    ['Recovery Points', String(data.recoveryPoints)],
   ];
+  // Body/heart metrics: only shown when provided (PPG-capable devices).
+  if (data.avgHeartRate != null) metrics.push(['Avg Heart Rate', `${Math.round(data.avgHeartRate)} bpm`]);
+  if (data.avgHRV != null) metrics.push(['Avg HRV', `${Math.round(data.avgHRV)} ms`]);
+  if (data.recoveryPoints != null) metrics.push(['Recovery Points', String(data.recoveryPoints)]);
 
   const rowH = 8;
   const cardH = metrics.length * rowH + 16; // 8px padding top/bottom

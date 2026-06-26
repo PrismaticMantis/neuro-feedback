@@ -26,6 +26,7 @@ export {
   MUSE2_DEVICE_CAPABILITIES,
   ATHENA_DEVICE_CAPABILITIES,
   ATHENA_BRIDGE_WS_DEVICE_CAPABILITIES,
+  BRAINBIT_BRIDGE_DEVICE_CAPABILITIES,
 } from './eeg-device-types';
 
 export { Muse2EEGDevice, muse2EegDevice } from './muse2-adapter';
@@ -48,6 +49,7 @@ export {
   connectionQualityMetricFromSites,
   connectionQualityMetricFromLegacyStatus,
   hasEnoughGoodOrMediumContact,
+  hasEnoughGoodOrMediumContactBrainBit,
   hasEnoughGoodOrMediumContactLegacy,
   overallContactSummaryFromSites,
   overallContactSummaryFromLegacyStatus,
@@ -56,8 +58,17 @@ export {
   ENABLE_PPG_MODULATION,
   DEBUG_PPG,
   ENABLE_ATHENA_BRIDGE_EEG_DEVICE,
+  ENABLE_BRAINBIT_BRIDGE_EEG_DEVICE,
   DEBUG_ATHENA_BANDS,
+  DEBUG_ATHENA_COHERENCE,
+  DEBUG_BRAINBIT_BRIDGE,
 } from './eeg-feature-flags';
+export {
+  ATHENA_BETA_ALPHA_RATIO_THRESHOLD_FACTOR,
+  ATHENA_COHERENCE_MIN_CONTACT_VALIDITY,
+  ATHENA_SUSTAINED_MS_FACTOR,
+  ATHENA_VARIANCE_THRESHOLD,
+} from './athena-coherence-stability';
 
 export type {
   AthenaBridgeEegPacket,
@@ -79,6 +90,22 @@ export {
   isAthenaBridgeEEGDevice,
 } from './athena-bridge-eeg-device';
 export type { AthenaBridgeLatestSample } from './athena-bridge-eeg-device';
+export {
+  BrainBitBridgeEEGDevice,
+  brainBitBridgeEegDevice,
+  isBrainBitBridgeEEGDevice,
+} from './brainbit-bridge-eeg-device';
+export type { BrainBitBridgeLatestSample } from './brainbit-bridge-eeg-device';
+export {
+  BRAINBIT_COHERENCE_ALPHA_FLOOR_BASELINE_RATIO,
+  BRAINBIT_COHERENCE_CALC_MIN_ALPHA,
+  BRAINBIT_COHERENCE_DETECTOR_BAND_SMOOTH,
+  BRAINBIT_COHERENCE_SCORE_SCALE,
+  BRAINBIT_COHERENCE_SIGNAL_MIN_VARIANCE,
+  BRAINBIT_COHERENCE_SIGNAL_VALID_MIN_ALPHA,
+  BRAINBIT_COHERENCE_VARIANCE_SAMPLE_DEDUPE_EPSILON,
+} from './brainbit-coherence-stability';
+export { isWebSocketBridgeEegDevice } from './eeg-bridge-kind';
 
 export type { FftPipelineConfig } from '../fft-processor';
 export { DEFAULT_FFT_PIPELINE, FFT_SIZE, SAMPLE_RATE } from '../fft-processor';

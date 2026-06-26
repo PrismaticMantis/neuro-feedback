@@ -17,5 +17,21 @@ export const DEBUG_PPG = false;
 export const ENABLE_ATHENA_BRIDGE_EEG_DEVICE =
   import.meta.env.VITE_ENABLE_ATHENA_BRIDGE_EEG_DEVICE === 'true';
 
+/**
+ * When true, `createEegDevice('brainbit_bridge')` and `VITE_EEG_DEVICE_KIND=brainbit_bridge` are allowed.
+ * Requires the native relay; does not affect Muse 2.
+ */
+export const ENABLE_BRAINBIT_BRIDGE_EEG_DEVICE =
+  import.meta.env.VITE_ENABLE_BRAINBIT_BRIDGE_EEG_DEVICE === 'true';
+
 /** Console + Session Setup strip for Athena FFT/band verification. Does not affect Muse 2. */
 export const DEBUG_ATHENA_BANDS = import.meta.env.VITE_DEBUG_ATHENA_BANDS === 'true';
+
+/** Session Setup debug strip for BrainBit native relay JSON stream. Does not affect Muse 2. */
+export const DEBUG_BRAINBIT_BRIDGE = import.meta.env.VITE_DEBUG_BRAINBIT_BRIDGE === 'true';
+
+/** BrainBit-only raw signal audit mode. Disables helper gates/caps for inspection; Muse/Athena unchanged. */
+export const BRAINBIT_AUDIT_MODE = import.meta.env.VITE_BRAINBIT_AUDIT_MODE === 'true';
+
+/** Session Setup + Active Session coherence pipeline readout (Athena bridge only). Does not affect Muse 2. */
+export const DEBUG_ATHENA_COHERENCE = import.meta.env.VITE_DEBUG_ATHENA_COHERENCE === 'true';

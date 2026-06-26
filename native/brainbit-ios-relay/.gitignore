@@ -1,0 +1,12 @@
+.DS_Store
+/.build
+/Packages
+xcuserdata/
+DerivedData/
+.swiftpm/configuration/registries.json
+.swiftpm/xcode/package.xcworkspace/contents.xcworkspacedata
+.netrc
+
+# Proprietary BrainBit neurosdk2 binaries — run scripts/setup-neurosdk2-vendor.sh
+/Vendor/neurosdk2.xcframework
+/Vendor/macos

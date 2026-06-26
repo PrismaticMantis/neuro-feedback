@@ -1,0 +1,5 @@
+#include "Capsule/CClient.h"
+#include "Capsule/CDevice.h"
+#include "Capsule/CDeviceInfo.h"
+#include "Capsule/CDeviceLocator.h"
+#include "Capsule/CEEGTimedData.h"

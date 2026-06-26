@@ -12,6 +12,19 @@ dist
 dist-ssr
 *.local
 
+# Capacitor iOS
+ios/App/Pods
+ios/App/build
+ios/DerivedData
+.capacitor
+
+# Third-party vendor clone (separate git repo from gitlab.com/brainbit-inc/brainbit-web)
+brainbit-web/
+
+# Tauri (Rust) build artifacts
+src-tauri/target/
+src-tauri/gen/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

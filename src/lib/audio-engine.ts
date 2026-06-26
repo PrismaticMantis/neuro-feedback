@@ -7,6 +7,27 @@ import type {
   BinauralPresetName,
 } from '../types';
 import { CoherenceStateMachine, type SignalQuality, type CoherenceStateMachineConfig } from './coherence-state-machine';
+import {
+  ATHENA_AUDIO_SM_ENTER_EASY,
+  ATHENA_AUDIO_SM_ENTER_MED,
+  ATHENA_AUDIO_SM_ENTER_SUSTAIN_EASY_SEC,
+  ATHENA_AUDIO_SM_EXIT_EASY,
+  ATHENA_AUDIO_SM_EXIT_MED,
+  ATHENA_COHERENCE_CROSSFADE_ATTACK_SEC,
+  ATHENA_COHERENCE_CROSSFADE_RELEASE_SEC,
+  ATHENA_COHERENCE_SUSTAINED_EASY,
+  ATHENA_COHERENCE_SUSTAINED_MED,
+} from './eeg/athena-coherence-stability';
+import {
+  BRAINBIT_AUDIO_SM_ENTER_EASY,
+  BRAINBIT_AUDIO_SM_ENTER_MED,
+  BRAINBIT_AUDIO_SM_ENTER_SUSTAIN_EASY_SEC,
+  BRAINBIT_AUDIO_SM_EXIT_EASY,
+  BRAINBIT_AUDIO_SM_EXIT_MED,
+  BRAINBIT_COHERENCE_SUSTAINED_EASY,
+  BRAINBIT_COHERENCE_SUSTAINED_MED,
+} from './eeg/brainbit-coherence-stability';
+import type { AthenaAudioRewardDebug } from '../types';
 import type { CoherenceState } from './coherence-state-machine';
 import { ENABLE_EXPRESSIVE_MODULATION } from './flow-state';
 import { ENABLE_PPG_MODULATION, DEBUG_PPG } from './eeg/eeg-feature-flags';
@@ -43,13 +64,22 @@ export const DEBUG_MOVEMENT_AUDIO = false;
  * - On deactivate: fadeOutSustainedCoherence
  * 
  * DEBUG: Enable DEBUG_COHERENCE_EVENTS / DEBUG_SHIMMER above for detailed logging
+ *
+ * Athena overrides via `AudioEngine` instance `activeCoherenceTriggerParams` (set in `setDifficultyPreset`).
  */
-const COHERENCE_TRIGGER_PARAMS = {
-  // Sustained layer parameters (shimmer is now tied to the same state — no separate shimmer params)
-  sustainedThreshold: 0.50,         // Coherence % for sustained layer + shimmer activation
-  sustainedHoldMs: 8000,            // Hold time above threshold to activate (8s)
-  sustainedExitThreshold: 0.42,     // Must fall below this to exit (hysteresis)
-  sustainedExitHoldMs: 5000,        // Must stay below exit threshold for this long (5s)
+export interface CoherenceTriggerParams {
+  sustainedThreshold: number;
+  sustainedHoldMs: number;
+  sustainedExitThreshold: number;
+  sustainedExitHoldMs: number;
+}
+
+/** Muse / default: sustained + shimmer activation curve. */
+export const DEFAULT_COHERENCE_TRIGGER_PARAMS: CoherenceTriggerParams = {
+  sustainedThreshold: 0.5,
+  sustainedHoldMs: 8000,
+  sustainedExitThreshold: 0.42,
+  sustainedExitHoldMs: 5000,
 };
 
 // Crossfade constants (centralized for easy tweaking)
@@ -66,7 +96,7 @@ const CROSSFADE_CONSTANTS = {
   SHIMMER_FADE_OUT_DELAY_SECONDS: 1.0, // Delay before starting fade-out (hysteresis)
   SHIMMER_UPDATE_SMOOTH_SECONDS: 0.8, // Smooth update time for shimmer gain changes
   // Sustained coherence layer constants (shimmer now shares these)
-  SUSTAINED_COHERENCE_SECONDS: COHERENCE_TRIGGER_PARAMS.sustainedHoldMs / 1000,
+  SUSTAINED_COHERENCE_SECONDS: DEFAULT_COHERENCE_TRIGGER_PARAMS.sustainedHoldMs / 1000,
   SUSTAINED_ATTACK_SECONDS: 4.0, // Faster fade-in (was 5.5)
   SUSTAINED_RELEASE_SECONDS: 5.0, // Faster fade-out (was 6.0)
   SUSTAINED_COHERENCE_COOLDOWN_SECONDS: 20.0, // Reduced cooldown for easier re-entry
@@ -139,6 +169,73 @@ const DEFAULT_CONFIG: AudioEngineConfig = {
   binauralCarrierFreq: BINAURAL_BASE_FREQ, // Already transposed down a tritone
   binauralBeatFreq: 10,
 };
+
+// Resolve bundled audio assets relative to the Vite base. On Capacitor iOS the
+// app is served from a non-root origin (capacitor://localhost/ or file://…/public/),
+// so an absolute "/audio/x.mp3" resolves to the wrong root.
+// A base-relative path resolves correctly in the WebView and on the web dev server.
+function audioAssetUrl(filename: string): string {
+  const base = import.meta.env.BASE_URL || '/';
+  const normalizedBase = base.endsWith('/') ? base : `${base}/`;
+  const cleanName = filename.replace(/^\/?(audio\/)?/, '');
+  return `${normalizedBase}audio/${cleanName}`;
+}
+
+// Candidate URLs for a bundled audio asset, most-reliable first. On Capacitor iOS
+// the app is served from capacitor://localhost; a route-relative "./audio/x" can
+// mis-resolve under a nested SPA route, so we also try an origin-anchored absolute
+// URL. We dedupe so the web dev server still does a single request.
+function audioAssetCandidates(filename: string): string[] {
+  const cleanName = filename.replace(/^\/?(audio\/)?/, '');
+  const candidates: string[] = [];
+  try {
+    const origin = window.location.origin;
+    if (origin && origin !== 'null') candidates.push(`${origin}/audio/${cleanName}`);
+  } catch { /* window.location.origin unavailable */ }
+  candidates.push(audioAssetUrl(cleanName)); // base-relative (./audio/x)
+  candidates.push(`audio/${cleanName}`);     // bare relative
+  return [...new Set(candidates)];
+}
+
+// Fetch a binary asset as an ArrayBuffer using XMLHttpRequest. fetch() of the
+// app's own custom-scheme assets returns an opaque status-0 response in the
+// Capacitor iOS WKWebView, so its body is unreadable and resp.ok is false even
+// though the file is present. XHR returns the bytes for local assets (status 0
+// with a populated response is valid for a custom scheme). Returns null on failure.
+function xhrArrayBuffer(url: string): Promise<ArrayBuffer | null> {
+  return new Promise((resolve) => {
+    try {
+      const xhr = new XMLHttpRequest();
+      xhr.open('GET', url, true);
+      xhr.responseType = 'arraybuffer';
+      xhr.onload = () => {
+        const ok = xhr.status === 0 || (xhr.status >= 200 && xhr.status < 300);
+        const body = xhr.response as ArrayBuffer | null;
+        resolve(ok && body && body.byteLength > 0 ? body : null);
+      };
+      xhr.onerror = () => resolve(null);
+      xhr.send();
+    } catch {
+      resolve(null);
+    }
+  });
+}
+
+// Load + decode an audio asset, trying each candidate URL until one decodes.
+// Robust against SPA-fallback HTML being served for an unknown path (decode
+// fails → try the next candidate). Returns null if nothing decodes.
+async function loadDecodedAudio(ctx: AudioContext, filename: string): Promise<AudioBuffer | null> {
+  for (const url of audioAssetCandidates(filename)) {
+    const ab = await xhrArrayBuffer(url);
+    if (!ab) continue;
+    try {
+      return await ctx.decodeAudioData(ab);
+    } catch {
+      // Not valid audio at this URL (likely SPA fallback HTML) — try next candidate.
+    }
+  }
+  return null;
+}
 
 export class AudioEngine {
   private ctx: AudioContext | null = null;
@@ -238,6 +335,14 @@ export class AudioEngine {
   private initPromise: Promise<void> | null = null; // Single-flight guard for init
   private isLoadingAudio = false; // Guard to prevent parallel audio loading
 
+  /** Sustained/shimmer thresholds (Muse default; Athena replaces in `setDifficultyPreset`). */
+  private activeCoherenceTriggerParams: CoherenceTriggerParams = { ...DEFAULT_COHERENCE_TRIGGER_PARAMS };
+  /** BrainBit only: sustained layer must wait for ordinary coherence audio state first. */
+  private sustainedRequiresCoherentState = false;
+  /** Coherence MP3 crossfade durations (Athena uses shorter attack/release). */
+  private coherenceCrossfadeAttackSec = CROSSFADE_CONSTANTS.ATTACK_SECONDS;
+  private coherenceCrossfadeReleaseSec = CROSSFADE_CONSTANTS.RELEASE_SECONDS;
+
   constructor(config: Partial<AudioEngineConfig> = {}) {
     this.config = { ...DEFAULT_CONFIG, ...config };
     
@@ -256,39 +361,105 @@ export class AudioEngine {
     this.coherenceStateMachine.onStateChange = (newState, oldState) => {
       this.handleCoherenceStateChange(newState, oldState);
     };
+
+    this.activeCoherenceTriggerParams = { ...DEFAULT_COHERENCE_TRIGGER_PARAMS };
+    this.coherenceCrossfadeAttackSec = CROSSFADE_CONSTANTS.ATTACK_SECONDS;
+    this.coherenceCrossfadeReleaseSec = CROSSFADE_CONSTANTS.RELEASE_SECONDS;
+  }
+
+  private resetRewardPathTuningToMuseDefaults(): void {
+    this.activeCoherenceTriggerParams = { ...DEFAULT_COHERENCE_TRIGGER_PARAMS };
+    this.coherenceCrossfadeAttackSec = CROSSFADE_CONSTANTS.ATTACK_SECONDS;
+    this.coherenceCrossfadeReleaseSec = CROSSFADE_CONSTANTS.RELEASE_SECONDS;
   }
 
   /**
    * Update coherence state machine config based on difficulty preset
    * Called when user changes difficulty setting in UI
    */
-  setDifficultyPreset(coherenceSensitivity: number): void {
+  setDifficultyPreset(
+    coherenceSensitivity: number,
+    opts?: { athenaBridge?: boolean; brainBitBridge?: boolean },
+  ): void {
     // Determine difficulty level from sensitivity (0-1)
     // EASY: sensitivity < 0.33
     // MEDIUM/HARD: sensitivity >= 0.33 (use default values)
     const isEasy = coherenceSensitivity < 0.33;
+    const athena = opts?.athenaBridge ?? false;
+    const brainBit = opts?.brainBitBridge ?? false;
+    this.sustainedRequiresCoherentState = brainBit;
 
     let config: Partial<CoherenceStateMachineConfig>;
     
     if (isEasy) {
       // EASY preset: easier to enter, harder to exit
-      config = {
-        enterThreshold: 0.68,
-        exitThreshold: 0.63,
-        enterSustainSeconds: 1.0,
-        exitSustainSeconds: 1.0,
-      };
-      console.log('[AudioEngine] Difficulty preset: EASY', config);
+      config = athena
+        ? {
+            enterThreshold: ATHENA_AUDIO_SM_ENTER_EASY,
+            exitThreshold: ATHENA_AUDIO_SM_EXIT_EASY,
+            enterSustainSeconds: ATHENA_AUDIO_SM_ENTER_SUSTAIN_EASY_SEC,
+            exitSustainSeconds: 1.0,
+          }
+        : brainBit
+          ? {
+              enterThreshold: BRAINBIT_AUDIO_SM_ENTER_EASY,
+              exitThreshold: BRAINBIT_AUDIO_SM_EXIT_EASY,
+              enterSustainSeconds: BRAINBIT_AUDIO_SM_ENTER_SUSTAIN_EASY_SEC,
+              exitSustainSeconds: 0.8,
+            }
+        : {
+            enterThreshold: 0.68,
+            exitThreshold: 0.63,
+            enterSustainSeconds: 1.0,
+            exitSustainSeconds: 1.0,
+          };
+      if (athena) {
+        this.activeCoherenceTriggerParams = { ...ATHENA_COHERENCE_SUSTAINED_EASY };
+        this.coherenceCrossfadeAttackSec = ATHENA_COHERENCE_CROSSFADE_ATTACK_SEC;
+        this.coherenceCrossfadeReleaseSec = ATHENA_COHERENCE_CROSSFADE_RELEASE_SEC;
+      } else if (brainBit) {
+        this.activeCoherenceTriggerParams = { ...BRAINBIT_COHERENCE_SUSTAINED_EASY };
+        this.coherenceCrossfadeAttackSec = ATHENA_COHERENCE_CROSSFADE_ATTACK_SEC;
+        this.coherenceCrossfadeReleaseSec = ATHENA_COHERENCE_CROSSFADE_RELEASE_SEC;
+      } else {
+        this.resetRewardPathTuningToMuseDefaults();
+      }
+      console.log('[AudioEngine] Difficulty preset: EASY', config, athena ? '(Athena)' : brainBit ? '(BrainBit)' : '');
     } else {
-      // MEDIUM/HARD preset: default values (unchanged)
-      config = {
-        enterThreshold: 0.75,
-        exitThreshold: 0.70,
-        enterSustainSeconds: 1.8,
-        exitSustainSeconds: 0.6,
-      };
+      // MEDIUM/HARD preset: default values (unchanged on Muse)
+      config = athena
+        ? {
+            enterThreshold: ATHENA_AUDIO_SM_ENTER_MED,
+            exitThreshold: ATHENA_AUDIO_SM_EXIT_MED,
+            enterSustainSeconds: 1.8,
+            exitSustainSeconds: 0.6,
+          }
+        : brainBit
+          ? {
+              enterThreshold: BRAINBIT_AUDIO_SM_ENTER_MED,
+              exitThreshold: BRAINBIT_AUDIO_SM_EXIT_MED,
+              enterSustainSeconds: 0.9,
+              exitSustainSeconds: 0.7,
+            }
+        : {
+            enterThreshold: 0.75,
+            exitThreshold: 0.70,
+            enterSustainSeconds: 1.8,
+            exitSustainSeconds: 0.6,
+          };
+      if (athena) {
+        this.activeCoherenceTriggerParams = { ...ATHENA_COHERENCE_SUSTAINED_MED };
+        this.coherenceCrossfadeAttackSec = ATHENA_COHERENCE_CROSSFADE_ATTACK_SEC * 1.08;
+        this.coherenceCrossfadeReleaseSec = ATHENA_COHERENCE_CROSSFADE_RELEASE_SEC * 1.1;
+      } else if (brainBit) {
+        this.activeCoherenceTriggerParams = { ...BRAINBIT_COHERENCE_SUSTAINED_MED };
+        this.coherenceCrossfadeAttackSec = ATHENA_COHERENCE_CROSSFADE_ATTACK_SEC * 1.08;
+        this.coherenceCrossfadeReleaseSec = ATHENA_COHERENCE_CROSSFADE_RELEASE_SEC * 1.1;
+      } else {
+        this.resetRewardPathTuningToMuseDefaults();
+      }
       const presetName = coherenceSensitivity < 0.67 ? 'MEDIUM' : 'HARD';
-      console.log(`[AudioEngine] Difficulty preset: ${presetName}`, config);
+      console.log(`[AudioEngine] Difficulty preset: ${presetName}`, config, athena ? '(Athena)' : brainBit ? '(BrainBit)' : '');
     }
 
     // Update state machine config
@@ -562,33 +733,27 @@ export class AudioEngine {
     const t0 = performance.now();
     console.warn('[AudioEngine] ===== LOAD AUDIO FILES START (parallel) =====');
 
-    /** Helper: fetch + decode a single audio file. Returns null on any failure. */
-    const loadOne = async (path: string, label: string): Promise<AudioBuffer | null> => {
-      try {
-        const resp = await fetch(path);
-        if (!resp.ok) {
-          console.warn(`[AudioEngine] ⚠️ ${label} fetch failed: ${resp.status}`);
-          return null;
-        }
-        const buf = await this.ctx!.decodeAudioData(await resp.arrayBuffer());
+    /** Helper: load + decode a single audio file via XHR. Returns null on any failure. */
+    const loadOne = async (filename: string, label: string): Promise<AudioBuffer | null> => {
+      const buf = await loadDecodedAudio(this.ctx!, filename);
+      if (buf) {
         console.warn(`[AudioEngine] ✅ ${label} loaded (${buf.duration.toFixed(1)}s)`);
-        return buf;
-      } catch (err) {
-        console.warn(`[AudioEngine] ⚠️ ${label} error:`, err);
-        return null;
+      } else {
+        console.warn(`[AudioEngine] ⚠️ ${label} load failed (all URL candidates)`);
       }
+      return buf;
     };
 
     try {
-      // Fire ALL fetches in parallel — each is independent, no memory issues on modern devices
+      // Fire ALL loads in parallel — each is independent, no memory issues on modern devices
       const [baseline, coherence, sustained, cue1, cue2, cue3] =
         await Promise.all([
-          this.baselineBuffer             ? Promise.resolve(this.baselineBuffer)             : loadOne('/audio/baseline.mp3', 'baseline'),
-          this.coherenceBuffer            ? Promise.resolve(this.coherenceBuffer)            : loadOne('/audio/coherence-v3.mp3', 'coherence'),
-          this.sustainedCoherenceBuffer   ? Promise.resolve(this.sustainedCoherenceBuffer)   : loadOne('/audio/sustained-coherence2.mp3', 'sustained-coherence'),
-          this.movementCueBuffers[0]      ? Promise.resolve(this.movementCueBuffers[0])      : loadOne('/audio/movement-cue-1.mp3', 'movement-cue-1'),
-          this.movementCueBuffers[1]      ? Promise.resolve(this.movementCueBuffers[1])      : loadOne('/audio/movement-cue-2.mp3', 'movement-cue-2'),
-          this.movementCueBuffers[2]      ? Promise.resolve(this.movementCueBuffers[2])      : loadOne('/audio/movement-cue-3.mp3', 'movement-cue-3'),
+          this.baselineBuffer             ? Promise.resolve(this.baselineBuffer)             : loadOne('baseline.mp3', 'baseline'),
+          this.coherenceBuffer            ? Promise.resolve(this.coherenceBuffer)            : loadOne('coherence-v3.mp3', 'coherence'),
+          this.sustainedCoherenceBuffer   ? Promise.resolve(this.sustainedCoherenceBuffer)   : loadOne('sustained-coherence2.mp3', 'sustained-coherence'),
+          this.movementCueBuffers[0]      ? Promise.resolve(this.movementCueBuffers[0])      : loadOne('movement-cue-1.mp3', 'movement-cue-1'),
+          this.movementCueBuffers[1]      ? Promise.resolve(this.movementCueBuffers[1])      : loadOne('movement-cue-2.mp3', 'movement-cue-2'),
+          this.movementCueBuffers[2]      ? Promise.resolve(this.movementCueBuffers[2])      : loadOne('movement-cue-3.mp3', 'movement-cue-3'),
         ]);
 
       // Assign results (null = that file failed, non-critical)
@@ -744,6 +909,14 @@ export class AudioEngine {
       note: 'Both baseline and coherence will start at t0 for perfect sync',
     });
 
+    // A previous session's end-fade may still be ramping masterGain toward silence (its
+    // delayed stop callback can still be pending). Restore master to full for this session
+    // and cancel that stale ramp so a quick "Start again" is not born muted.
+    if (this.masterGain) {
+      this.masterGain.gain.cancelScheduledValues(t0);
+      this.masterGain.gain.setValueAtTime(1.0, t0);
+    }
+
     // Create and configure baseline source (looped, playbackRate = 1)
     if (this.baselineBuffer && this.baselineGain) {
       this.baselineSource = this.ctx!.createBufferSource();
@@ -871,24 +1044,35 @@ export class AudioEngine {
       this.masterGain.gain.linearRampToValueAtTime(0.001, now + fadeTime);
     }
 
-    // Stop sources after fade completes
+    // Capture THIS session's sources before scheduling the delayed stop. If the user
+    // starts another session ("Start again") within the fade window, startSession() will
+    // assign fresh sources to these fields — and AudioBufferSourceNodes cannot be
+    // restarted. Stopping `this.baselineSource` here would therefore permanently silence
+    // the NEW session's bed (binaural survives because it lives on a separate node).
+    const endingBaselineSource = this.baselineSource;
+    const endingCoherenceSource = this.coherenceSource;
+    const endingSustainedSource = this.sustainedCoherenceSource;
+    // Detach now so the next startSession() attaches its own sources cleanly.
+    this.baselineSource = null;
+    this.coherenceSource = null;
+    this.sustainedCoherenceSource = null;
+    this.sourcesStarted = false; // Reset guard for next session
+
+    // Stop only this session's captured sources after the fade completes.
     setTimeout(() => {
       try {
-        this.baselineSource?.stop();
-        this.coherenceSource?.stop();
-        this.sustainedCoherenceSource?.stop();
+        endingBaselineSource?.stop();
+        endingCoherenceSource?.stop();
+        endingSustainedSource?.stop();
       } catch {
         // Ignore if already stopped
       }
-      this.baselineSource = null;
-      this.coherenceSource = null;
-      this.sustainedCoherenceSource = null;
-      this.sourcesStarted = false; // Reset guard for next session
-      
-      // Reset master gain to 1.0 for next session
-      if (this.masterGain) {
-        this.masterGain.gain.cancelScheduledValues(this.ctx!.currentTime);
-        this.masterGain.gain.setValueAtTime(1.0, this.ctx!.currentTime);
+
+      // Only restore master gain if no new session has taken over in the meantime
+      // (a fresh startSession already resets master to 1.0 itself).
+      if (!this.isSessionActive && this.masterGain && this.ctx) {
+        this.masterGain.gain.cancelScheduledValues(this.ctx.currentTime);
+        this.masterGain.gain.setValueAtTime(1.0, this.ctx.currentTime);
       }
     }, (fadeTime + 0.1) * 1000);
 
@@ -988,8 +1172,10 @@ export class AudioEngine {
     // ============================================
     // Sustained coherence trigger logic
     // ============================================
-    const shimmerParams = COHERENCE_TRIGGER_PARAMS;
+    const shimmerParams = this.activeCoherenceTriggerParams;
     const coherencePercent = coherence; // Already 0-1
+    const allowSustainedAccumulation =
+      !this.sustainedRequiresCoherentState || newState === 'coherent';
     
     // ============================================
     // SUSTAINED LAYER LOGIC (accumulator-based with hysteresis)
@@ -1000,7 +1186,16 @@ export class AudioEngine {
     //   BELOW exit threshold (42%):  reset accumulated progress to zero
     // ============================================
     
-    if (coherencePercent >= shimmerParams.sustainedThreshold) {
+    if (!allowSustainedAccumulation) {
+      if (this.sustainedCoherenceEnabled) {
+        this.sustainedCoherenceEnabled = false;
+        this.sustainedCoherenceLastFadeOutTime = currentTime;
+        this.fadeOutSustainedCoherence(now);
+      }
+      this.sustainedAccumulatedMs = 0;
+      this.sustainedLastUpdateTime = null;
+      this.sustainedExitStartTime = null;
+    } else if (coherencePercent >= shimmerParams.sustainedThreshold) {
       // ABOVE entry threshold — accumulate time
       if (this.sustainedLastUpdateTime !== null) {
         const delta = currentTime - this.sustainedLastUpdateTime;
@@ -1539,10 +1734,10 @@ export class AudioEngine {
 
     // Crossfade baseline -> coherence
     this.baselineGain.gain.setValueAtTime(currentBaseline, now);
-    this.baselineGain.gain.linearRampToValueAtTime(0, now + CROSSFADE_CONSTANTS.ATTACK_SECONDS);
+    this.baselineGain.gain.linearRampToValueAtTime(0, now + this.coherenceCrossfadeAttackSec);
 
     this.coherenceGain.gain.setValueAtTime(currentCoherence, now);
-    this.coherenceGain.gain.linearRampToValueAtTime(1.0, now + CROSSFADE_CONSTANTS.ATTACK_SECONDS);
+    this.coherenceGain.gain.linearRampToValueAtTime(1.0, now + this.coherenceCrossfadeAttackSec);
 
     // Ensure sustained layer is silent unless explicitly active.
     if (this.sustainedCoherenceGain && !this.sustainedCoherenceEnabled) {
@@ -1555,7 +1750,7 @@ export class AudioEngine {
     console.log('[AudioEngine] 🎵 CROSSFADING TO COHERENCE 🎵', {
       baselineGain: `${currentBaseline.toFixed(3)} -> 0.000`,
       coherenceGain: `${currentCoherence.toFixed(3)} -> 1.000`,
-      attackSeconds: CROSSFADE_CONSTANTS.ATTACK_SECONDS,
+      attackSeconds: this.coherenceCrossfadeAttackSec,
     });
   }
 
@@ -1573,17 +1768,17 @@ export class AudioEngine {
 
     // Crossfade coherence -> baseline
     this.baselineGain.gain.setValueAtTime(currentBaseline, now);
-    this.baselineGain.gain.linearRampToValueAtTime(1.0, now + CROSSFADE_CONSTANTS.RELEASE_SECONDS);
+    this.baselineGain.gain.linearRampToValueAtTime(1.0, now + this.coherenceCrossfadeReleaseSec);
 
     this.coherenceGain.gain.setValueAtTime(currentCoherence, now);
-    this.coherenceGain.gain.linearRampToValueAtTime(0, now + CROSSFADE_CONSTANTS.RELEASE_SECONDS);
+    this.coherenceGain.gain.linearRampToValueAtTime(0, now + this.coherenceCrossfadeReleaseSec);
 
     // Enforce single audible layer: sustained must fade out whenever we leave coherent.
     if (this.sustainedCoherenceGain) {
       const currentSustained = Math.max(0.001, this.sustainedCoherenceGain.gain.value);
       this.sustainedCoherenceGain.gain.cancelScheduledValues(now);
       this.sustainedCoherenceGain.gain.setValueAtTime(currentSustained, now);
-      this.sustainedCoherenceGain.gain.linearRampToValueAtTime(0.001, now + CROSSFADE_CONSTANTS.RELEASE_SECONDS);
+      this.sustainedCoherenceGain.gain.linearRampToValueAtTime(0.001, now + this.coherenceCrossfadeReleaseSec);
     }
 
     console.log('[AudioEngine] 🎵 CROSSFADING TO BASELINE 🎵', {
@@ -1818,13 +2013,12 @@ export class AudioEngine {
     const filename = `movement-cue-${cueNum}.mp3`;
     try {
       if (DEBUG_MOVEMENT_AUDIO) console.log('[MoveCue] Reloading ' + filename + '...');
-      const resp = await fetch(`/audio/${filename}`);
-      if (!resp.ok) {
-        console.warn('[MoveCue] Reload ' + filename + ' failed: HTTP ' + resp.status);
+      const buf = await loadDecodedAudio(this.ctx, filename);
+      if (!buf) {
+        console.warn('[MoveCue] Reload ' + filename + ' failed (all URL candidates)');
         return;
       }
-      const arrayBuffer = await resp.arrayBuffer();
-      this.movementCueBuffers[index] = await this.ctx.decodeAudioData(arrayBuffer);
+      this.movementCueBuffers[index] = buf;
       if (DEBUG_MOVEMENT_AUDIO) {
         console.log('[MoveCue] ✅ Reloaded ' + filename + ' duration=' +
           this.movementCueBuffers[index]!.duration.toFixed(2) + 's');
@@ -1906,22 +2100,19 @@ export class AudioEngine {
     let buffer = this.movementCueBuffers[this.movementCueIndex];
     if (!buffer) {
       const cueNum = this.movementCueIndex + 1;
-      const url = '/audio/movement-cue-' + cueNum + '.mp3';
-      console.log('[MoveCue] Buffer[' + this.movementCueIndex + '] is null. Fetching ' + url + '...');
+      const filename = 'movement-cue-' + cueNum + '.mp3';
+      console.log('[MoveCue] Buffer[' + this.movementCueIndex + '] is null. Loading ' + filename + '...');
       try {
-        const resp = await fetch(url);
-        if (!resp.ok) {
-          console.error('[MoveCue] TEST FAIL: fetch ' + url + ' → ' + resp.status + ' ' + resp.statusText);
+        const buf = await loadDecodedAudio(this.ctx, filename);
+        if (!buf) {
+          console.error('[MoveCue] TEST FAIL: load ' + filename + ' failed (all URL candidates)');
           return 0;
         }
-        console.log('[MoveCue] Fetch OK (' + resp.status + '), decoding...');
-        const ab = await resp.arrayBuffer();
-        console.log('[MoveCue] ArrayBuffer size: ' + ab.byteLength + ' bytes');
-        this.movementCueBuffers[this.movementCueIndex] = await this.ctx.decodeAudioData(ab);
-        buffer = this.movementCueBuffers[this.movementCueIndex];
-        console.log('[MoveCue] Decoded! Duration: ' + buffer!.duration.toFixed(2) + 's');
+        this.movementCueBuffers[this.movementCueIndex] = buf;
+        buffer = buf;
+        console.log('[MoveCue] Decoded! Duration: ' + buffer.duration.toFixed(2) + 's');
       } catch (e) {
-        console.error('[MoveCue] TEST FAIL: fetch/decode error:', e);
+        console.error('[MoveCue] TEST FAIL: load/decode error:', e);
         return 0;
       }
     }
@@ -2209,6 +2400,67 @@ export class AudioEngine {
    */
   getCoherenceState(): CoherenceState {
     return this.coherenceStateMachine.getState();
+  }
+
+  /**
+   * Live reward-path snapshot for Athena debug (`VITE_DEBUG_ATHENA_COHERENCE`).
+   * Safe to call anytime; returns `null` if audio context is not created.
+   */
+  getAudioRewardDebugSnapshot(): AthenaAudioRewardDebug | null {
+    if (!this.ctx) return null;
+    const sm = this.coherenceStateMachine.getState();
+    const cfg = this.coherenceStateMachine.getConfig();
+    const timers = this.coherenceStateMachine.getTimerInfo();
+    let smEnterSustainProgress01 = 0;
+    if (sm === 'coherent') {
+      smEnterSustainProgress01 = 1;
+    } else if (sm === 'stabilizing' && cfg.enterSustainSeconds > 0 && timers.enterTimerSeconds != null) {
+      smEnterSustainProgress01 = Math.min(1, timers.enterTimerSeconds / cfg.enterSustainSeconds);
+    }
+    const gb = this.baselineGain?.gain.value ?? null;
+    const gc = this.coherenceGain?.gain.value ?? null;
+    const gs = this.sustainedCoherenceGain?.gain.value ?? null;
+    const gsh = this.shimmerGain?.gain.value ?? null;
+    const coherentFamilyAudible =
+      (gc != null && gc > 0.08) || (gs != null && gs > 0.08) || (gsh != null && gsh > 0.04);
+
+    let rewardPathHint =
+      'Coherence MP3 crossfades in only when audio SM = coherent (after stabilizing hold). During stabilizing you still hear the baseline mix.';
+    if (sm === 'stabilizing') {
+      rewardPathHint = `Stabilizing: still baseline-weighted until hold completes (${(smEnterSustainProgress01 * 100).toFixed(0)}% of ${cfg.enterSustainSeconds.toFixed(2)}s) → coherent → ${this.coherenceCrossfadeAttackSec.toFixed(2)}s crossfade.`;
+    } else if (sm === 'coherent' && !coherentFamilyAudible && this.isSessionActive) {
+      rewardPathHint =
+        'SM says coherent but coherence/sustained gains are still low — crossfade still ramping or graph not connected.';
+    } else if (sm === 'baseline') {
+      rewardPathHint =
+        'Audio SM baseline: baseline MP3 dominant. Sustained/shimmer is a separate gate (coh vs sustainedThreshold for sustainedHoldMs).';
+    }
+    if (this.sustainedRequiresCoherentState && sm !== 'coherent') {
+      rewardPathHint =
+        `BrainBit: sustained layer is locked until ordinary coherence audio is active (SM=${sm}). ${rewardPathHint}`;
+    } else if (this.sustainedRequiresCoherentState && sm === 'coherent' && !this.sustainedCoherenceEnabled) {
+      rewardPathHint =
+        `BrainBit: ordinary coherence audio is active; sustained starts after ${(this.activeCoherenceTriggerParams.sustainedHoldMs / 1000).toFixed(1)}s above ${this.activeCoherenceTriggerParams.sustainedThreshold.toFixed(2)}.`;
+    }
+
+    return {
+      sessionActive: this.isSessionActive,
+      audioSmState: sm,
+      smLeftBaseline: sm !== 'baseline',
+      smEnterSustainProgress01,
+      smEnterSustainTargetSec: cfg.enterSustainSeconds,
+      sustainedLayerActive: this.sustainedCoherenceEnabled,
+      sustainedAccumSec: this.sustainedAccumulatedMs / 1000,
+      sustainedHoldTargetSec: this.activeCoherenceTriggerParams.sustainedHoldMs / 1000,
+      sustainedThreshold: this.activeCoherenceTriggerParams.sustainedThreshold,
+      gainBaseline: gb,
+      gainCoherence: gc,
+      gainSustained: gs,
+      gainShimmer: gsh,
+      coherentFamilyAudible,
+      crossfadeAttackSec: this.coherenceCrossfadeAttackSec,
+      rewardPathHint,
+    };
   }
 
   /**

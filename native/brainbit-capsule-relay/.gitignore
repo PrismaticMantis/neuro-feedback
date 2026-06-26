@@ -1,0 +1,11 @@
+.DS_Store
+/.build
+/Packages
+xcuserdata/
+DerivedData/
+.swiftpm/configuration/registries.json
+.swiftpm/xcode/package.xcworkspace/contents.xcworkspacedata
+.netrc
+
+# Proprietary BrainBit Capsule SDK payload. Keep local or package via desktop app release tooling.
+/Vendor/CapsuleSDK/

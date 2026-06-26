@@ -151,3 +151,25 @@ export const ATHENA_BRIDGE_WS_DEVICE_CAPABILITIES: EEGDeviceCapabilities = {
     battery: false,
   },
 };
+
+/**
+ * Native BrainBit Capsule relay → WebSocket JSON (`npm run` / `swift run` relay). Not BLE in-browser.
+ * `connectOSC(wsUrl)` or default `VITE_BRAINBIT_BRIDGE_WS_URL` (e.g. ws://127.0.0.1:8765/ws).
+ */
+export const BRAINBIT_BRIDGE_DEVICE_CAPABILITIES: EEGDeviceCapabilities = {
+  deviceKind: 'brainbit_bridge',
+  displayName: 'BrainBit (native relay)',
+  supportedTransports: ['osc'],
+  sampleRateHz: 256,
+  fftSize: 256,
+  eegChannelCount: 4,
+  eegChannelLabels: ['A1', 'C3', 'C4', 'A2'],
+  sensors: {
+    eeg: true,
+    contactQuality: false,
+    accelerometer: false,
+    gyroscope: false,
+    ppg: false,
+    battery: false,
+  },
+};

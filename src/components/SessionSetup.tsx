@@ -10,7 +10,13 @@ import { ElectrodeStatus } from './ElectrodeStatus';
 import { BINAURAL_PRESETS } from '../hooks/useAudio';
 import { DEBUG_ELECTRODES_OVERLAY } from '../lib/feature-flags';
 import { useEegDevice } from '../lib/eeg/EegDeviceContext';
-import { isAthenaBridgeEEGDevice } from '../lib/eeg/athena-bridge-eeg-device';
+import { isBrainBitBridgeEEGDevice } from '../lib/eeg/brainbit-bridge-eeg-device';
+import { isWebSocketBridgeEegDevice } from '../lib/eeg/eeg-bridge-kind';
+import { useBrainBitRelayStatus } from '../hooks/useBrainBitRelayStatus';
+import { useBrainBitStreamHealth } from '../hooks/useBrainBitStreamHealth';
+import { useBrainBitChannelActivity } from '../hooks/useBrainBitChannelActivity';
+import { BrainBitSignalStatus } from './BrainBitSignalStatus';
+import { BrainBitChannelActivity } from './BrainBitChannelActivity';
 import {
   overallContactSummaryFromLegacyStatus,
   overallContactSummaryFromSites,
@@ -20,9 +26,11 @@ import type {
   BinauralPresetName,
   ElectrodeStatus as ElectrodeStatusType,
   ElectrodeSiteContact,
+  ConnectionHealthState,
   ThresholdSettings,
   BrainwaveBands,
   BrainwaveBandsDb,
+  AthenaCoherenceDebugSnapshot,
 } from '../types';
 
 interface SessionSetupProps {
@@ -39,6 +47,8 @@ interface SessionSetupProps {
   onDisconnect: () => void;
   isBluetoothAvailable: boolean;
   connectionError: string | null;
+  /** BrainBit: WS/data health from useMuse (stall vs disconnected). */
+  connectionHealthState?: ConnectionHealthState;
 
   // Audio
   entrainmentEnabled: boolean;
@@ -68,6 +78,51 @@ interface SessionSetupProps {
     bridgeSeq: number | null;
     rx: { lastReject: string | null; lastAcceptSeq: number | null; acceptedTotal: number };
   };
+
+  /** When set (`VITE_DEBUG_BRAINBIT_BRIDGE` + BrainBit relay device), shows live readout on Setup. */
+  brainbitBridgeDebug?: {
+    bandsSmooth: BrainwaveBands;
+    bandsDbSmooth: BrainwaveBandsDb;
+    chunkSeq: number | null;
+    rx: {
+      lastReject: string | null;
+      lastAcceptSeq: number | null;
+      acceptedTotal: number;
+      contactInputToUv: number;
+      contactThresholds: {
+        warmupSamples: number;
+        clipUv: number;
+        flatAbsUv: number;
+        flatVar: number;
+        artifactAbsUv: number;
+        artifactVar: number;
+        weakAbsUv: number;
+        weakVar: number;
+      };
+      contact: {
+        maxAbsRaw: number;
+        connectionQuality01: number;
+        perCh: {
+          raw: number;
+          uv: number;
+          absAmp: number;
+          vari: number;
+          rule: string;
+          horseshoe: number;
+        }[];
+      } | null;
+      fft: {
+        fftUsesHz: number;
+        chunkImpliedHz: number | null;
+        emaChunkImpliedHz: number;
+        lastRelativeSnapshot: BrainwaveBands | null;
+      };
+    };
+    lastSamplePreview: string;
+  };
+
+  /** When set: Athena (`VITE_DEBUG_ATHENA_COHERENCE`) or BrainBit (`VITE_DEBUG_BRAINBIT_BRIDGE`) coherence snapshot. */
+  athenaCoherenceDebug?: AthenaCoherenceDebugSnapshot;
 }
 
 export function SessionSetup({
@@ -96,9 +151,15 @@ export function SessionSetup({
   onSelectUser,
   onStartSession,
   athenaBandDebug,
+  athenaCoherenceDebug,
+  connectionHealthState = 'disconnected',
 }: SessionSetupProps) {
   const eegDevice = useEegDevice();
-  const isAthenaBridge = isAthenaBridgeEEGDevice(eegDevice);
+  const isWsBridge = isWebSocketBridgeEegDevice(eegDevice);
+  const isBrainBit = isBrainBitBridgeEEGDevice(eegDevice);
+  const brainBitRelayStatus = useBrainBitRelayStatus(isBrainBit);
+  const brainBitStreamHealth = useBrainBitStreamHealth(isBrainBit, connectionHealthState);
+  const brainBitChannelActivity = useBrainBitChannelActivity(isBrainBit && museConnected);
   const [newUserName, setNewUserName] = useState('');
   // showUserForm state removed - Lovable design doesn't show user switcher inline
 
@@ -196,7 +257,17 @@ export function SessionSetup({
         boxShadow: '0 4px 20px hsl(270 20% 2% / 0.5)',
       }}
     >
-      {isAthenaBridge && (
+      {isBrainBit && museConnected && (
+        <div style={{ marginBottom: '14px' }}>
+          <BrainBitSignalStatus
+            bluetoothConnected={museConnected}
+            deviceName={museDeviceName}
+            streamHealth={brainBitStreamHealth}
+            channelActivity={brainBitChannelActivity}
+          />
+        </div>
+      )}
+      {isWsBridge && !isBrainBit && (
         <p
           style={{
             fontFamily: 'var(--font-sans)',
@@ -211,13 +282,16 @@ export function SessionSetup({
           horseshoe contact.
         </p>
       )}
-      <ElectrodeStatus
-        sites={electrodeSites}
-        status={electrodeStatus}
-        sectionTitle={isAthenaBridge ? 'Channel quality (bridge)' : 'ELECTRODE CONTACT'}
-        qualityBarLabel={isAthenaBridge ? 'Estimated contact' : 'Contact Quality'}
-        weightedContactPercent={isAthenaBridge}
-      />
+      {isBrainBit ? (
+        <BrainBitChannelActivity activity={brainBitChannelActivity} />
+      ) : (
+        <ElectrodeStatus
+          sites={electrodeSites}
+          status={electrodeStatus}
+          sectionTitle={isWsBridge ? 'Channel quality (bridge)' : 'ELECTRODE CONTACT'}
+          qualityBarLabel={isWsBridge ? 'Estimated contact' : 'Contact Quality'}
+        />
+      )}
       {athenaBandDebug && (
         <div
           style={{
@@ -250,6 +324,127 @@ export function SessionSetup({
             dB (smooth) δ={athenaBandDebug.bandsDbSmooth.delta.toFixed(0)} θ={athenaBandDebug.bandsDbSmooth.theta.toFixed(0)}{' '}
             α={athenaBandDebug.bandsDbSmooth.alpha.toFixed(0)} β={athenaBandDebug.bandsDbSmooth.beta.toFixed(0)} γ=
             {athenaBandDebug.bandsDbSmooth.gamma.toFixed(0)}
+          </div>
+        </div>
+      )}
+      {athenaCoherenceDebug && !isBrainBitBridgeEEGDevice(eegDevice) && (
+        <div
+          style={{
+            marginTop: '14px',
+            padding: '10px 12px',
+            borderRadius: '8px',
+            background: 'hsl(280 40% 12% / 0.55)',
+            border: '1px solid hsl(280 30% 28% / 0.5)',
+            fontFamily: 'ui-monospace, monospace',
+            fontSize: '11px',
+            lineHeight: 1.5,
+            color: 'var(--text-muted)',
+          }}
+        >
+          <div style={{ fontWeight: 600, color: 'hsl(300 55% 72%)', marginBottom: '6px' }}>
+            Athena · coherence debug (`VITE_DEBUG_ATHENA_COHERENCE`)
+          </div>
+          <div>
+            coh {athenaCoherenceDebug.coherence.toFixed(3)} · zone {athenaCoherenceDebug.coherenceZone} · flow{' '}
+            {String(athenaCoherenceDebug.flowActive)}
+          </div>
+          <div>
+            dwell {athenaCoherenceDebug.sustainedMs} / {athenaCoherenceDebug.sustainedTargetMs} ms (
+            {(athenaCoherenceDebug.dwellProgress * 100).toFixed(0)}%) · path {athenaCoherenceDebug.coherencePath} ·
+            condMet {String(athenaCoherenceDebug.conditionsMet)}
+          </div>
+          <div>
+            baselineCal {String(athenaCoherenceDebug.baselineCalComplete)} · relMode{' '}
+            {String(athenaCoherenceDebug.useRelativeMode)} · flowEdge {athenaCoherenceDebug.flowEdge} · sigValid{' '}
+            {String(athenaCoherenceDebug.signalValid)} · αFloor {String(athenaCoherenceDebug.hasAlphaFloor)}
+          </div>
+          {athenaCoherenceDebug.signalValidMinAlpha != null && (
+            <div style={{ fontSize: '10px', marginTop: '4px' }}>
+              signalValid α {athenaCoherenceDebug.bandsAlphaForValidity?.toFixed(3) ?? '—'} ≥{' '}
+              {athenaCoherenceDebug.signalValidMinAlpha.toFixed(3)} (Muse default 0.02)
+            </div>
+          )}
+          {athenaCoherenceDebug.dwellBlocker && (
+            <div style={{ color: 'hsl(35 85% 68%)' }}>
+              dwellBlocker: {athenaCoherenceDebug.dwellBlocker} (Easy mode uses relative* after baseline cal)
+            </div>
+          )}
+          <div>
+            path {athenaCoherenceDebug.pathDetail} · relTime {(athenaCoherenceDebug.pathRelativeFraction * 100).toFixed(0)}% (
+            {athenaCoherenceDebug.pathRelativeSec.toFixed(0)}s rel / {athenaCoherenceDebug.pathAbsoluteSec.toFixed(0)}s abs)
+          </div>
+          <div>
+            flowEver {String(athenaCoherenceDebug.detectorFlowEver)} · detActive~{athenaCoherenceDebug.detectorActiveSec.toFixed(1)}s ·
+            audioContact {athenaCoherenceDebug.audioContactAvg.toFixed(2)} sigOk {String(athenaCoherenceDebug.audioSignalOkForStateMachine)}
+          </div>
+          <div>
+            gap→audioSM {athenaCoherenceDebug.gapToAudioSmEnter.toFixed(2)} (need ≤0) · gap→uiFlow{' '}
+            {athenaCoherenceDebug.gapToUiFlow.toFixed(2)}
+          </div>
+          <div style={{ color: 'hsl(190 55% 72%)' }}>bottleneck: {athenaCoherenceDebug.bottleneckHint}</div>
+          {athenaCoherenceDebug.audioReward ? (
+            <>
+              <div style={{ fontWeight: 600, color: 'hsl(200 50% 68%)', marginTop: '8px' }}>Audio reward path</div>
+              <div>
+                sess {String(athenaCoherenceDebug.audioReward.sessionActive)} · SM {athenaCoherenceDebug.audioReward.audioSmState} ·
+                leftBaseline {String(athenaCoherenceDebug.audioReward.smLeftBaseline)} · stabHold{' '}
+                {(athenaCoherenceDebug.audioReward.smEnterSustainProgress01 * 100).toFixed(0)}% /{' '}
+                {athenaCoherenceDebug.audioReward.smEnterSustainTargetSec.toFixed(2)}s tgt
+              </div>
+              <div>
+                sustainedLayer {String(athenaCoherenceDebug.audioReward.sustainedLayerActive)} · acc{' '}
+                {athenaCoherenceDebug.audioReward.sustainedAccumSec.toFixed(1)}s / need{' '}
+                {athenaCoherenceDebug.audioReward.sustainedHoldTargetSec.toFixed(1)}s (coh≥
+                {athenaCoherenceDebug.audioReward.sustainedThreshold.toFixed(2)})
+              </div>
+              <div>
+                gain bl {athenaCoherenceDebug.audioReward.gainBaseline?.toFixed(2) ?? '—'} coh{' '}
+                {athenaCoherenceDebug.audioReward.gainCoherence?.toFixed(2) ?? '—'} sus{' '}
+                {athenaCoherenceDebug.audioReward.gainSustained?.toFixed(2) ?? '—'} shim{' '}
+                {athenaCoherenceDebug.audioReward.gainShimmer?.toFixed(2) ?? '—'} · cohFamAudible{' '}
+                {String(athenaCoherenceDebug.audioReward.coherentFamilyAudible)} · xfadeAtk{' '}
+                {athenaCoherenceDebug.audioReward.crossfadeAttackSec.toFixed(2)}s
+              </div>
+              <div style={{ color: 'hsl(45 55% 68%)' }}>{athenaCoherenceDebug.audioReward.rewardPathHint}</div>
+            </>
+          ) : (
+            <div style={{ marginTop: '8px', opacity: 0.85 }}>audio reward: — (no AudioContext)</div>
+          )}
+          {athenaCoherenceDebug.relativeGate ? (
+            <div>
+              rel β/α {athenaCoherenceDebug.relativeGate.ratio.toFixed(3)}≤{athenaCoherenceDebug.relativeGate.betaAlphaMax.toFixed(3)}{' '}
+              {athenaCoherenceDebug.relativeGate.betaAlphaOk ? '✓' : '✗'} · var {athenaCoherenceDebug.relativeGate.variance.toFixed(4)}≤
+              {athenaCoherenceDebug.relativeGate.varianceMax.toFixed(4)} {athenaCoherenceDebug.relativeGate.varianceOk ? '✓' : '✗'} · α
+              {athenaCoherenceDebug.relativeGate.alpha.toFixed(3)}≥{athenaCoherenceDebug.relativeGate.alphaMin.toFixed(3)}{' '}
+              {athenaCoherenceDebug.relativeGate.alphaOk ? '✓' : '✗'}
+            </div>
+          ) : athenaCoherenceDebug.pathDetail === 'absolute-prebaseline' ? (
+            <div style={{ color: 'hsl(45 70% 70%)' }}>relativeGate: calibrating baseline (still absolute thresholds)</div>
+          ) : null}
+          <div>
+            β/α {athenaCoherenceDebug.betaAlphaRatio.toFixed(3)} need &lt;{' '}
+            {athenaCoherenceDebug.betaAlphaRatioThreshold.toFixed(3)}
+          </div>
+          <div>
+            variance {athenaCoherenceDebug.signalVariance.toFixed(4)} / max {athenaCoherenceDebug.varianceThreshold}
+          </div>
+          <div>
+            noise {athenaCoherenceDebug.noiseLevel.toFixed(3)} / max {athenaCoherenceDebug.noiseThreshold} (motion+
+            γ/2)
+          </div>
+          <div>
+            motion norm {athenaCoherenceDebug.normalizedMotion.toFixed(3)} · elecQ {athenaCoherenceDebug.electrodeQuality.toFixed(3)} ·
+            conn {athenaCoherenceDebug.connectionQualityMetric.toFixed(3)} · touch {String(athenaCoherenceDebug.touching)}
+          </div>
+          <div>
+            bandsSmooth δ…γ {athenaCoherenceDebug.bandsSmooth.delta.toFixed(3)} {athenaCoherenceDebug.bandsSmooth.theta.toFixed(3)}{' '}
+            {athenaCoherenceDebug.bandsSmooth.alpha.toFixed(3)} {athenaCoherenceDebug.bandsSmooth.beta.toFixed(3)}{' '}
+            {athenaCoherenceDebug.bandsSmooth.gamma.toFixed(3)} · Σpower {athenaCoherenceDebug.totalBandPower.toFixed(3)} (min{' '}
+            {athenaCoherenceDebug.minSignalPower})
+          </div>
+          <div style={{ fontSize: '10px', marginTop: '4px', opacity: 0.95 }}>
+            signalValid: var(α+β smooth window) {athenaCoherenceDebug.signalVariance.toFixed(5)} ≥{' '}
+            {athenaCoherenceDebug.minVariance.toFixed(5)} (not the same as dwell “variance / max” below)
           </div>
         </div>
       )}
@@ -519,6 +714,8 @@ export function SessionSetup({
             onDisconnect={onDisconnect}
             isBluetoothAvailable={isBluetoothAvailable}
             error={connectionError}
+            brainBitMode={isBrainBit}
+            brainBitRelayStatus={brainBitRelayStatus}
           />
         </div>
 
@@ -697,7 +894,9 @@ export function SessionSetup({
         >
           {!canStartSession
             ? (!museConnected
-                ? 'Connect your Muse device to begin'
+                ? isBrainBit
+                  ? 'Connect your BrainBit headset to begin'
+                  : 'Connect your Muse device to begin'
                 : 'Select a user profile to begin')
             : 'Ready to begin your session'}
         </p>

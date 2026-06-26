@@ -1,0 +1,4 @@
+module CapsuleBridge [system] {
+    header "include/capsule_bridge_module.h"
+    export *
+}

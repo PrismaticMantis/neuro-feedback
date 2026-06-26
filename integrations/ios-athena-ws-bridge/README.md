@@ -41,6 +41,17 @@ If only the phone is connected, messages are relayed to **zero** peers.
 4. On each **EEG** packet (filter by your `IXNMuseDataPacketType`), call **`emitter.send(...)`** (throttling is built in; tune `minSendInterval` if needed).
 5. **Local network:** If the connection fails from device to Mac, add **`NSLocalNetworkUsageDescription`** and **`NSBonjourServices`** only if required by Apple review docs; often a direct TCP `ws://IP:port` works on LAN without Bonjour.
 
+## LibMuse `packet.timestamp()` units (temporary probe)
+
+Set **`AthenaWebSocketEmitter.enableLibMuseTimestampProbe = true`** once before `connect(url:)` (e.g. in your view controller). Run a short EEG session and read Xcode’s console / **Console.app** (subsystem `AthenaBridge`, category `websocket`).
+
+- **`[LibMuseTdProbe] invoke`** — one line per **call** into `send` (LibMuse callback rate, before throttle). Fields: `td`, `d_td` (Δ vs previous invoke), `d_host_invoke_s` (Δ host time vs previous invoke).
+- **`[LibMuseTdProbe] sent`** — one line per **WebSocket send** (after throttle, ~≤50 Hz). Fields: `d_host_send_s` (Δ vs previous send).
+
+Compare **`d_td`** to **`d_host_invoke_s`**: same order of magnitude suggests the unit matches “per LibMuse packet” wall step (often **seconds** if both ~0.004 at 256 Hz, or **ms** if `d_td` ~4 while host ~0.004). Turn the flag **`false`** after capturing logs.
+
+Default is **off** — no probe overhead or spam.
+
 ## Logging / performance (important)
 
 Per-packet **`NSLog` / `print` in `receive(_ packet: IXNMuseDataPacket, …)`** can flood unified logging and contribute to **“network queue has many pending events”** warnings (heavy main-queue / logging work while WebSocket sends are in flight).

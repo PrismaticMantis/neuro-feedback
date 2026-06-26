@@ -1,0 +1,5 @@
+module neurosdk2 [system] {
+    umbrella header "../../../Vendor/macos/Headers/neurosdk.h"
+    export *
+    link "neurosdk2"
+}

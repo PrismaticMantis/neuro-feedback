@@ -48,6 +48,10 @@ const BRIDGE_ARTIFACT_VAR = 120_000;
 const BRIDGE_WEAK_ABS_UV = 450;
 const BRIDGE_WEAK_VAR = 35_000;
 
+/** Asymmetric EMA on contact *score*: slower when quality drops (reduces UI + gating flicker). */
+const BRIDGE_CONTACT_DISPLAY_EMA_IMPROVE = 0.17;
+const BRIDGE_CONTACT_DISPLAY_EMA_DEGRADE = 0.055;
+
 const EMPTY_PPG: HeartRateMetrics = { bpm: null, confidence: 0, lastBeatMs: null };
 const EMPTY_SESSION_HR: SessionHeartSummary = { avgHR: null, avgHRV: null };
 const EMPTY_PPG_DIAG: PPGDiagnostics = {
@@ -122,6 +126,8 @@ export class AthenaBridgeEEGDevice implements EEGDevice {
   private contactAbsAmp: number[] = [];
   private contactVar: number[] = [];
   private contactHorseshoe: number[] = [];
+  /** EMA of contact “goodness” 0–1 before hysteresis → `contactHorseshoe` (display + getElectrodeQuality). */
+  private contactDisplayEma: number[] = [];
   private contactSampleCount: number[] = [];
   /** Wall clock at last accepted packet (fallback when `th`/`td` unusable). */
   private lastRecvWallMs = 0;
@@ -292,6 +298,7 @@ export class AthenaBridgeEEGDevice implements EEGDevice {
     this.contactAbsAmp = Array(c).fill(0);
     this.contactVar = Array(c).fill(0);
     this.contactHorseshoe = Array(c).fill(4);
+    this.contactDisplayEma = Array(c).fill(0.28);
     this.contactSampleCount = Array(c).fill(0);
   }
 
@@ -336,7 +343,44 @@ export class AthenaBridgeEEGDevice implements EEGDevice {
     } else {
       q = 1;
     }
-    this.contactHorseshoe[ch] = q;
+    this.applyContactDisplaySmoothing(ch, q);
+  }
+
+  /** Map raw horseshoe step to 0–1 for EMA (1 = best). */
+  private static rawContactQToScore(q: number): number {
+    if (q === 1) return 1;
+    if (q === 2) return 0.62;
+    if (q === 3) return 0.28;
+    return 0;
+  }
+
+  /** Schmitt-style thresholds so brief score wobble does not flip integer horseshoe. */
+  private hysteresisHorseshoe(prev: number, s: number): number {
+    if (prev === 1) return s < 0.62 ? 2 : 1;
+    if (prev === 2) {
+      if (s > 0.76) return 1;
+      if (s < 0.38) return 3;
+      return 2;
+    }
+    if (prev === 3) {
+      if (s > 0.52) return 2;
+      if (s < 0.2) return 4;
+      return 3;
+    }
+    return s > 0.35 ? 3 : 4;
+  }
+
+  private applyContactDisplaySmoothing(ch: number, rawQ: number): void {
+    const target = AthenaBridgeEEGDevice.rawContactQToScore(rawQ);
+    let ema = this.contactDisplayEma[ch] ?? target;
+    const a =
+      target < ema - 1e-6
+        ? BRIDGE_CONTACT_DISPLAY_EMA_DEGRADE
+        : BRIDGE_CONTACT_DISPLAY_EMA_IMPROVE;
+    ema = ema * (1 - a) + target * a;
+    this.contactDisplayEma[ch] = ema;
+    const prev = this.contactHorseshoe[ch] ?? 4;
+    this.contactHorseshoe[ch] = this.hysteresisHorseshoe(prev, ema);
   }
 
   private syncContactDerivedState(): void {

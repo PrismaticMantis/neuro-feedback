@@ -18,6 +18,11 @@ import {
   isAthenaWriteTesterActive,
 } from '../lib/athena-write-tester-debug';
 import { AthenaWriteTesterPanel } from './AthenaWriteTesterPanel';
+import {
+  brainBitRelayServiceLabel,
+  isBrainBitRelayReadyForConnect,
+  type BrainBitRelayStatus,
+} from '../hooks/useBrainBitRelayStatus';
 
 interface ConnectionStatusProps {
   museConnected: boolean;
@@ -28,6 +33,10 @@ interface ConnectionStatusProps {
   onDisconnect: () => void;
   isBluetoothAvailable: boolean;
   error: string | null;
+  /** BrainBit bridge device — shows desktop service status instead of Muse connect UI. */
+  brainBitMode?: boolean;
+  /** Tauri sidecar relay status (null in browser builds). */
+  brainBitRelayStatus?: BrainBitRelayStatus | null;
 }
 
 // Detect iOS/iPadOS
@@ -42,6 +51,22 @@ function isWebBluetoothBrowser(): boolean {
   return typeof navigator !== 'undefined' && navigator.bluetooth !== undefined;
 }
 
+function isTauriRuntime(): boolean {
+  return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
+}
+
+function brainBitServiceDotColor(status: BrainBitRelayStatus | null | undefined): string {
+  if (!status) return '#c9a227';
+  switch (status.phase) {
+    case 'ready':
+      return '#3fa87a';
+    case 'starting':
+      return '#c9a227';
+    default:
+      return '#c96b6b';
+  }
+}
+
 export function ConnectionStatus({
   museConnected,
   museDeviceName,
@@ -51,6 +76,8 @@ export function ConnectionStatus({
   onDisconnect,
   isBluetoothAvailable,
   error,
+  brainBitMode = false,
+  brainBitRelayStatus = null,
 }: ConnectionStatusProps) {
   const [showOSCHelp, setShowOSCHelp] = useState(false);
   const [oscUrl, setOscUrl] = useState('ws://localhost:8080');
@@ -65,6 +92,15 @@ export function ConnectionStatus({
   const handleOSCConnect = () => {
     onConnectOSC(oscUrl || undefined);
   };
+
+  const handleBrainBitConnect = () => {
+    onConnectOSC();
+  };
+
+  const isTauri = isTauriRuntime();
+  const showBrainBitServiceRow = brainBitMode && isTauri && brainBitRelayStatus != null;
+  const brainBitServiceLabel = brainBitRelayServiceLabel(brainBitRelayStatus);
+  const brainBitConnectEnabled = isBrainBitRelayReadyForConnect(brainBitRelayStatus, isTauri);
 
   return (
     <div 
@@ -93,142 +129,256 @@ export function ConnectionStatus({
         Device Connection
       </h2>
       
-      {/* Status Row - Target 3/4: Muse + Headphone side by side */}
+      {/* Status Row */}
       <div 
         className="status-bar"
         style={{
           display: 'flex',
-          alignItems: 'flex-start',
-          gap: '16px',
-          marginBottom: museConnected ? '16px' : '0',
+          flexDirection: 'column',
+          gap: '12px',
+          marginBottom: museConnected || showBrainBitServiceRow ? '16px' : '0',
         }}
       >
-        {/* Muse Status - Target 3/4: Icon + Label/Value + optional green dot */}
-        <div 
-          className="status-item"
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '10px',
-            flex: 1,
-            paddingRight: '16px',
-            borderRight: '1px solid hsl(270 15% 22% / 0.4)',
-          }}
-        >
-          <div 
-            className="status-icon muse-icon"
-            style={{
-              width: '36px',
-              height: '36px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              background: 'hsl(270 10% 16% / 0.8)',
-              borderRadius: '10px',
-              color: 'var(--text-muted)',
-              flexShrink: 0,
-            }}
-          >
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="20" height="20">
-              <circle cx="12" cy="12" r="10"/>
-              <path d="M12 8v4l2 2"/>
-            </svg>
-          </div>
-          <div className="status-text" style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-            <span 
-              className="status-label"
+        {brainBitMode ? (
+          <>
+            {showBrainBitServiceRow && (
+              <div className="status-item" style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <div
+                  style={{
+                    width: '36px',
+                    height: '36px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    background: 'hsl(270 10% 16% / 0.8)',
+                    borderRadius: '10px',
+                    color: 'var(--text-muted)',
+                    flexShrink: 0,
+                  }}
+                >
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="20" height="20">
+                    <rect x="3" y="4" width="18" height="12" rx="2" />
+                    <path d="M7 20h10" />
+                    <path d="M9 16v4" />
+                    <path d="M15 16v4" />
+                  </svg>
+                </div>
+                <div className="status-text" style={{ display: 'flex', flexDirection: 'column', gap: '2px', flex: 1 }}>
+                  <span style={{ fontFamily: 'var(--font-sans)', fontSize: '12px', color: 'var(--text-muted)' }}>
+                    BrainBit service
+                  </span>
+                  <span
+                    style={{
+                      fontFamily: 'var(--font-sans)',
+                      fontSize: '14px',
+                      fontWeight: 500,
+                      color: 'var(--text-primary)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                    }}
+                  >
+                    {brainBitServiceLabel}
+                    <span
+                      style={{
+                        width: '8px',
+                        height: '8px',
+                        borderRadius: '50%',
+                        background: brainBitServiceDotColor(brainBitRelayStatus),
+                        boxShadow: `0 0 8px ${brainBitServiceDotColor(brainBitRelayStatus)}`,
+                      }}
+                    />
+                  </span>
+                  {brainBitServiceLabel === 'Unavailable' && brainBitRelayStatus?.message && (
+                    <span style={{ fontFamily: 'var(--font-sans)', fontSize: '12px', color: 'var(--text-subtle)', lineHeight: 1.4 }}>
+                      {brainBitRelayStatus.message}
+                    </span>
+                  )}
+                </div>
+              </div>
+            )}
+            <div className="status-item" style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <div
+                style={{
+                  width: '36px',
+                  height: '36px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  background: 'hsl(270 10% 16% / 0.8)',
+                  borderRadius: '10px',
+                  color: 'var(--text-muted)',
+                  flexShrink: 0,
+                }}
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="20" height="20">
+                  <circle cx="12" cy="12" r="10" />
+                  <path d="M12 8v4l2 2" />
+                </svg>
+              </div>
+              <div className="status-text" style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                <span style={{ fontFamily: 'var(--font-sans)', fontSize: '12px', color: 'var(--text-muted)' }}>
+                  Headset
+                </span>
+                <span
+                  style={{
+                    fontFamily: 'var(--font-sans)',
+                    fontSize: '14px',
+                    fontWeight: 500,
+                    color: museConnected ? '#D9C478' : 'var(--text-primary)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                  }}
+                >
+                  {museConnected ? museDeviceName || 'Connected' : 'Not connected'}
+                  {museConnected && (
+                    <motion.span
+                      style={{
+                        width: '8px',
+                        height: '8px',
+                        borderRadius: '50%',
+                        background: '#3fa87a',
+                        boxShadow: '0 0 8px #3fa87a',
+                      }}
+                      animate={{ opacity: [1, 0.6, 1] }}
+                      transition={{ repeat: Infinity, duration: 2 }}
+                    />
+                  )}
+                </span>
+              </div>
+            </div>
+          </>
+        ) : (
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: '16px' }}>
+            {/* Muse Status - Target 3/4: Icon + Label/Value + optional green dot */}
+            <div 
+              className="status-item"
               style={{
-                fontFamily: 'var(--font-sans)',
-                fontSize: '12px',
-                fontWeight: 400,
-                color: 'var(--text-muted)',
-              }}
-            >
-              Muse
-            </span>
-            <span 
-              className={`status-value ${museConnected ? 'connected' : ''}`}
-              style={{
-                fontFamily: 'var(--font-sans)',
-                fontSize: '14px',
-                fontWeight: 500,
-                color: museConnected ? '#D9C478' : 'var(--text-primary)',
                 display: 'flex',
                 alignItems: 'center',
-                gap: '6px',
+                gap: '10px',
+                flex: 1,
+                paddingRight: '16px',
+                borderRight: '1px solid hsl(270 15% 22% / 0.4)',
               }}
             >
-              {museConnected ? museDeviceName || 'Connected' : 'Not Connected'}
-              {museConnected && (
-                <motion.span
+              <div 
+                className="status-icon muse-icon"
+                style={{
+                  width: '36px',
+                  height: '36px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  background: 'hsl(270 10% 16% / 0.8)',
+                  borderRadius: '10px',
+                  color: 'var(--text-muted)',
+                  flexShrink: 0,
+                }}
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="20" height="20">
+                  <circle cx="12" cy="12" r="10"/>
+                  <path d="M12 8v4l2 2"/>
+                </svg>
+              </div>
+              <div className="status-text" style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                <span 
+                  className="status-label"
                   style={{
-                    width: '8px',
-                    height: '8px',
-                    borderRadius: '50%',
-                    background: '#3fa87a',
-                    boxShadow: '0 0 8px #3fa87a',
+                    fontFamily: 'var(--font-sans)',
+                    fontSize: '12px',
+                    fontWeight: 400,
+                    color: 'var(--text-muted)',
                   }}
-                  animate={{ opacity: [1, 0.6, 1] }}
-                  transition={{ repeat: Infinity, duration: 2 }}
-                />
-              )}
-            </span>
-          </div>
-        </div>
+                >
+                  Muse
+                </span>
+                <span 
+                  className={`status-value ${museConnected ? 'connected' : ''}`}
+                  style={{
+                    fontFamily: 'var(--font-sans)',
+                    fontSize: '14px',
+                    fontWeight: 500,
+                    color: museConnected ? '#D9C478' : 'var(--text-primary)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                  }}
+                >
+                  {museConnected ? museDeviceName || 'Connected' : 'Not Connected'}
+                  {museConnected && (
+                    <motion.span
+                      style={{
+                        width: '8px',
+                        height: '8px',
+                        borderRadius: '50%',
+                        background: '#3fa87a',
+                        boxShadow: '0 0 8px #3fa87a',
+                      }}
+                      animate={{ opacity: [1, 0.6, 1] }}
+                      transition={{ repeat: Infinity, duration: 2 }}
+                    />
+                  )}
+                </span>
+              </div>
+            </div>
 
-        {/* Headphone Status - Target 3/4: Icon + Label/Value */}
-        <div 
-          className="status-item"
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '10px',
-            flex: 1,
-          }}
-        >
-          <div 
-            className="status-icon headphone-icon"
-            style={{
-              width: '36px',
-              height: '36px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              background: 'hsl(270 10% 16% / 0.8)',
-              borderRadius: '10px',
-              color: 'var(--text-muted)',
-              flexShrink: 0,
-            }}
-          >
-            <svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18">
-              <path d="M12 1c-4.97 0-9 4.03-9 9v7c0 1.66 1.34 3 3 3h3v-8H5v-2c0-3.87 3.13-7 7-7s7 3.13 7 7v2h-4v8h3c1.66 0 3-1.34 3-3v-7c0-4.97-4.03-9-9-9z" />
-            </svg>
-          </div>
-          <div className="status-text" style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-            <span 
-              className="status-label"
+            {/* Headphone Status - Target 3/4: Icon + Label/Value */}
+            <div 
+              className="status-item"
               style={{
-                fontFamily: 'var(--font-sans)',
-                fontSize: '12px',
-                fontWeight: 400,
-                color: 'var(--text-muted)',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '10px',
+                flex: 1,
               }}
             >
-              Headphone
-            </span>
-            <span 
-              className="status-value hint"
-              style={{
-                fontFamily: 'var(--font-sans)',
-                fontSize: '13px',
-                fontWeight: 400,
-                color: 'var(--text-subtle)',
-              }}
-            >
-              Required for binaural
-            </span>
+              <div 
+                className="status-icon headphone-icon"
+                style={{
+                  width: '36px',
+                  height: '36px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  background: 'hsl(270 10% 16% / 0.8)',
+                  borderRadius: '10px',
+                  color: 'var(--text-muted)',
+                  flexShrink: 0,
+                }}
+              >
+                <svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18">
+                  <path d="M12 1c-4.97 0-9 4.03-9 9v7c0 1.66 1.34 3 3 3h3v-8H5v-2c0-3.87 3.13-7 7-7s7 3.13 7 7v2h-4v8h3c1.66 0 3-1.34 3-3v-7c0-4.97-4.03-9-9-9z" />
+                </svg>
+              </div>
+              <div className="status-text" style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                <span 
+                  className="status-label"
+                  style={{
+                    fontFamily: 'var(--font-sans)',
+                    fontSize: '12px',
+                    fontWeight: 400,
+                    color: 'var(--text-muted)',
+                  }}
+                >
+                  Headphone
+                </span>
+                <span 
+                  className="status-value hint"
+                  style={{
+                    fontFamily: 'var(--font-sans)',
+                    fontSize: '13px',
+                    fontWeight: 400,
+                    color: 'var(--text-subtle)',
+                  }}
+                >
+                  Required for binaural
+                </span>
+              </div>
+            </div>
           </div>
-        </div>
+        )}
       </div>
 
       {/* Signal Quality Bar - Target 4: Yellow progress bar */}
@@ -296,7 +446,7 @@ export function ConnectionStatus({
       {error && <div className="error-message">{error}</div>}
 
       {/* iOS Warning */}
-      {!museConnected && showIOSWarning && (
+      {!museConnected && !brainBitMode && showIOSWarning && (
         <div className="ios-warning">
           <div className="ios-warning-header">
             <svg viewBox="0 0 24 24" fill="currentColor" width="20" height="20">
@@ -359,7 +509,52 @@ export function ConnectionStatus({
       </AnimatePresence>
 
       {/* Connection Buttons - Target 3: Gold "Connect Bluetooth" button */}
-      {!museConnected && (
+      {!museConnected && brainBitMode && (
+        <div
+          className="connection-buttons"
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '8px',
+            marginTop: '16px',
+          }}
+        >
+          <button
+            type="button"
+            className="btn btn-primary"
+            onClick={handleBrainBitConnect}
+            disabled={!brainBitConnectEnabled}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '8px',
+              width: '100%',
+              padding: '14px 24px',
+              background: 'linear-gradient(135deg, #D9C478, #C9B468)',
+              color: '#0c0a0e',
+              border: 'none',
+              borderRadius: '10px',
+              fontFamily: 'var(--font-sans)',
+              fontSize: '15px',
+              fontWeight: 500,
+              cursor: brainBitConnectEnabled ? 'pointer' : 'not-allowed',
+              transition: 'all 0.2s ease',
+              boxShadow: '0 4px 16px hsl(45 55% 70% / 0.25)',
+              opacity: brainBitConnectEnabled ? 1 : 0.55,
+            }}
+          >
+            Connect BrainBit
+          </button>
+          {!brainBitConnectEnabled && isTauri && (
+            <span style={{ fontFamily: 'var(--font-sans)', fontSize: '12px', color: 'var(--text-subtle)', textAlign: 'center' }}>
+              Waiting for BrainBit service to become ready…
+            </span>
+          )}
+        </div>
+      )}
+
+      {!museConnected && !brainBitMode && (
         <div 
           className="connection-buttons"
           style={{

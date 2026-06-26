@@ -1,4 +1,4 @@
-import type { BrainwaveBandsDb, ConnectionHealthState } from '../../types';
+import type { BrainwaveBands, BrainwaveBandsDb, ConnectionHealthState } from '../../types';
 import type {
   EEGConnectionStateDetail,
   EEGDeviceCapabilities,
@@ -30,6 +30,12 @@ export interface EEGDevice {
   getHealthState(): ConnectionHealthState;
 
   getState(): EEGDeviceState;
+
+  /**
+   * When implemented (e.g. BrainBit bridge), `useMuse` feeds `CoherenceDetector` / `calculateCoherence`
+   * from this vector instead of `getState().bandsSmooth`. Muse 2 and Athena bridge omit — unchanged.
+   */
+  getCoherenceDetectorBands?(): BrainwaveBands;
 
   /**
    * Per-channel contact / signal quality (device-specific encoding).

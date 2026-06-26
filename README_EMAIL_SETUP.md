@@ -43,6 +43,21 @@ VITE_REPORTS_API_URL=/api/send-report
 
 The `api/send-report.ts` file will automatically be deployed as a Vercel serverless function when you deploy your project.
 
+### 5. iPad / Capacitor specifics (NeuroFlo events)
+
+The BrainBit iPad app runs inside a Capacitor WKWebView, which is a different
+origin from your Vercel deployment. Two things matter:
+
+1. **Absolute API URL.** A relative `/api/send-report` will NOT resolve in the
+   WebView. In `.env.brainbit-ipad`, set `VITE_REPORTS_API_URL` to the full
+   deployed URL, e.g. `https://your-app.vercel.app/api/send-report`, and
+   `VITE_ENABLE_EMAIL_REPORTS=true`. Then rebuild with `npm run cap:sync:ios`.
+2. **CORS.** `api/send-report.ts` returns permissive CORS headers and handles the
+   `OPTIONS` preflight so the WebView origin can call it. No cookies are used.
+
+At an event the summary is always saved on-device first; the email send is a
+best-effort layer on top, so a flaky network never loses a guest's session.
+
 ## Mailto Fallback (No Setup Required)
 
 If `VITE_ENABLE_EMAIL_REPORTS` is not set to `true`, the app will use the mailto fallback, which opens the user's email client. This works on iOS and desktop but requires the user to manually send the email.

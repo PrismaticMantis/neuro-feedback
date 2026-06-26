@@ -1,7 +1,12 @@
 // Coherence Detection
 // Detects when: Beta < Alpha, low variance, sustained 5+ seconds
 
-import type { BrainwaveBands, CoherenceStatus } from '../types';
+import type {
+  BrainwaveBands,
+  CoherenceDwellDiagnostics,
+  CoherenceRelativeGateDebug,
+  CoherenceStatus,
+} from '../types';
 
 // Feature flag for expressive modulation (calmScore and creativeFlowScore)
 // When false, all expressive modulation behavior is disabled and app behaves identically to current version
@@ -15,6 +20,38 @@ export interface CoherenceConfig {
   minSignalPower: number; // Minimum total band power to consider signal valid (default 0.05)
   minVariance: number; // Minimum variance - too low means no real signal (default 0.001)
   useRelativeMode?: boolean; // PART 1: Use relative coherence (Easy mode only, default false)
+  /** When set (e.g. Athena bridge), overrides default 0.5 for `hasGoodContact`. Muse: leave unset. */
+  minElectrodeQualityForValidity?: number;
+  /** When true, `update()` attaches `dwellDiagnostics` (Athena debug only; keep false for Muse). */
+  emitDwellDiagnostics?: boolean;
+  /**
+   * Min `bands.alpha` for `signalValid` / `hasAlpha`. Default 0.02 when unset (Muse).
+   * BrainBit bridge may set lower — see `brainbit-coherence-stability.ts`.
+   */
+  signalValidMinAlpha?: number;
+  /**
+   * When set, only append α/β to the variance history if either differs from the last appended
+   * sample by at least this amount. WebSocket bridges often update bands once per network chunk
+   * while `update()` runs every animation frame — without dedupe, the 30+30 window fills with
+   * duplicates and `signalVariance` collapses to ~0 (`dwellBlocker: minVariance`). Muse: omit.
+   */
+  varianceSampleDedupeEpsilon?: number;
+  /**
+   * After the 15s baseline window, `hasAlphaFloor` requires smoothed α ≥ this fraction of baseline mean α.
+   * Default 0.5 (50%). BrainBit may set lower — low relative α + slow EMA can fail the floor while
+   * instantaneous α still clears `signalValidMinAlpha` (`dwellBlocker: alphaFloor` vs `bandAlpha`).
+   */
+  alphaFloorBaselineRatio?: number;
+  /**
+   * Optional upper bound after baseline: `bands.alpha` must stay <= baseline * this ratio.
+   * BrainBit uses this to reject movement/contact-pressure alpha surges. Muse leaves unset.
+   */
+  alphaCeilingBaselineRatio?: number;
+  /**
+   * Optional grace while dwell is accumulating: if conditions briefly fail after they were met,
+   * keep the dwell timer alive for this many ms. Muse leaves unset for immediate reset.
+   */
+  conditionBreakGraceMs?: number;
 }
 
 const DEFAULT_CONFIG: CoherenceConfig = {
@@ -47,6 +84,9 @@ export class CoherenceDetector {
   private recentAlphaValues: number[] = [];
   private recentBetaValues: number[] = [];
   private historyLength = 30; // ~1 second of data at 30fps
+  private lastVariancePushAlpha: number | null = null;
+  private lastVariancePushBeta: number | null = null;
+  private conditionBrokenSince: number | null = null;
 
   // Alpha floor safeguard tracking
   private sessionStartTime: number | null = null;
@@ -117,13 +157,31 @@ export class CoherenceDetector {
       }
     }
 
-    // Store recent values for variance calculation
-    this.recentAlphaValues.push(bands.alpha);
-    this.recentBetaValues.push(bands.beta);
-
-    while (this.recentAlphaValues.length > this.historyLength) {
-      this.recentAlphaValues.shift();
-      this.recentBetaValues.shift();
+    // Store recent values for variance calculation (optional dedupe: see `varianceSampleDedupeEpsilon`)
+    const eps = this.config.varianceSampleDedupeEpsilon;
+    let appendVarianceSample = true;
+    if (
+      eps != null &&
+      eps > 0 &&
+      this.lastVariancePushAlpha != null &&
+      this.lastVariancePushBeta != null
+    ) {
+      if (
+        Math.abs(bands.alpha - this.lastVariancePushAlpha) < eps &&
+        Math.abs(bands.beta - this.lastVariancePushBeta) < eps
+      ) {
+        appendVarianceSample = false;
+      }
+    }
+    if (appendVarianceSample) {
+      this.recentAlphaValues.push(bands.alpha);
+      this.recentBetaValues.push(bands.beta);
+      this.lastVariancePushAlpha = bands.alpha;
+      this.lastVariancePushBeta = bands.beta;
+      while (this.recentAlphaValues.length > this.historyLength) {
+        this.recentAlphaValues.shift();
+        this.recentBetaValues.shift();
+      }
     }
 
     // Calculate total signal power
@@ -140,8 +198,10 @@ export class CoherenceDetector {
     // SIGNAL VALIDITY CHECKS (needed for baseline calibration):
     const hasMinPower = totalPower >= this.config.minSignalPower;
     const hasMinVariance = signalVariance >= this.config.minVariance;
-    const hasGoodContact = electrodeContactQuality >= 0.5;
-    const hasAlpha = bands.alpha >= 0.02;
+    const contactValidityFloor = this.config.minElectrodeQualityForValidity ?? 0.5;
+    const hasGoodContact = electrodeContactQuality >= contactValidityFloor;
+    const signalValidMinAlphaFloor = this.config.signalValidMinAlpha ?? 0.02;
+    const hasAlpha = bands.alpha >= signalValidMinAlphaFloor;
     
     // PART 1: Baseline calibration for relative mode (Easy mode only)
     if (this.config.useRelativeMode && !this.baselineCalComplete && this.baselineCalStartTime !== null) {
@@ -215,31 +275,103 @@ export class CoherenceDetector {
 
     // Alpha floor safeguard (only apply after baseline is established)
     let hasAlphaFloor = true; // Default to true if baseline not ready yet
+    let hasAlphaCeiling = true; // Default to true if unset / baseline not ready yet
+    let alphaCeiling: number | null = null;
     if (this.baselineAlphaPower !== null && this.smoothedAlphaPower !== null) {
-      const alphaFloor = this.baselineAlphaPower * ALPHA_FLOOR_RATIO;
+      const floorRatio = this.config.alphaFloorBaselineRatio ?? ALPHA_FLOOR_RATIO;
+      const alphaFloor = this.baselineAlphaPower * floorRatio;
       hasAlphaFloor = this.smoothedAlphaPower >= alphaFloor;
+      if (this.config.alphaCeilingBaselineRatio != null) {
+        alphaCeiling = this.baselineAlphaPower * this.config.alphaCeilingBaselineRatio;
+        hasAlphaCeiling = bands.alpha <= alphaCeiling;
+      }
     }
 
     // PART 1: Check coherence conditions (absolute or relative based on mode)
-    let conditionsMet = false;
-    
+    let conditionsMetRaw = false;
+    let coherencePath: 'absolute' | 'relative' = 'absolute';
+    let relativeBetaAlphaOk = false;
+    let relativeVarianceOk = false;
+    let relativeAlphaOk = false;
+
     if (this.config.useRelativeMode && this.baselineCalComplete) {
-      // Relative mode (Easy mode): Check improvement vs baseline
-      if (signalValid && hasGoodContact && noiseLevel < this.config.noiseThreshold) {
-        // Require improvement vs baseline (use constants)
-        const betaAlphaImproved = betaAlphaRatio <= (this.baselineBetaAlphaRatioAvg! * RELATIVE_BETA_ALPHA_IMPROVEMENT);
-        const varianceImproved = signalVariance <= (this.baselineSignalVarianceAvg! * RELATIVE_VARIANCE_IMPROVEMENT);
-        const alphaOk = bands.alpha >= (this.baselineAlphaAvg! * RELATIVE_ALPHA_FLOOR);
-        
-        conditionsMet = betaAlphaImproved && varianceImproved && alphaOk;
+      coherencePath = 'relative';
+      const noiseOkRel = noiseLevel < this.config.noiseThreshold;
+      if (signalValid && hasGoodContact && noiseOkRel) {
+        relativeBetaAlphaOk =
+          betaAlphaRatio <= (this.baselineBetaAlphaRatioAvg! * RELATIVE_BETA_ALPHA_IMPROVEMENT);
+        relativeVarianceOk =
+          signalVariance <= (this.baselineSignalVarianceAvg! * RELATIVE_VARIANCE_IMPROVEMENT);
+        relativeAlphaOk = bands.alpha >= (this.baselineAlphaAvg! * RELATIVE_ALPHA_FLOOR);
+        conditionsMetRaw = relativeBetaAlphaOk && relativeVarianceOk && relativeAlphaOk;
       }
     } else {
-      // Absolute mode (Normal/Hard): Use absolute thresholds
-      conditionsMet = signalValid &&
+      coherencePath = 'absolute';
+      conditionsMetRaw =
+        signalValid &&
         hasAlphaFloor &&
+        hasAlphaCeiling &&
         betaAlphaRatio < this.config.betaAlphaRatioThreshold &&
         signalVariance < this.config.varianceThreshold &&
         noiseLevel < this.config.noiseThreshold;
+    }
+
+    let dwellGraceActive = false;
+    let conditionsMet = conditionsMetRaw;
+    const graceMs = this.config.conditionBreakGraceMs ?? 0;
+    if (conditionsMetRaw) {
+      this.conditionBrokenSince = null;
+    } else if (graceMs > 0 && this.conditionMetSince !== null) {
+      if (this.conditionBrokenSince === null) {
+        this.conditionBrokenSince = now;
+      }
+      dwellGraceActive = now - this.conditionBrokenSince <= graceMs;
+      if (dwellGraceActive) {
+        conditionsMet = true;
+      }
+    }
+
+    let dwellBlocker: string | null = null;
+    if (this.config.emitDwellDiagnostics && !conditionsMetRaw) {
+      if (coherencePath === 'relative') {
+        if (!signalValid) {
+          if (!hasMinPower) dwellBlocker = 'minPower';
+          else if (!hasMinVariance) dwellBlocker = 'minVariance';
+          else if (!hasGoodContact) dwellBlocker = 'contact';
+          else if (!hasAlpha) dwellBlocker = 'bandAlpha';
+        } else if (!hasGoodContact) {
+          dwellBlocker = 'contact';
+        } else if (noiseLevel >= this.config.noiseThreshold) {
+          dwellBlocker = 'noise';
+        } else if (!relativeBetaAlphaOk) {
+          dwellBlocker = 'relativeBetaAlpha';
+        } else if (!relativeVarianceOk) {
+          dwellBlocker = 'relativeVariance';
+        } else if (!relativeAlphaOk) {
+          dwellBlocker = 'relativeAlpha';
+        } else {
+          dwellBlocker = 'unknown';
+        }
+      } else {
+        if (!signalValid) {
+          if (!hasMinPower) dwellBlocker = 'minPower';
+          else if (!hasMinVariance) dwellBlocker = 'minVariance';
+          else if (!hasGoodContact) dwellBlocker = 'contact';
+          else if (!hasAlpha) dwellBlocker = 'bandAlpha';
+        } else if (!hasAlphaFloor) {
+          dwellBlocker = 'alphaFloor';
+        } else if (!hasAlphaCeiling) {
+          dwellBlocker = 'alphaSpike';
+        } else if (betaAlphaRatio >= this.config.betaAlphaRatioThreshold) {
+          dwellBlocker = 'betaAlpha';
+        } else if (signalVariance >= this.config.varianceThreshold) {
+          dwellBlocker = 'variance';
+        } else if (noiseLevel >= this.config.noiseThreshold) {
+          dwellBlocker = 'noise';
+        } else {
+          dwellBlocker = 'unknown';
+        }
+      }
     }
 
     if (conditionsMet) {
@@ -283,13 +415,77 @@ export class CoherenceDetector {
       this.onEnterCoherence?.();
     }
 
-    return {
+    const out: CoherenceStatus = {
       isActive: this._isActive,
       sustainedMs,
       betaAlphaRatio,
       signalVariance,
       noiseLevel,
     };
+
+    if (this.config.emitDwellDiagnostics) {
+      const pathDetail: CoherenceDwellDiagnostics['pathDetail'] =
+        this.config.useRelativeMode && !this.baselineCalComplete
+          ? 'absolute-prebaseline'
+          : coherencePath === 'relative'
+            ? 'relative'
+            : 'absolute';
+
+      let relativeGate: CoherenceRelativeGateDebug | null | undefined;
+      if (
+        this.config.useRelativeMode &&
+        this.baselineCalComplete &&
+        this.baselineBetaAlphaRatioAvg != null &&
+        this.baselineSignalVarianceAvg != null &&
+        this.baselineAlphaAvg != null
+      ) {
+        relativeGate = {
+          betaAlphaMax: this.baselineBetaAlphaRatioAvg * RELATIVE_BETA_ALPHA_IMPROVEMENT,
+          varianceMax: this.baselineSignalVarianceAvg * RELATIVE_VARIANCE_IMPROVEMENT,
+          alphaMin: this.baselineAlphaAvg * RELATIVE_ALPHA_FLOOR,
+          ratio: betaAlphaRatio,
+          variance: signalVariance,
+          alpha: bands.alpha,
+          betaAlphaOk: relativeBetaAlphaOk,
+          varianceOk: relativeVarianceOk,
+          alphaOk: relativeAlphaOk,
+        };
+      } else if (this.config.useRelativeMode && !this.baselineCalComplete) {
+        relativeGate = null;
+      } else {
+        relativeGate = undefined;
+      }
+
+      const floorRatio = this.config.alphaFloorBaselineRatio ?? ALPHA_FLOOR_RATIO;
+      const dwellDiagnostics: CoherenceDwellDiagnostics = {
+        conditionsMet,
+        conditionsMetRaw,
+        dwellGraceActive,
+        conditionBreakGraceMs: graceMs > 0 ? graceMs : undefined,
+        coherencePath,
+        pathDetail,
+        baselineCalComplete: this.baselineCalComplete,
+        useRelativeMode: !!this.config.useRelativeMode,
+        dwellBlocker,
+        signalValid,
+        hasAlphaFloor,
+        hasAlphaCeiling,
+        alphaCeilingMax: alphaCeiling,
+        alphaCeilingBaselineRatio: this.config.alphaCeilingBaselineRatio,
+        relativeGate,
+        signalValidMinAlpha: signalValidMinAlphaFloor,
+        bandsAlpha: bands.alpha,
+        alphaBaselinePower: this.baselineAlphaPower,
+        smoothedAlphaPower: this.smoothedAlphaPower,
+        alphaFloorMin:
+          this.baselineAlphaPower != null ? this.baselineAlphaPower * floorRatio : null,
+        alphaFloorBaselineRatio: floorRatio,
+        alphaBaselineWindowComplete: this.baselineAlphaPower !== null,
+      };
+      out.dwellDiagnostics = dwellDiagnostics;
+    }
+
+    return out;
   }
 
   /**
@@ -311,6 +507,9 @@ export class CoherenceDetector {
     this._isActive = false;
     this.recentAlphaValues = [];
     this.recentBetaValues = [];
+    this.lastVariancePushAlpha = null;
+    this.lastVariancePushBeta = null;
+    this.conditionBrokenSince = null;
     // Reset alpha floor tracking
     this.sessionStartTime = null;
     this.baselineAlphaSamples = [];
@@ -343,25 +542,35 @@ export class CoherenceDetector {
 /**
  * Calculate coherence score (0-1) based on brainwave data
  * Higher score = more coherent/stable state
+ *
+ * `opts.scoreScale` — applied after the weighted sum, before clamp (BrainBit only; default 1).
  */
-export function calculateCoherence(bands: BrainwaveBands, variance: number, electrodeQuality: number = 1): number {
+export function calculateCoherence(
+  bands: BrainwaveBands,
+  variance: number,
+  electrodeQuality: number = 1,
+  minElectrodeQualityGate: number = 0.5,
+  opts?: { minAlphaQuiet?: number; scoreScale?: number },
+): number {
   const { alpha, beta, gamma, theta, delta } = bands;
-  
+  const minAlphaQuiet = opts?.minAlphaQuiet ?? 0.01;
+  const scoreScale = opts?.scoreScale ?? 1;
+
   // Check if we have valid signal (not all zeros)
   const totalPower = alpha + beta + gamma + theta + delta;
-  
+
   // SIGNAL VALIDITY: Return low coherence if signal is invalid
   if (totalPower < 0.05) {
     // No meaningful signal - return low value
     return 0.1;
   }
-  
-  if (electrodeQuality < 0.5) {
+
+  if (electrodeQuality < minElectrodeQualityGate) {
     // Poor electrode contact - signal unreliable
     return 0.15;
   }
-  
-  if (alpha < 0.01) {
+
+  if (alpha < minAlphaQuiet) {
     // No alpha detected - not a calm state
     return 0.2;
   }
@@ -372,7 +581,7 @@ export function calculateCoherence(bands: BrainwaveBands, variance: number, elec
   const alphaScore = Math.min(1, alphaRelative * 3); // Scale up since alpha is typically 0.1-0.3
 
   // Beta/Alpha ratio: lower is better (less mental activity)
-  const betaAlphaRatio = alpha > 0.01 ? beta / alpha : 2;
+  const betaAlphaRatio = alpha > minAlphaQuiet ? beta / alpha : 2;
   const ratioScore = Math.max(0, Math.min(1, 1.5 - betaAlphaRatio));
 
   // Theta contribution: moderate theta is associated with relaxation
@@ -390,16 +599,28 @@ export function calculateCoherence(bands: BrainwaveBands, variance: number, elec
     stabilityScore * 0.2
   );
 
-  // Normalize to 0-1
-  return Math.max(0, Math.min(1, coherence));
+  // Normalize to 0-1 (optional scale for devices whose band geometry compresses the raw score)
+  return Math.max(0, Math.min(1, coherence * scoreScale));
 }
 
 /**
  * Determine which zone the current coherence falls into
  */
-export function getCoherenceZone(coherence: number): 'flow' | 'stabilizing' | 'noise' {
-  if (coherence >= 0.7) return 'flow';
-  if (coherence >= 0.4) return 'stabilizing';
+export interface CoherenceZoneThresholds {
+  /** Minimum coherence for `flow` (default 0.7). */
+  flowMin?: number;
+  /** Minimum coherence for `stabilizing` (default 0.4). */
+  stabilizingMin?: number;
+}
+
+export function getCoherenceZone(
+  coherence: number,
+  thresholds: CoherenceZoneThresholds = {},
+): 'flow' | 'stabilizing' | 'noise' {
+  const flowMin = thresholds.flowMin ?? 0.7;
+  const stabilizingMin = thresholds.stabilizingMin ?? 0.4;
+  if (coherence >= flowMin) return 'flow';
+  if (coherence >= stabilizingMin) return 'stabilizing';
   return 'noise';
 }
 
