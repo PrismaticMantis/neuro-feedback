@@ -1,6 +1,6 @@
 # NeuroSymphony — Project State
 
-> **Last updated:** 2026-06-27
+> **Last updated:** 2026-06-27 (orientation-only session)
 >
 > This is the **living dashboard** of the project. The top sections always reflect
 > the *current* state. **Update it at the end of every working session** (human or
@@ -85,6 +85,9 @@ When ending a work session (see `prompts/session-end.md` for the full prompt):
 
 > "Where the screwdriver was left." The practical state for the next person.
 
+> **Note for Mark:** Hey Mark! 👋 Just testing the session-end prompt flow — no
+> code changes this round. If you're seeing this, the handoff works.
+
 - **Current branch:** `main` (synced with `origin/main`)
 - **Safe stopping point:** Documentation and agent workflow complete and tested
   (`session-start` / `session-end` shorthands work). No open code changes; BLE
@@ -102,6 +105,21 @@ issues, and architectural decisions. One entry per working session, newest on to
 Keep each to Goal / Completed / Learned / Next — context, not a diary. When you
 retire something from the dashboard above, fold its essence into an entry here
 rather than deleting it.
+
+### 2026-06-27 (orientation only)
+
+**Goal** — Load project context via `session-start`; no code or doc changes intended.
+
+**Completed**
+- Ran the `session-start` workflow: read README, PROJECT, PROJECT_STATE, ARCHITECTURE.
+- Summarized product, architecture (relay→WebSocket→app→audio), known issues, and next priorities back to the operator.
+
+**Note from Tyler** — Hey Mark! 👋 Just testing out the session-end prompt flow
+here — nothing real this round, no code touched. If you're reading this, it works. 🎉
+
+**Learned** — Nothing new about the system; dashboard already accurate. Recording this session only to keep an honest handoff trail (no fabricated progress, no empty code commit).
+
+**Next** — Investigate the ~10s BrainBit/BLE startup latency (read-only diagnosis first); confirm on-device audio fix across the session lifecycle.
 
 ### 2026-06-27
 
