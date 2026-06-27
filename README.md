@@ -38,10 +38,10 @@ app, documentation system, and agent workflow.
 
 **Session workflow (humans and AI agents):**
 
-- **Starting work?** Follow [`prompts/session-start.md`](prompts/session-start.md) —
-  read the four docs above and confirm your understanding *before* changing code.
-- **Finishing work?** Follow [`prompts/session-end.md`](prompts/session-end.md) —
-  update `docs/PROJECT_STATE.md` so the next person/agent can continue cleanly.
+- **Starting work?** Say `session-start`, or `Follow prompts/session-start.md`, or
+  attach `prompts/session-start.md`. See [`prompts/README.md`](prompts/README.md).
+- **Finishing work?** Say `session-end`, or `Follow prompts/session-end.md`, or
+  attach `prompts/session-end.md`.
 
 Before making architectural changes, always read `docs/PROJECT.md`,
 `docs/ARCHITECTURE.md`, and `docs/PROJECT_STATE.md`.
@@ -143,7 +143,7 @@ ios/                               # Capacitor iOS shell
 src-tauri/                         # Tauri desktop scaffolding
 api/send-report.ts                 # Emailed session report (Resend/Vercel)
 docs/                              # PROJECT.md, ARCHITECTURE.md, PROJECT_STATE.md, notes
-prompts/                           # session-start.md, session-end.md (AI/human workflow)
+prompts/                           # session-start.md, session-end.md, README (workflow)
 ```
 
 ## Contributing

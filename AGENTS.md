@@ -6,20 +6,28 @@ stands today.
 
 ## Before you change code
 
-Follow **`prompts/session-start.md`**:
+Run **session start** — tell the agent any of:
 
-1. Read `README.md`, `docs/PROJECT.md`, `docs/PROJECT_STATE.md`, and
-   `docs/ARCHITECTURE.md`.
-2. Summarize: product, architecture, current focus, known issues, next priorities.
-3. Confirm your understanding before making changes.
+- `session-start`
+- `Follow prompts/session-start.md`
+- Attach/reference `prompts/session-start.md`
+
+Then follow that file's instructions: read `README.md`, `docs/PROJECT.md`,
+`docs/PROJECT_STATE.md`, and `docs/ARCHITECTURE.md`; summarize; confirm before
+changing code.
+
+See `prompts/README.md` for invocation options across tools.
 
 ## Before you finish a session
 
-Follow **`prompts/session-end.md`**:
+Run **session end** — tell the agent any of:
 
-1. Update `docs/PROJECT_STATE.md` (dashboard + Project History).
-2. Commit and push your changes to the **current working branch** so the next
-   person or agent can continue from GitHub — not from chat history.
+- `session-end`
+- `Follow prompts/session-end.md`
+- Attach/reference `prompts/session-end.md`
+
+Then follow that file: update `docs/PROJECT_STATE.md`, commit, and push to
+`main` so the next person can continue from GitHub.
 
 ## Active development branch
 

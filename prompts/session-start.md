@@ -1,37 +1,52 @@
-# Session Start — Onboarding Prompt
+# Session Start
 
-Use this at the **start** of any work session (paste it to your AI agent, or follow
-it yourself). Its job: get productive from the documentation alone, without relying
-on prior chat history.
+> **For humans:** Tell any agent: `session-start`, or `Follow prompts/session-start.md`,
+> or attach this file. The agent should read it and execute the instructions below.
+> Works in Cursor, Claude Code, Codex, ChatGPT, or any tool that can read repo files.
 
 ---
 
-You are starting a work session on **NeuroSymphony** (repo: `neuro-feedback`).
+## Agent instructions — execute now
 
-Before writing or changing any code, read these documents in order:
+You are starting a work session on **NeuroSymphony** (repository: `neuro-feedback`).
 
-1. `README.md` — how to install, run, and contribute; the documentation workflow.
-2. `docs/PROJECT.md` — product vision, purpose, and engineering philosophy.
-3. `docs/PROJECT_STATE.md` — current focus, known issues, recent progress, key
-   decisions, next priorities, and project history.
-4. `docs/ARCHITECTURE.md` — how the system is designed and why; components, data
-   flow, and where future expansion fits.
+**Do not write or change code yet.** First load context from the repository.
 
-Then **summarize your understanding** back, covering:
+### Step 1 — Read these files (in order)
 
-- **The product** — what NeuroSymphony is and who it's for.
-- **The architecture** — the major components and how data flows from headset to
-  audio (note the relay + WebSocket boundary).
-- **Current development focus** — what's actively being worked on.
-- **Known issues** — the active problems and constraints to respect.
-- **Next priorities** — what should happen next.
+Use whatever file-reading capability you have (open, read, grep, attach):
 
-Finally, **confirm your understanding and propose what you intend to do** before
-making any code changes. Wait for confirmation (or proceed only if the task is
-already unambiguous).
+1. `README.md` — install, run, contribute, documentation workflow
+2. `docs/PROJECT.md` — vision, purpose, engineering philosophy
+3. `docs/PROJECT_STATE.md` — current focus, known issues, progress, decisions,
+   next priorities, project history
+4. `docs/ARCHITECTURE.md` — system design and rationale
 
-Notes:
-- Treat the docs as the source of truth. If something in the code contradicts them,
-  flag it rather than silently assuming.
-- Respect the engineering principles in `PROJECT.md` (reliability over features,
-  honest signals, graceful degradation, clear seams, non-destructive changes).
+Optional if relevant: `AGENTS.md`, `docs/app-architecture-summary.md`.
+
+**Branch:** work from `main` unless `PROJECT_STATE.md` says otherwise. If unsure,
+run `git branch --show-current` and `git status`.
+
+### Step 2 — Summarize back
+
+Reply with a short summary covering:
+
+- **Product** — what NeuroSymphony is and who it's for
+- **Architecture** — major components; data flow from headset → relay → WebSocket
+  → app → audio (note the relay boundary)
+- **Current focus** — what the project is actively working on
+- **Known issues** — problems and constraints to respect
+- **Next priorities** — what should happen next
+
+### Step 3 — Confirm before acting
+
+State what you understand the user wants this session (if stated), or propose a
+sensible next step from `PROJECT_STATE.md`. **Wait for confirmation** before
+making code changes — unless the user's request was already explicit and narrow.
+
+### Rules
+
+- Treat the docs as source of truth. If code contradicts them, flag it.
+- Follow `docs/PROJECT.md` principles: reliability over features, honest signals,
+  graceful degradation, clear seams, non-destructive changes.
+- You have no memory of prior chats. Everything you need is in the repo.
