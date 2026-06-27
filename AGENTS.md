@@ -23,17 +23,17 @@ Follow **`prompts/session-end.md`**:
 
 ## Active development branch
 
-Most NeuroSymphony work (BrainBit iPad, Capacitor, docs system) lives on
-**`eeg-multidevice-refactor`**, not `main`. After cloning, check out that branch
-unless `docs/PROJECT_STATE.md` says otherwise:
+**`main`** is the source of truth. Clone and work from `main`:
 
 ```bash
-git fetch origin
-git checkout eeg-multidevice-refactor
+git clone https://github.com/PrismaticMantis/neuro-feedback.git
+cd neuro-feedback
+git checkout main
 git pull
 ```
 
-Do **not** merge to `main` unless a human explicitly asks.
+The `eeg-multidevice-refactor` branch was merged into `main` on 2026-06-26; use
+`main` for all new work unless `docs/PROJECT_STATE.md` says otherwise.
 
 ## Principles (short)
 

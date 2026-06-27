@@ -33,8 +33,8 @@ or AI agent can clone the repo and get productive without relying on chat histor
 | [`docs/PROJECT_STATE.md`](docs/PROJECT_STATE.md) | Living dashboard — current focus, known issues, progress, decisions, next priorities, and project history. | Every session |
 | [`AGENTS.md`](AGENTS.md) | Entry point for AI agents — points to the session prompts and active branch. | When workflow changes |
 
-**Active development branch:** `eeg-multidevice-refactor` (not `main`). Clone and
-checkout that branch for current BrainBit/iPad work and this documentation system.
+**Primary branch:** `main`. A fresh clone on `main` has the current BrainBit/iPad
+app, documentation system, and agent workflow.
 
 **Session workflow (humans and AI agents):**
 

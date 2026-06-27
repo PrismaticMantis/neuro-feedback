@@ -47,8 +47,7 @@ Rules:
 
 1. Stage and commit all changes from this session (code + docs), including the
    updated `docs/PROJECT_STATE.md`.
-2. Push to the **current working branch** (usually `eeg-multidevice-refactor`).
-   Do not merge to `main` unless a human explicitly asked.
+2. Push to the **current working branch** (usually `main`).
 3. In **Session Handoff**, note the branch name and that changes were pushed.
 
 Example (adjust the message):
