@@ -43,7 +43,7 @@ VITE_REPORTS_API_URL=/api/send-report
 
 The `api/send-report.ts` file will automatically be deployed as a Vercel serverless function when you deploy your project.
 
-### 5. iPad / Capacitor specifics (NeuroFlo events)
+### 5. iPad / Capacitor specifics (NeuroSymphony events)
 
 The BrainBit iPad app runs inside a Capacitor WKWebView, which is a different
 origin from your Vercel deployment. Two things matter:

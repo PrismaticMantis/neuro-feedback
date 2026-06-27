@@ -1,6 +1,6 @@
 # Athena iOS → WebSocket bridge (PoC)
 
-Copy these Swift files into **MuseStatsIosSwift** (or your LibMuse sample) and wire them from your existing `IXNMuseDataPacket` callback. Nothing here lives in the NeuroFlo web bundle at runtime.
+Copy these Swift files into **MuseStatsIosSwift** (or your LibMuse sample) and wire them from your existing `IXNMuseDataPacket` callback. Nothing here lives in the NeuroSymphony web bundle at runtime.
 
 ## Normalized JSON (v2)
 
@@ -12,7 +12,7 @@ Single JSON object per **sent** frame. The emitter **throttles** outbound WebSoc
 | `k` | `"eeg"` | Message kind |
 | `seq` | `number` | Monotonic send index (1-based) after connect; increments only when a packet is actually transmitted |
 | `td` | `number?` | Device/SDK packet timestamp if available |
-| `tdUnit` | `string` | How to read `td`: use `unknown` if unsure; NeuroFlo can use `s`, `ms`, `us`, `libmuse_seconds`, `libmuse_ms` for stream timing |
+| `tdUnit` | `string` | How to read `td`: use `unknown` if unsure; NeuroSymphony can use `s`, `ms`, `us`, `libmuse_seconds`, `libmuse_ms` for stream timing |
 | `th` | `number` | Host Unix time in seconds |
 | `pr` | `number?` | Raw `packetType` enum value |
 | `pn` | `string?` | Packet type name string |
@@ -21,7 +21,7 @@ Single JSON object per **sent** frame. The emitter **throttles** outbound WebSoc
 | `sr` | `number?` | Effective stream rate: one `u` row per packet (Hz). iOS emitter measures send spacing. |
 | `srAssumed` | `boolean` | `true` during short warmup; then `false` when `sr` is from measured spacing |
 
-TypeScript types: `src/lib/eeg/athena-bridge-packet.ts`. NeuroFlo accepts **v:2** strictly (explicit `v`, `seq` ≥ 1, `labels.length === u.length`, `tdUnit`, `srAssumed`, finite `th`) or legacy **v:1** with lenient defaults. Prefer **v2** from iOS; use **`sendQuadEeg`** for four Muse channels with correct labels.
+TypeScript types: `src/lib/eeg/athena-bridge-packet.ts`. NeuroSymphony accepts **v:2** strictly (explicit `v`, `seq` ≥ 1, `labels.length === u.length`, `tdUnit`, `srAssumed`, finite `th`) or legacy **v:1** with lenient defaults. Prefer **v2** from iOS; use **`sendQuadEeg`** for four Muse channels with correct labels.
 
 ## Relay order (important)
 
@@ -96,7 +96,7 @@ for i in 0..<n {
 }
 athenaBridge.sendQuadEeg(
     td: packet.timestamp(), // match SDK
-    tdUnit: "unknown", // or e.g. "ms" / "s" when verified — improves NeuroFlo time base vs host `th` alone
+    tdUnit: "unknown", // or e.g. "ms" / "s" when verified — improves NeuroSymphony time base vs host `th` alone
     packetTypeRaw: packet.packetType().rawValue,
     packetTypeName: String(describing: packet.packetType()),
     microvolts: uV

@@ -1,5 +1,5 @@
 /**
- * WebSocket JSON contract: Athena iOS (LibMuse) → NeuroFlo bridge.
+ * WebSocket JSON contract: Athena iOS (LibMuse) → NeuroSymphony bridge.
  * Not used by Muse 2 / muse-js. Future AthenaBridgeEEGDevice can import this shape.
  */
 
@@ -12,7 +12,7 @@ export type AthenaBridgeEegPacketKind = 'eeg';
  * Normalized EEG frame over the bridge (v2).
  * - `u`: microvolts, same order as `labels` (any channel count ≥ 1).
  * - `td` / `tdUnit`: device timestamp from LibMuse when available. Use a **known** unit string (e.g. `ms`, `s`)
- *   so the receiver can derive per-step seconds; `unknown` means NeuroFlo will not use `td` for the time base.
+ *   so the receiver can derive per-step seconds; `unknown` means NeuroSymphony will not use `td` for the time base.
  * - `th`: host Unix time in seconds (set on the emitter immediately before send — stable inter-packet spacing).
  * - `sr` / `srAssumed`: **effective rate of `u` rows** (Hz), i.e. one row per packet ⇒ ~send rate after throttle.
  *   Legacy emitters may still send the headset’s native rate (e.g. 256); the receiver **ignores** that for FFT when
