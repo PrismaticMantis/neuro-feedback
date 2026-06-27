@@ -1,6 +1,6 @@
 # NeuroSymphony — Project State
 
-> **Last updated:** 2026-06-26
+> **Last updated:** 2026-06-27
 >
 > This is the **living dashboard** of the project. The top sections always reflect
 > the *current* state. **Update it at the end of every working session** (human or
@@ -33,6 +33,10 @@ When ending a work session (see `prompts/session-end.md` for the full prompt):
 
 ## Recent Progress
 
+- **Agent-agnostic session workflow.** Rewrote `prompts/session-start.md` and
+  `session-end.md` for any AI tool; added `prompts/README.md`. Shorthand
+  `session-start` / `session-end` (or `Follow prompts/...`) — no need to paste
+  full prompt text. Committed `d36bea7` on `main`.
 - **Audio loading fixed (Capacitor iOS).** Baseline/coherence/sustained MP3 layers
   now load via `XMLHttpRequest` with multiple URL candidates instead of `fetch()`.
   Reason: in WKWebView, `fetch()` for custom-scheme (`capacitor://localhost/`)
@@ -42,10 +46,9 @@ When ending a work session (see `prompts/session-end.md` for the full prompt):
   `getBrainBitChannelDiagnostics()`, surfaced via `useBrainBitChannelActivity`
   hook and a 4-node (A1/C3/C4/A2) activity UI; signal-status wording now reflects
   partial connectivity.
-- **Documentation + agent workflow.** Four-doc system (README, PROJECT,
-  ARCHITECTURE, PROJECT_STATE), session prompts, and `AGENTS.md` entrypoint.
-- **Merged to `main`.** All BrainBit iPad work and docs now on the default branch;
-  fresh clones get the full system without checking out a feature branch.
+- **Documentation + merge to `main`.** Four-doc system (README, PROJECT,
+  ARCHITECTURE, PROJECT_STATE), `AGENTS.md`, session prompts; feature branch
+  merged; fresh clones on `main` get the full system.
 
 ## Known Issues / Watch List
 
@@ -69,6 +72,9 @@ When ending a work session (see `prompts/session-end.md` for the full prompt):
   git.
 - **Coherence is "today's brain-state metric," not a permanent contract** — code
   and docs should keep room for alternative/additional metrics.
+- **Session handoff is human-triggered.** `git pull` does not onboard agents;
+  collaborator says `session-start` / `session-end` (or references the prompt
+  files). Session-end must commit + push to close the loop.
 
 ## Next Priorities
 
@@ -79,14 +85,15 @@ When ending a work session (see `prompts/session-end.md` for the full prompt):
 
 > "Where the screwdriver was left." The practical state for the next person.
 
-- **Current branch:** `main`
-- **Safe stopping point:** BrainBit channel diagnostics complete; Capacitor iOS
-  audio loading fixed; documentation + agent workflow on `main`. Feature branch
-  merged; no known merge conflicts.
+- **Current branch:** `main` (synced with `origin/main`)
+- **Safe stopping point:** Documentation and agent workflow complete and tested
+  (`session-start` / `session-end` shorthands work). No open code changes; BLE
+  startup delay still the top engineering item.
 - **Next developer should:**
   - `git checkout main && git pull`
-  - Read `AGENTS.md` and follow `prompts/session-start.md` before changing code.
+  - Say **`session-start`** (or `Follow prompts/session-start.md`) before changing code.
   - Investigate the BLE startup delay *before* changing connection architecture.
+  - Say **`session-end`** when done to update this file and push.
 
 ## Project History
 
@@ -95,6 +102,20 @@ issues, and architectural decisions. One entry per working session, newest on to
 Keep each to Goal / Completed / Learned / Next — context, not a diary. When you
 retire something from the dashboard above, fold its essence into an entry here
 rather than deleting it.
+
+### 2026-06-27
+
+**Goal** — Finalize agent-agnostic collaboration workflow and validate session prompts.
+
+**Completed**
+- Rewrote session-start/end for any AI tool; added `prompts/README.md`.
+- Merged all work to `main`; documented `main` as primary branch everywhere.
+- Validated `session-start` and `session-end` shorthands in live session.
+
+**Learned** — `git pull` syncs files only; agents need an explicit session-start/end
+trigger. Shorthand commands work; `@` or `Follow prompts/...` is the reliable fallback.
+
+**Next** — Investigate BrainBit/BLE startup latency; confirm audio on-device.
 
 ### 2026-06-26 (merge)
 
