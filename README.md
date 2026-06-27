@@ -1,114 +1,169 @@
-# Neuro-Somatic Feedback App
+# NeuroSymphony (neuro-feedback)
 
-A web-based neurofeedback application that connects to Muse EEG devices and trains nervous system self-regulation through real-time neurosomatic feedback.
+**This repository is the iPad application that powers NeuroSymphony's neuroadaptive
+immersive sound experiences.** A participant wears an EEG headset; the app reads
+their brain activity in real time and adapts the soundscape to help them reach and
+sustain a flow state. (You're working on the *software* here — not the company or
+the physical activation.)
 
-![Screenshot](screenshot.png)
+This README covers **mechanics** — how to install, run, and contribute. For the
+product vision and engineering philosophy, read [`docs/PROJECT.md`](docs/PROJECT.md).
+For current status, known issues, and next priorities, read
+[`docs/PROJECT_STATE.md`](docs/PROJECT_STATE.md).
 
-## Features
+## Current Status
 
-### 🧠 Quiet Power Detection
-Detects a calm, focused brain state ("Quiet Power") defined by:
-- Beta power lower than Alpha power
-- Low EEG signal variance (smooth signals)
-- Motion and noise below threshold
-- All conditions sustained for 5+ seconds
+- **Primary platform:** iPad · BrainBit (EEG) · Capacitor · Swift BLE relay
+- **Development focus:** stable BrainBit integration · adaptive sound engine ·
+  session experience
+- **Future roadmap:** additional EEG devices · expanded immersive worlds ·
+  lighting / environmental adaptation
 
-### 🎵 Audio System
-- **Entrainment Audio** (optional): Binaural beats or isochronic tones to guide the nervous system
-- **Reward Signals**: Vibroacoustic sub-bass + subtle synth tone when Quiet Power is achieved
+## Documentation & Workflow
 
-### 📊 HeartMath-Style Coherence Graph
-- Real-time scrolling visualization
-- Three distinct zones: Quiet Power / Stabilizing / Low Coherence
-- Glowing indicator shows current position
+This project uses a small set of documents as its **shared memory**. Git preserves
+code history; these documents preserve project *understanding* — so any developer
+or AI agent can clone the repo and get productive without relying on chat history.
 
-### 👤 Multi-User Support
-- User profiles stored in browser (localStorage)
-- Import/export user data as JSON
-- Session history per user
+| Document | Purpose | Changes |
+|---|---|---|
+| `README.md` (this file) | How to install, run, and contribute. | Per release |
+| [`docs/PROJECT.md`](docs/PROJECT.md) | Why the project exists — vision, purpose, engineering philosophy, AI principles. | Rarely |
+| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | How the system is designed and **why**; components, data flow, future expansion. | When the architecture does |
+| [`docs/PROJECT_STATE.md`](docs/PROJECT_STATE.md) | Living dashboard — current focus, known issues, progress, decisions, next priorities, and project history. | Every session |
+| [`AGENTS.md`](AGENTS.md) | Entry point for AI agents — points to the session prompts and active branch. | When workflow changes |
 
-### 📄 Session Reports
-- Session summary with stats
-- Export as PDF report
-- Track progress over time
+**Active development branch:** `eeg-multidevice-refactor` (not `main`). Clone and
+checkout that branch for current BrainBit/iPad work and this documentation system.
 
-## Getting Started
+**Session workflow (humans and AI agents):**
 
-### Prerequisites
-- Node.js 18+
-- Chrome, Edge, or Opera browser (for Web Bluetooth)
-- Muse 2 or Muse S headband
+- **Starting work?** Follow [`prompts/session-start.md`](prompts/session-start.md) —
+  read the four docs above and confirm your understanding *before* changing code.
+- **Finishing work?** Follow [`prompts/session-end.md`](prompts/session-end.md) —
+  update `docs/PROJECT_STATE.md` so the next person/agent can continue cleanly.
 
-### Installation
+Before making architectural changes, always read `docs/PROJECT.md`,
+`docs/ARCHITECTURE.md`, and `docs/PROJECT_STATE.md`.
+
+## System Architecture
+
+```
+EEG headset ──BLE──▶ native relay (Swift, neurosdk2) ──WebSocket──▶ React app (Capacitor/iPad)
+```
+
+- **Headset → relay**: BLE via Neurosoft `neurosdk2` (the app never speaks Bluetooth directly).
+- **Relay → app**: EEG streamed as JSON over a local WebSocket (`ws://127.0.0.1:8765`).
+- **App**: React + TypeScript front end (DSP → brain-state metric → state machine →
+  adaptive Web Audio → session summary), shipped to iPad via Capacitor.
+
+The primary target hardware today is **BrainBit** (EEG) on **iPad** (Capacitor).
+A Muse path and an "Athena" LibMuse bridge also exist behind the EEG device
+abstraction (`src/lib/eeg/`).
+
+For *why* the system is shaped this way (relay + WebSocket, Capacitor, state
+machine, layered audio, device abstraction), see
+[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
+
+## Prerequisites
+
+- **Node.js 18+** and npm
+- **Xcode** (for the iPad/Capacitor build and the native BLE relay)
+- An EEG headset (BrainBit) for live sessions
+- For the browser-only Muse path: a Chromium-based browser (Web Bluetooth)
+
+## Install
 
 ```bash
-cd neuro-feedback
 npm install
+```
+
+## Run
+
+### 1. Web dev server (UI work, no native relay)
+
+```bash
 npm run dev
 ```
 
-### Connecting Your Muse
+Fastest loop for UI and front-end logic. Live BrainBit EEG requires the native
+relay (below); without it you can still work on everything downstream of the
+WebSocket.
 
-1. **Direct Bluetooth** (recommended):
-   - Turn on your Muse headband (LED should blink)
-   - Click "Connect Bluetooth" in the app
-   - Select your Muse from the browser dialog
+### 2. iPad build (BrainBit, production target)
 
-2. **Via Mind Monitor** (alternative):
-   - Install Mind Monitor app on your phone
-   - Connect Muse to Mind Monitor
-   - Set up OSC streaming to your computer
-   - Click "Connect via OSC" in the app
+```bash
+npm run build:brainbit-ipad   # Vite build in brainbit-ipad mode
+npm run cap:sync:ios          # build + copy web assets into the iOS project
+npm run cap:open:ios          # open the project in Xcode to run on a device
+```
 
-## Usage
+Then build/run the `App` scheme onto a connected iPad from Xcode. The native BLE
+relay is bundled into the iOS app and starts automatically; tap **Connect
+BrainBit** in-app to begin the BLE scan.
 
-1. **Create a User Profile** - Enter your name to track sessions
-2. **Connect Your Muse** - Via Bluetooth or OSC
-3. **Configure Audio** (optional) - Enable binaural beats or isochronic tones
-4. **Begin Practice** - Watch the coherence graph and aim for the Quiet Power zone
-5. **End Session** - View your stats and export a PDF report
+Environment config for this mode lives in `.env.brainbit-ipad`
+(see `.env.brainbit-ipad.example`).
 
-## Tech Stack
+### 3. Native BLE relay on macOS (relay development / smoke tests)
 
-- **React 18** + TypeScript
-- **Vite** for build tooling
-- **muse-js** for Bluetooth EEG connection
-- **osc-js** for OSC protocol support
-- **Framer Motion** for animations
-- **jsPDF** for PDF export
-- **Web Audio API** for entrainment and reward sounds
+```bash
+npm run brainbit-ios-relay:run     # run the relay CLI (scans + streams over WebSocket)
+npm run brainbit-relay:smoke       # smoke test
+```
+
+See `package.json` `scripts` for the full set (Athena bridge, truth-test host,
+desktop/Tauri dev, etc.).
+
+## Email Reports (optional)
+
+Session summaries can be emailed via a Vercel function (`api/send-report.ts`) using
+Resend. Setup and required environment variables are documented in
+[`README_EMAIL_SETUP.md`](README_EMAIL_SETUP.md).
 
 ## Project Structure
 
 ```
 src/
 ├── lib/
-│   ├── muse-handler.ts    # Muse EEG connection & FFT processing
-│   ├── audio-engine.ts    # Entrainment & reward audio
-│   ├── quiet-power.ts     # Target state detection
-│   └── storage.ts         # User/session persistence
-├── hooks/
-│   ├── useMuse.ts         # React hook for Muse data
-│   ├── useAudio.ts        # Audio controls hook
-│   └── useSession.ts      # Session state management
-├── components/
-│   ├── SessionSetup.tsx   # Setup screen
-│   ├── ActiveSession.tsx  # Active session screen
-│   ├── SessionSummary.tsx # Summary screen
-│   ├── CoherenceGraph.tsx # HeartMath-style graph
-│   └── ConnectionStatus.tsx
-├── App.tsx
+│   ├── audio-engine.ts            # Adaptive Web Audio layers + sustained-state logic
+│   ├── flow-state.ts              # Brain-state metric (coherence) detection & scoring
+│   ├── coherence-state-machine.ts # baseline / stabilizing / coherent transitions
+│   ├── eeg/                       # EEG device abstraction (BrainBit, Muse, Athena bridge)
+│   ├── muse-handler.ts            # Muse connection + FFT processing
+│   └── summary-pdf.ts             # Session summary / PDF export
+├── hooks/                         # React hooks (EEG, audio, session, relay status)
+├── components/                    # UI (setup, active session, summary, status)
+├── App.tsx                        # Web/Muse entry
+├── AppBrainBitMvp.tsx             # BrainBit/iPad entry
 └── types.ts
+
+native/brainbit-ios-relay/         # Swift BLE relay (neurosdk2 → WebSocket)
+ios/                               # Capacitor iOS shell
+src-tauri/                         # Tauri desktop scaffolding
+api/send-report.ts                 # Emailed session report (Resend/Vercel)
+docs/                              # PROJECT.md, ARCHITECTURE.md, PROJECT_STATE.md, notes
+prompts/                           # session-start.md, session-end.md (AI/human workflow)
 ```
 
-## Browser Support
+## Contributing
 
-| Feature | Chrome | Edge | Firefox | Safari |
-|---------|--------|------|---------|--------|
-| Web Bluetooth | ✅ | ✅ | ❌ | ❌ |
-| Web Audio | ✅ | ✅ | ✅ | ✅ |
-| OSC (fallback) | ✅ | ✅ | ✅ | ✅ |
+- Read [`docs/PROJECT.md`](docs/PROJECT.md) first for the principles that should
+  guide changes (reliability over features, honest signals, graceful degradation,
+  clear seams).
+- Prefer **additive, reversible** changes to working real-time/audio paths.
+- Run the linter before committing:
 
-## License
+```bash
+npm run lint
+```
 
-MIT
+- After a working session, follow [`prompts/session-end.md`](prompts/session-end.md)
+  to update [`docs/PROJECT_STATE.md`](docs/PROJECT_STATE.md) with what changed, what
+  broke, and what's next.
+
+## Tech Stack
+
+React 19 · TypeScript · Vite · Framer Motion · React Router · Recharts ·
+Web Audio API · Capacitor 7 (iOS) · Swift / neurosdk2 (BLE relay) · Tauri
+(desktop) · jsPDF + html2canvas (summaries) · Resend (email).
