@@ -1,6 +1,6 @@
 /**
  * BrainBit per-channel display state — derived from classifier *rules*, not horseshoe alone.
- * stale-dc must not render green even when smoothed horseshoe reads 1 (good).
+ * Chunk-level stale-dc-window must not render green; quiet live EEG maps to usable.
  */
 
 import type {
@@ -9,12 +9,24 @@ import type {
   BrainBitChannelState,
 } from './brainbit-bridge-eeg-device';
 
-/** Full hold when ≥2 channels are active or usable. */
+/** Hold when ≥2 channels are active or usable. */
 export const BRAINBIT_STABILIZATION_HOLD_MS = 12_000;
-/** Shorter hold when only stale (quiet DC) channels qualify — stream still live. */
-export const BRAINBIT_STABILIZATION_HOLD_STALE_MS = 8_000;
 
 const CORTICAL = new Set(['C3', 'C4']);
+
+/** Coherence montage — same C3/C4 focus as audio gating; ear refs must not zero the graph. */
+export function brainBitCoherenceElectrodeQuality01(
+  snapshot: BrainBitChannelActivitySnapshot | null,
+): number {
+  if (!snapshot || snapshot.totalCount === 0) return 0;
+  const cortical = snapshot.channels.filter((ch) => CORTICAL.has(ch.label.toUpperCase()));
+  if (cortical.length > 0) {
+    const ok = cortical.filter((ch) => isBrainBitChannelHealthy(ch.state)).length;
+    return ok / cortical.length;
+  }
+  const { activeUsable, total } = countBrainBitChannelBuckets(snapshot.channels);
+  return total > 0 ? activeUsable / total : 0;
+}
 
 const STATE_READINESS_WEIGHT: Record<BrainBitChannelState, number> = {
   active: 1,
@@ -36,11 +48,13 @@ export function classifyBrainBitChannelState(args: {
   if (!hasData) return 'flat';
   if (stuck04Streak >= stuckThreshold) return 'stuck';
   if (rule.startsWith('flat')) return 'flat';
-  // Per-channel quiet-DC only — ignore chunk-level overlay strings (legacy / debug).
+  // Chunk-level plateau / contamination only — not per-channel quiet AC.
   if (rule.includes('stale-dc') && !rule.includes('→ min hs')) return 'stale';
   if (rule.startsWith('good')) return 'active';
   if (rule.startsWith('artifact') || rule.startsWith('clip')) return 'low';
-  if (rule.startsWith('weak') || rule.startsWith('warmup')) return 'usable';
+  if (rule.startsWith('quiet') || rule.startsWith('weak') || rule.startsWith('warmup')) {
+    return 'usable';
+  }
   if (rule.includes('var<') && !rule.startsWith('good')) return 'low';
   if (horseshoe >= 4) return 'flat';
   if (horseshoe === 3) return 'low';
@@ -51,9 +65,9 @@ export function isBrainBitChannelHealthy(state: BrainBitChannelState): boolean {
   return state === 'active' || state === 'usable';
 }
 
-/** Pre-session: stale still counts — DC plateau with live stream beats flat/stuck. */
+/** Pre-session: only active/usable — stale alone must not unlock Start. */
 export function isBrainBitStabilizationAcceptable(state: BrainBitChannelState): boolean {
-  return state === 'active' || state === 'usable' || state === 'stale';
+  return state === 'active' || state === 'usable';
 }
 
 /** 0–1 for the setup “channel readiness” bar (not BLE link strength). */
@@ -69,13 +83,9 @@ export function brainBitChannelReadiness01(
 }
 
 export function brainBitStabilizationHoldMs(
-  snapshot: BrainBitChannelActivitySnapshot | null,
+  _snapshot: BrainBitChannelActivitySnapshot | null,
 ): number {
-  if (!snapshot) return BRAINBIT_STABILIZATION_HOLD_MS;
-  const { activeUsable } = countBrainBitChannelBuckets(snapshot.channels);
-  return activeUsable >= 2
-    ? BRAINBIT_STABILIZATION_HOLD_MS
-    : BRAINBIT_STABILIZATION_HOLD_STALE_MS;
+  return BRAINBIT_STABILIZATION_HOLD_MS;
 }
 
 export function countBrainBitChannelBuckets(channels: BrainBitChannelActivity[]): {
@@ -140,7 +150,7 @@ export function isBrainBitStabilizationTick(
   if (countBrainBitStabilizationAcceptable(snapshot.channels) < 2) return false;
   for (const ch of snapshot.channels) {
     if (!CORTICAL.has(ch.label.toUpperCase())) continue;
-    if (ch.state === 'flat' || ch.state === 'stuck') return false;
+    if (ch.state === 'flat' || ch.state === 'stuck' || ch.state === 'stale') return false;
   }
   return true;
 }

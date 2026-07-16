@@ -41,7 +41,7 @@ import {
 } from '../lib/eeg/brainbit-coherence-stability';
 import {
   brainBitChannelReadiness01,
-  countBrainBitChannelBuckets,
+  brainBitCoherenceElectrodeQuality01,
   deriveBrainBitChannelSessionMode,
   type BrainBitChannelSessionMode,
 } from '../lib/eeg/brainbit-channel-state';
@@ -339,8 +339,7 @@ export function useMuse(): UseMuseReturn {
         if (isBrainBitBridgeEEGDevice(eegDevice)) {
           const channelActivity = eegDevice.getBrainBitChannelDiagnostics();
           const sessionMode = deriveBrainBitChannelSessionMode(channelActivity);
-          const { activeUsable, total } = countBrainBitChannelBuckets(channelActivity.channels);
-          if (total > 0) electrodeQuality = activeUsable / total;
+          electrodeQuality = brainBitCoherenceElectrodeQuality01(channelActivity);
 
           const audioContact =
             sites.length > 0 ? averageContactScore01BrainBitAudio(sites) : electrodeQuality;
@@ -386,9 +385,11 @@ export function useMuse(): UseMuseReturn {
           }
         }
 
-        const athenaContactGate = isWebSocketBridgeEegDevice(eegDevice)
-          ? ATHENA_COHERENCE_MIN_CONTACT_VALIDITY
-          : 0.5;
+        const coherenceContactGate = isBrainBitBridgeEEGDevice(eegDevice)
+          ? BRAINBIT_COHERENCE_MIN_CONTACT_VALIDITY
+          : isWebSocketBridgeEegDevice(eegDevice)
+            ? ATHENA_COHERENCE_MIN_CONTACT_VALIDITY
+            : 0.5;
 
         const bandsForCoherence = eegDevice.getCoherenceDetectorBands?.() ?? museState.bandsSmooth;
 
@@ -434,7 +435,7 @@ export function useMuse(): UseMuseReturn {
           bandsForCoherence,
           csState.signalVariance,
           electrodeQuality,
-          athenaContactGate,
+          coherenceContactGate,
           isBrainBitBridgeEEGDevice(eegDevice)
             ? {
                 minAlphaQuiet: BRAINBIT_COHERENCE_CALC_MIN_ALPHA,
@@ -528,7 +529,7 @@ export function useMuse(): UseMuseReturn {
                 bs,
                 csState.signalVariance,
                 electrodeQuality,
-                athenaContactGate,
+                coherenceContactGate,
                 { minAlphaQuiet: BRAINBIT_COHERENCE_CALC_MIN_ALPHA },
               )
             : undefined;

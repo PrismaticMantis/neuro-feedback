@@ -27,8 +27,8 @@ const EMPTY: BrainBitContactStabilizationState = {
 };
 
 /**
- * Pre-session gate: require continuous acceptable channels (active, usable, or stale)
- * before start — stale = quiet DC but stream still live.
+ * Pre-session gate: require continuous active/usable channels before start.
+ * Stale (chunk plateau / contamination) does not count toward ready.
  */
 export function useBrainBitContactStabilization(
   enabled: boolean,
@@ -71,11 +71,11 @@ export function useBrainBitContactStabilization(
       if (!activity || activity.overallState === 'idle') {
         hint = 'Waiting for channel data…';
       } else if (countBrainBitStabilizationAcceptable(activity.channels) < 2) {
-        hint = 'Need at least 2 channels with signal (not flat or stuck)';
+        hint = 'Need at least 2 active or usable channels (not stale, flat, or stuck)';
       } else if (c3c4Weak) {
         hint = 'Adjust C3 / C4 — cortical pads look off or weak';
       } else if (c3c4Stale && !isReady) {
-        hint = 'C3 / C4 signal is quiet — hold steady or adjust pads';
+        hint = 'C3 / C4 signal stalled — hold steady or reseat pads';
       } else if (!isReady) {
         const secLeft = Math.ceil((holdMs - stableMs) / 1000);
         hint = `Hold steady contact ~${secLeft}s more`;

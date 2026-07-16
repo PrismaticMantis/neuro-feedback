@@ -1,6 +1,6 @@
 # NeuroSymphony — Project State
 
-> **Last updated:** 2026-07-16
+> **Last updated:** 2026-07-16 (session-end, contact classifier + coherence graph fix)
 >
 > This is the **living dashboard** of the project. The top sections always reflect
 > the *current* state. **Update it at the end of every working session** (human or
@@ -28,27 +28,27 @@ When ending a work session (see `prompts/session-end.md` for the full prompt):
 
 ## Current Focus
 
-- Primary target: **BrainBit EEG on iPad (Capacitor)** — honest signal UX + stable
-  20-minute sessions (connection ≠ usable EEG).
+- Primary target: **BrainBit EEG on iPad (Capacitor)** — honest per-channel contact
+  UX, responsive coherence graph/audio, stable 20-minute sessions (connection ≠
+  usable EEG).
 - Primary branch: **`main`**.
 
 ## Recent Progress
 
-- **BrainBit channel honesty layer.** Added `stale` channel state, per-channel
-  classification from classifier rules (not horseshoe alone), signal confidence
-  (0–1), pre-session contact stabilization gate, and session-mode-driven audio
-  contact gates. UI: "Channel readiness" bar (not BLE strength), graph opacity
-  reflects confidence, 4-node activity in setup and active session.
-- **Fixed synchronized channel dots.** Chunk-level `forceContactDegradeAll` no
-  longer overwrites all four channels' display rules — dots can differ per pad.
-  Relaxed `goodMinVar` slightly (14 → 9) to reduce spurious stale-dc.
-- **Coherence SM grace for BrainBit.** Optional `minContactQualityWhenSignalValid`
-  + `contactGraceMs` when detector still trusts EEG during brief stale windows.
-- **Session event logging.** `logBrainBitSessionEvent` for session start, channel
-  recovery, coherence enter/exit, headset adjustment (console; foundation for replay).
-- **iOS log capture scripts.** `npm run logs:save` / `logs:ios` for Xcode debugging.
-- **iPad build synced.** `npm run cap:sync:ios` run multiple times this session;
-  app ready to Run from Xcode on physical iPad (no Mac cable needed after install).
+- **Contact classifier retuned for BrainBit relay scale (µV).** Quiet resting AC maps
+  to `quiet` → **usable** (not per-channel `stale-dc`). Flat uses lower floors
+  (`flatAbsUv` 0.02, `flatVar` 0.25) plus **4-sample hysteresis** before labeling
+  flat — reduces false flat flashes from EMA dips. `goodMinAbsUv` / `goodMinVar`
+  lowered so real quiet EEG can read **active** when AC is present.
+- **Pre-session gate tightened.** Stabilization counts **active + usable only**
+  (not stale). C3/C4 must not be flat/stuck/stale during hold. Fixed 12s hold
+  (removed shorter stale-only hold). Hints updated for honest states.
+- **Coherence graph regression fixed.** Flat graph was caused by all-4-channel
+  contact scoring dragging `electrodeQuality` below `calculateCoherence`'s gate
+  (pinned at 0.15) when A1/A2 read flat. New `brainBitCoherenceElectrodeQuality01()`
+  uses **C3/C4 only** (same montage as FFT); BrainBit gate uses
+  `BRAINBIT_COHERENCE_MIN_CONTACT_VALIDITY` (0.32), not Athena 0.42.
+- **iPad build synced** after classifier + coherence fixes (`npm run cap:sync:ios`).
 
 ## Known Issues / Watch List
 
@@ -56,45 +56,50 @@ When ending a work session (see `prompts/session-end.md` for the full prompt):
   chunk) — not WebSocket. Still not root-caused.
 - **BrainBit sentinel frames (~0.4V).** Relay recovery works but adds startup latency
   and mid-session hiccups.
-- **Stale vs active still flickers on device.** Per-channel UI fix landed; needs iPad
-  re-test to confirm dots behave independently and stabilization gate is not too
-  strict or too loose.
-- **MVP not yet validated at 20 minutes.** Code + UI improved; soak test with saved
-  logs still required for sign-off.
+- **Device re-test needed post classifier + coherence fix.** Confirm: no early flat
+  flashes, honest usable/active nodes, graph moves during session, start gate not
+  too strict/loose, 20-minute soak.
+- **Coherence clamp at 0.2** still possible from alpha-ceiling or contact-motion
+  artifact helpers — distinct from contact-gate flatline at 0.15; check debug panel
+  if graph stays low despite good C3/C4.
 - **EEG-only metrics.** No HR/HRV/recovery from BrainBit — summaries must not
   display these for BrainBit sessions.
 
 ## Key Decisions (recent)
 
-- **Connection ≠ usable EEG** — top bar shows channel readiness; stale is honest
-  yellow, not hidden behind 100% "connected."
+- **Connection ≠ usable EEG** — top bar shows channel readiness; chunk-level stale
+  is honest yellow, quiet live AC is usable (not stale).
 - **Chunk contamination vs per-channel display** — global degrade tightens audio/
   aggregate gates only; channel dots use per-channel classifier rules.
-- **Pre-session stabilization** — require ~8–12s of acceptable channels (incl. stale
-  when stream live) before Start unlocks.
+- **Pre-session stabilization** — require 12s of **active/usable** channels (≥2 total,
+  C3/C4 clean) before Start unlocks; stale alone must not unlock.
+- **Coherence contact = C3/C4 montage** — ear refs (A1/A2) often flat; must not
+  zero the session coherence graph or detector contact input.
 - **Simulation ≠ MVP sign-off** — replay tests speed dev; real iPad + headset required
-  for human UX validation (documented in hiring/trial brief discussion).
+  for human UX validation.
 
 ## Next Priorities
 
-1. **iPad device test** — connect BrainBit, verify independent channel dots, run toward
-   20-minute soak; save logs via `npm run logs:save`.
-2. Tune stale/stabilization thresholds if start gate blocks too long or stale too noisy.
+1. **iPad device test** — verify classifier honesty, coherence graph responsiveness,
+   and audio reward path; run toward 20-minute soak; save logs via `npm run logs:save`.
+2. Tune flat/good thresholds if false flat or false active persists on device.
 3. Investigate ~10s EEG stream startup delay (BLE path).
 
 ## Session Handoff
 
 > "Where the screwdriver was left." The practical state for the next person.
 
-- **Current branch:** `main` (synced with `origin/main` after this session-end)
-- **Safe stopping point:** BrainBit honesty/stabilization/confidence work committed;
-  iPad build synced locally via `cap:sync:ios`. Not yet device-validated post
-  channel-dot fix.
+- **Current branch:** `main` (pushed to `origin/main` after this session-end)
+- **Safe stopping point:** Contact classifier retune, stabilization gate, and
+  coherence-graph C3/C4 contact fix committed; iPad build synced via
+  `cap:sync:ios`. Awaiting device validation.
 - **Next developer should:**
   - `git checkout main && git pull`
   - Say **`session-start`** before changing code.
   - Run on **physical iPad** (BrainBit via BLE — no Mac cable during session).
   - Build/deploy: `npm run cap:sync:ios` → Xcode → Run on iPad.
+  - Watch coherence debug: `coherence` stuck at **0.15** = contact gate;
+    **0.20** = alpha-ceiling / movement artifact clamp.
   - After test: `npm run logs:save` if issues; say **`session-end`** when done.
 
 ## Project History
@@ -105,7 +110,28 @@ Keep each to Goal / Completed / Learned / Next — context, not a diary. When yo
 retire something from the dashboard above, fold its essence into an entry here
 rather than deleting it.
 
-### 2026-07-16
+### 2026-07-16 (contact classifier + coherence graph)
+
+**Goal** — Honest BrainBit per-channel contact states without breaking session
+coherence graph; tighten pre-session gate so stale-only does not unlock Start.
+
+**Completed**
+- Retuned relay contact thresholds: `quiet` rule (usable), flat hysteresis, lower
+  good/flat floors for µV scale.
+- Stabilization: active/usable only, C3/C4 must not be stale, fixed 12s hold.
+- Fixed flat coherence graph: `brainBitCoherenceElectrodeQuality01()` (C3/C4);
+  BrainBit-specific `calculateCoherence` contact gate (0.32).
+- `cap:sync:ios` for iPad retest.
+
+**Learned** — Per-channel contact honesty and coherence scoring must use the same
+montage (C3/C4). All-4-channel contact averaging silently pinned coherence at
+0.15 when ear refs went flat after classifier tightening — looked like a broken
+graph, not a detector bug.
+
+**Next** — iPad soak test; confirm graph moves and start gate feels right; tune
+thresholds from saved logs if needed.
+
+### 2026-07-16 (channel honesty layer)
 
 **Goal** — BrainBit MVP UX honesty (stale signal, channel readiness, stabilization)
 and iPad test readiness.

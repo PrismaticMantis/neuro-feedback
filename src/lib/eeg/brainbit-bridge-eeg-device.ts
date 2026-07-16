@@ -50,18 +50,21 @@ const BRIDGE_CONTACT_SMOOTH = 0.82;
 
 /**
  * BrainBit relay only — contact reflects electrode touch, not transport health.
- * "Good" requires AC activity in band; steady DC / sentinel-tainted windows must not read green.
+ * Scale is relay volts × 1000 → µV. Quiet resting AC often lands ~0.05–6 µV absAmp;
+ * flat must stay below that band so live quiet EEG maps to quiet→usable, not flat.
  */
 export const BRAINBIT_CONTACT_THRESHOLDS = {
   warmupSamples: 12,
   clipUv: 3200,
-  /** Both absAmp AND vari must be below these to classify flat (horseshoe 4). */
-  flatAbsUv: 0.05,
-  flatVar: 0.45,
+  /** Below both for several samples → open / dead (not quiet resting AC). */
+  flatAbsUv: 0.02,
+  flatVar: 0.25,
+  /** Require this many consecutive flat samples before labeling flat (avoids EMA dips). */
+  flatConfirmSamples: 4,
   /** Good requires BOTH absAmp and vari in this band (not merely "not weak"). */
-  goodMinAbsUv: 4,
+  goodMinAbsUv: 0.4,
   goodMaxAbsUv: 920,
-  goodMinVar: 9,
+  goodMinVar: 0.35,
   artifactAbsUv: 2800,
   artifactVar: 650_000,
   weakAbsUv: 1400,
@@ -257,6 +260,8 @@ export class BrainBitBridgeEEGDevice implements EEGDevice {
   private contactSampleCount: number[] = [];
   /** Per-channel consecutive 0.4 V sample count — detects a single channel stuck/saturated. */
   private contactStuck04Streak: number[] = [];
+  /** Per-channel consecutive below-flat-threshold samples — hysteresis before labeling flat. */
+  private contactFlatStreak: number[] = [];
   /** Last row of chunk: relay raw, µV into heuristic, rule label for debug. */
   private contactLastRaw: number[] = [];
   private contactLastUv: number[] = [];
@@ -655,6 +660,7 @@ export class BrainBitBridgeEEGDevice implements EEGDevice {
     this.contactDisplayEma = Array(c).fill(0.28);
     this.contactSampleCount = Array(c).fill(0);
     this.contactStuck04Streak = Array(c).fill(0);
+    this.contactFlatStreak = Array(c).fill(0);
     this.contactLastRaw = Array(c).fill(0);
     this.contactLastUv = Array(c).fill(0);
     this.contactLastRule = Array(c).fill('');
@@ -726,13 +732,21 @@ export class BrainBitBridgeEEGDevice implements EEGDevice {
     let q: number;
     let rule: string;
     const n = this.contactSampleCount[ch];
+    const belowFlatFloor = absAmp < th.flatAbsUv && vari < th.flatVar;
+    if (belowFlatFloor) {
+      this.contactFlatStreak[ch] = (this.contactFlatStreak[ch] ?? 0) + 1;
+    } else {
+      this.contactFlatStreak[ch] = 0;
+    }
+    const flatConfirmed = (this.contactFlatStreak[ch] ?? 0) >= th.flatConfirmSamples;
+
     if (n < th.warmupSamples) {
       q = 2;
       rule = `warmup n=${n}<${th.warmupSamples}→medium`;
     } else if (Math.abs(sampleUv) >= th.clipUv) {
       q = 3;
       rule = `clip |uv|≥${th.clipUv} (${Math.abs(sampleUv).toFixed(0)}µV)`;
-    } else if (absAmp < th.flatAbsUv && vari < th.flatVar) {
+    } else if (flatConfirmed) {
       q = 4;
       rule = `flat absAmp<${th.flatAbsUv} && var<${th.flatVar} (abs=${absAmp.toFixed(2)} var=${vari.toFixed(1)})`;
     } else if (absAmp > th.artifactAbsUv || vari > th.artifactVar) {
@@ -749,8 +763,10 @@ export class BrainBitBridgeEEGDevice implements EEGDevice {
       q = 1;
       rule = `good ${th.goodMinAbsUv}≤abs≤${th.goodMaxAbsUv} && var≥${th.goodMinVar}`;
     } else {
+      // Live stream with quiet AC — not flat, not artifact. UI maps to usable (not stale).
+      // Includes brief dips below the flat floor before flatConfirmSamples.
       q = 2;
-      rule = `stale-dc abs=${absAmp.toFixed(2)} var=${vari.toFixed(1)} (soft medium, not off)`;
+      rule = `quiet abs=${absAmp.toFixed(2)} var=${vari.toFixed(1)}`;
     }
 
     this.contactLastUv[ch] = sampleUv;
@@ -891,6 +907,8 @@ export class BrainBitBridgeEEGDevice implements EEGDevice {
       const rule = this.contactLastRule[i] ?? '';
       if (rule.includes('stale-dc')) {
         score += 0.35;
+      } else if (rule.startsWith('quiet')) {
+        score += 0.55;
       } else if (rule.startsWith('flat') || rule.startsWith('clip')) {
         score += 0;
       } else {
