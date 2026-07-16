@@ -81,6 +81,25 @@ export function hasEnoughGoodOrMediumContactLegacy(status: ElectrodeStatus): boo
   return vals.filter((q) => q === 'good' || q === 'medium').length >= 3;
 }
 
+const BRAINBIT_CORTICAL_LABELS = new Set(['C3', 'C4']);
+
+function isBrainBitCorticalSite(site: ElectrodeSiteContact): boolean {
+  const u = site.label.toUpperCase();
+  return BRAINBIT_CORTICAL_LABELS.has(u) || BRAINBIT_CORTICAL_LABELS.has(site.siteId.toUpperCase());
+}
+
+/**
+ * Contact score for BrainBit audio gating — C3/C4 only (coherence montage). Ear refs A1/A2 often
+ * read flat without blocking usable cortical EEG.
+ */
+export function averageContactScore01BrainBitAudio(sites: ElectrodeSiteContact[]): number {
+  const cortical = sites.filter(isBrainBitCorticalSite);
+  if (cortical.length > 0) {
+    return averageContactScore01(cortical);
+  }
+  return averageContactScore01(sites);
+}
+
 /** BrainBit Headphones: 2 of 4 good|medium (A1/A2 ear refs often read weaker than C3/C4). */
 export function hasEnoughGoodOrMediumContactBrainBit(sites: ElectrodeSiteContact[]): boolean {
   const n = sites.length;

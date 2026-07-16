@@ -19,6 +19,18 @@ export const BRAINBIT_COHERENCE_MIN_CONTACT_VALIDITY = 0.32;
 export const BRAINBIT_MVP_MIN_GOOD_OR_MEDIUM_CHANNELS = 2;
 
 /**
+ * Audio state machine contact gate (Muse default 0.5). BrainBit averages often drop when ear refs
+ * read flat even while C3/C4 still feed the coherence detector.
+ */
+export const BRAINBIT_AUDIO_MIN_CONTACT_QUALITY = 0.25;
+
+/** When the coherence detector still marks signal valid, tolerate lower contact before baseline reset. */
+export const BRAINBIT_AUDIO_MIN_CONTACT_WHEN_SIGNAL_VALID = 0.12;
+
+/** Brief grace before audio SM drops to baseline when contact dips (one channel stale). */
+export const BRAINBIT_AUDIO_CONTACT_GRACE_MS = 4000;
+
+/**
  * `CoherenceDetector` `alphaFloorBaselineRatio` (default Muse 0.5). BrainBit C3/C4 alpha can be narrow
  * and eyes-closed did not consistently exceed the first 15s baseline; keep this as a loose dead-alpha
  * guard rather than a strong reward gate.

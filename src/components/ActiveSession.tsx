@@ -15,7 +15,9 @@ import { isBrainBitBridgeEEGDevice } from '../lib/eeg/brainbit-bridge-eeg-device
 import { isWebSocketBridgeEegDevice } from '../lib/eeg/eeg-bridge-kind';
 import { BrainBitCoherenceDebugPanel } from './BrainBitCoherenceDebugPanel';
 import { BrainBitSignalStatus } from './BrainBitSignalStatus';
+import { BrainBitChannelActivity } from './BrainBitChannelActivity';
 import { useBrainBitStreamHealth } from '../hooks/useBrainBitStreamHealth';
+import { useBrainBitChannelActivity } from '../hooks/useBrainBitChannelActivity';
 import { DEBUG_ATHENA_BANDS } from '../lib/eeg/eeg-feature-flags';
 import { getJourneys, getLastJourneyId } from '../lib/session-storage';
 import { useSession } from '../hooks/useSession';
@@ -34,6 +36,8 @@ interface ActiveSessionProps {
   coherenceHistory: number[];
   coherenceZone: 'flow' | 'stabilizing' | 'noise';
   flowZoneMin?: number;
+  /** BrainBit: 0–1 confidence for graph opacity. */
+  signalConfidence?: number;
 
   // Muse state
   museConnected: boolean;
@@ -61,6 +65,7 @@ export function ActiveSession({
   coherenceHistory,
   coherenceZone,
   flowZoneMin,
+  signalConfidence,
   museConnected,
   touching,
   electrodeStatus,
@@ -78,6 +83,7 @@ export function ActiveSession({
   const isWsBridgeDevice = isWebSocketBridgeEegDevice(eegDevice);
   const isBrainBit = isBrainBitBridgeEEGDevice(eegDevice);
   const brainBitStreamHealth = useBrainBitStreamHealth(isBrainBit, connectionHealthState);
+  const brainBitChannelActivity = useBrainBitChannelActivity(isBrainBit && museConnected);
   const brainBitHeaderOk =
     museConnected &&
     (isBrainBit
@@ -198,7 +204,7 @@ export function ActiveSession({
               letterSpacing: '-0.01em',
             }}
           >
-            muse
+            {isBrainBit ? 'NeuroSymphony' : 'muse'}
           </span>
           {batteryLevel >= 0 && (
             <span 
@@ -248,6 +254,7 @@ export function ActiveSession({
             <path d="M3 18v-6a9 9 0 0 1 18 0v6"/>
             <path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3zM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z"/>
           </svg>
+          {!isBrainBit && (
           <span
             title={`PPG ${ppgStatusLabel} | mode ${ppgDiag.connectionMode ?? 'none'} | samples ${ppgDiag.samplesReceived}`}
             style={{
@@ -263,6 +270,7 @@ export function ActiveSession({
           >
             PPG {ppgStatusLabel}
           </span>
+          )}
         </div>
       </header>
 
@@ -451,7 +459,18 @@ export function ActiveSession({
             </div>
           )}
           
-          {/* Band Power / Greeks Row */}
+          {isBrainBit ? (
+            <div
+              style={{
+                paddingTop: '10px',
+                marginTop: '10px',
+                borderTop: '1px solid hsl(270 10% 25% / 0.3)',
+              }}
+            >
+              <BrainBitChannelActivity activity={brainBitChannelActivity} compact />
+            </div>
+          ) : (
+          /* Band Power / Greeks Row */
           <div 
             className="session-greeks-row"
             style={{
@@ -500,6 +519,7 @@ export function ActiveSession({
               );
             })}
           </div>
+          )}
         </div>
 
         {/* Mental State Card - Target 5: Coherence, Settling In, Active Mind tabs */}
@@ -872,6 +892,7 @@ export function ActiveSession({
             coherenceZone={coherenceZone}
             duration={duration}
             flowZoneMin={flowZoneMin}
+            signalConfidence={isBrainBit ? signalConfidence : undefined}
           />
         </div>
 

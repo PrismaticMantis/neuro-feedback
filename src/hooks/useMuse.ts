@@ -5,9 +5,9 @@ import { useEegDevice } from '../lib/eeg/EegDeviceContext';
 import { horseshoeToElectrodeModel } from '../lib/eeg/electrode-sites';
 import {
   averageContactScore01,
+  averageContactScore01BrainBitAudio,
   averageContactScore01FromLegacyStatus,
   connectionQualityMetricFromLegacyStatus,
-  connectionQualityMetricFromSites,
 } from '../lib/eeg/contact-quality';
 import { CoherenceDetector, calculateCoherence, getCoherenceZone } from '../lib/flow-state';
 import { audioEngine } from '../lib/audio-engine';
@@ -39,6 +39,15 @@ import {
   BRAINBIT_COHERENCE_SIGNAL_VALID_MIN_ALPHA,
   BRAINBIT_COHERENCE_VARIANCE_SAMPLE_DEDUPE_EPSILON,
 } from '../lib/eeg/brainbit-coherence-stability';
+import {
+  brainBitChannelReadiness01,
+  countBrainBitChannelBuckets,
+  deriveBrainBitChannelSessionMode,
+  type BrainBitChannelSessionMode,
+} from '../lib/eeg/brainbit-channel-state';
+import { computeBrainBitSignalConfidence } from '../lib/eeg/brainbit-signal-confidence';
+import { deriveBrainBitStreamHealth } from '../lib/eeg/brainbit-stream-health';
+import { logBrainBitSessionEvent } from '../lib/eeg/brainbit-session-events';
 import { isWebSocketBridgeEegDevice } from '../lib/eeg/eeg-bridge-kind';
 import {
   ATHENA_AUDIO_SM_ENTER_EASY,
@@ -69,6 +78,10 @@ export interface UseMuseReturn {
   electrodeSites: ElectrodeSiteContact[];
   ppg: { bpm: number | null; confidence: number; lastBeatMs: number | null }; // PPG heart rate metrics
   connectionHealthState: ConnectionHealthState; // Connection health for UI display
+  /** BrainBit: 0–1 signal confidence (channel count, stale, stream). */
+  brainBitSignalConfidence: number;
+  /** BrainBit: normal (3–4 ch) / fallback (2 ch) / insufficient. */
+  brainBitChannelSessionMode: BrainBitChannelSessionMode;
   /** Bridge coherence debug: Athena + `VITE_DEBUG_ATHENA_COHERENCE`, or BrainBit + `VITE_DEBUG_BRAINBIT_BRIDGE`. */
   athenaCoherenceDebug: AthenaCoherenceDebugSnapshot | undefined;
   isBluetoothAvailable: boolean;
@@ -188,6 +201,9 @@ export function useMuse(): UseMuseReturn {
     lastBeatMs: null,
   });
   const [connectionHealthState, setConnectionHealthState] = useState<ConnectionHealthState>('disconnected');
+  const [brainBitSignalConfidence, setBrainBitSignalConfidence] = useState(1);
+  const [brainBitChannelSessionMode, setBrainBitChannelSessionMode] =
+    useState<BrainBitChannelSessionMode>('insufficient');
   const [error, setError] = useState<string | null>(null);
 
   const coherenceDetector = useRef(new CoherenceDetector({}));
@@ -199,6 +215,9 @@ export function useMuse(): UseMuseReturn {
   const lastAthenaBandLog = useRef<number>(0);
   const lastAthenaCoherenceDebugMs = useRef<number>(0);
   const lastBrainBitDetectorInputLogMs = useRef<number>(0);
+  const lastBrainBitMetaUpdateMs = useRef<number>(0);
+  const prevBrainBitChannelStateRef = useRef<Map<string, string>>(new Map());
+  const prevBrainBitArtifactRef = useRef(0);
   const prevFlowActiveRef = useRef<boolean>(false);
   const lastFlowTransitionRef = useRef<{ edge: 'enter' | 'exit'; at: number } | null>(null);
   const athenaPathRelativeMsRef = useRef(0);
@@ -242,8 +261,8 @@ export function useMuse(): UseMuseReturn {
         const connectionQualityFromElectrodes =
           sites.length > 0
             ? isBrainBitBridgeEEGDevice(eegDevice)
-              ? averageContactScore01(sites)
-              : connectionQualityMetricFromSites(sites)
+              ? brainBitChannelReadiness01(eegDevice.getBrainBitChannelDiagnostics())
+              : averageContactScore01(sites)
             : connectionQualityMetricFromLegacyStatus(next);
 
         wasConnectedRef.current = true;
@@ -315,7 +334,57 @@ export function useMuse(): UseMuseReturn {
           if (v === 1) sumQ += 1;
           else if (v === 2) sumQ += 0.5;
         }
-        const electrodeQuality = sumQ / chN;
+        let electrodeQuality = sumQ / chN;
+
+        if (isBrainBitBridgeEEGDevice(eegDevice)) {
+          const channelActivity = eegDevice.getBrainBitChannelDiagnostics();
+          const sessionMode = deriveBrainBitChannelSessionMode(channelActivity);
+          const { activeUsable, total } = countBrainBitChannelBuckets(channelActivity.channels);
+          if (total > 0) electrodeQuality = activeUsable / total;
+
+          const audioContact =
+            sites.length > 0 ? averageContactScore01BrainBitAudio(sites) : electrodeQuality;
+          const packetGap = eegDevice.getConnectionStateDetail().timeSinceLastUpdate;
+          const streamHealth = deriveBrainBitStreamHealth({
+            wsConnected: eegDevice.connected,
+            connectionHealthState: eegDevice.getHealthState(),
+            timeSinceLastPacketMs: packetGap,
+            contact: brainBitRxDebug?.contact ?? null,
+          });
+          const confidence = computeBrainBitSignalConfidence({
+            channelActivity,
+            streamHealth,
+            electrodeQuality01: audioContact,
+          });
+
+          for (const ch of channelActivity.channels) {
+            const prev = prevBrainBitChannelStateRef.current.get(ch.label);
+            const wasBad =
+              prev === 'flat' || prev === 'stuck' || prev === 'low';
+            const isActive = ch.state === 'active';
+            if (wasBad && isActive) {
+              logBrainBitSessionEvent('channel_recovered', {
+                label: ch.label,
+                from: prev,
+                to: ch.state,
+              });
+            }
+            prevBrainBitChannelStateRef.current.set(ch.label, ch.state);
+          }
+
+          if (brainBitContactArtifact01 >= 0.35 && prevBrainBitArtifactRef.current < 0.35) {
+            logBrainBitSessionEvent('headset_adjusted', {
+              artifact01: Number(brainBitContactArtifact01.toFixed(2)),
+            });
+          }
+          prevBrainBitArtifactRef.current = brainBitContactArtifact01;
+
+          if (tNow - lastBrainBitMetaUpdateMs.current >= 250) {
+            lastBrainBitMetaUpdateMs.current = tNow;
+            setBrainBitChannelSessionMode(sessionMode);
+            setBrainBitSignalConfidence(confidence);
+          }
+        }
 
         const athenaContactGate = isWebSocketBridgeEegDevice(eegDevice)
           ? ATHENA_COHERENCE_MIN_CONTACT_VALIDITY
@@ -330,6 +399,11 @@ export function useMuse(): UseMuseReturn {
         const prevFlow = prevFlowActiveRef.current;
         if (prevFlow !== csState.isActive) {
           lastFlowTransitionRef.current = { edge: csState.isActive ? 'enter' : 'exit', at: tNow };
+          if (isBrainBitBridgeEEGDevice(eegDevice)) {
+            logBrainBitSessionEvent(csState.isActive ? 'coherence_entered' : 'coherence_exited', {
+              sustainedMs: csState.sustainedMs,
+            });
+          }
         }
         prevFlowActiveRef.current = csState.isActive;
 
@@ -596,6 +670,10 @@ export function useMuse(): UseMuseReturn {
           setElectrodeStatus(INITIAL_ELECTRODE_STATUS);
           setElectrodeSites([]);
           setConnectionHealthState('disconnected');
+          setBrainBitSignalConfidence(1);
+          setBrainBitChannelSessionMode('insufficient');
+          prevBrainBitChannelStateRef.current = new Map();
+          prevBrainBitArtifactRef.current = 0;
           setAthenaCoherenceDebug(undefined);
           prevFlowActiveRef.current = false;
           lastFlowTransitionRef.current = null;
@@ -671,6 +749,10 @@ export function useMuse(): UseMuseReturn {
     setElectrodeStatus(INITIAL_ELECTRODE_STATUS);
     setElectrodeSites([]);
     setCoherence(0);
+    setBrainBitSignalConfidence(1);
+    setBrainBitChannelSessionMode('insufficient');
+    prevBrainBitChannelStateRef.current = new Map();
+    prevBrainBitArtifactRef.current = 0;
     setAthenaCoherenceDebug(undefined);
     prevFlowActiveRef.current = false;
     lastFlowTransitionRef.current = null;
@@ -758,6 +840,8 @@ export function useMuse(): UseMuseReturn {
     electrodeSites,
     ppg,
     connectionHealthState,
+    brainBitSignalConfidence,
+    brainBitChannelSessionMode,
     isBluetoothAvailable: eegDevice.isBluetoothAvailable(),
     connectBluetooth,
     connectOSC,

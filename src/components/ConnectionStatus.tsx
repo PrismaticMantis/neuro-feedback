@@ -381,7 +381,7 @@ export function ConnectionStatus({
         )}
       </div>
 
-      {/* Signal Quality Bar - Target 4: Yellow progress bar */}
+      {/* Channel readiness (BrainBit) or signal quality (Muse) */}
       {museConnected && (
         <div 
           className="quality-bar"
@@ -389,7 +389,7 @@ export function ConnectionStatus({
             display: 'flex',
             alignItems: 'center',
             gap: '12px',
-            marginBottom: '12px',
+            marginBottom: brainBitMode ? '4px' : '12px',
           }}
         >
           <span 
@@ -402,7 +402,7 @@ export function ConnectionStatus({
               whiteSpace: 'nowrap',
             }}
           >
-            Signal Quality
+            {brainBitMode ? 'Channel readiness' : 'Signal Quality'}
           </span>
           <div 
             className="quality-track"
@@ -440,6 +440,19 @@ export function ConnectionStatus({
             {Math.round(connectionQuality * 100)}%
           </span>
         </div>
+      )}
+      {museConnected && brainBitMode && (
+        <p
+          style={{
+            margin: '0 0 12px',
+            fontFamily: 'var(--font-sans)',
+            fontSize: 10,
+            color: 'var(--text-subtle)',
+            lineHeight: 1.35,
+          }}
+        >
+          BLE link connected — bar reflects EEG channel quality below, not Bluetooth strength
+        </p>
       )}
 
       {/* Error Message */}

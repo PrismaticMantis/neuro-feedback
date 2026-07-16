@@ -1,6 +1,6 @@
 # NeuroSymphony — Project State
 
-> **Last updated:** 2026-06-27 (orientation-only session)
+> **Last updated:** 2026-07-16
 >
 > This is the **living dashboard** of the project. The top sections always reflect
 > the *current* state. **Update it at the end of every working session** (human or
@@ -28,75 +28,74 @@ When ending a work session (see `prompts/session-end.md` for the full prompt):
 
 ## Current Focus
 
-- Primary target: **BrainBit EEG on iPad (Capacitor)**.
-- Primary branch: **`main`** (`eeg-multidevice-refactor` merged 2026-06-26).
+- Primary target: **BrainBit EEG on iPad (Capacitor)** — honest signal UX + stable
+  20-minute sessions (connection ≠ usable EEG).
+- Primary branch: **`main`**.
 
 ## Recent Progress
 
-- **Agent-agnostic session workflow.** Rewrote `prompts/session-start.md` and
-  `session-end.md` for any AI tool; added `prompts/README.md`. Shorthand
-  `session-start` / `session-end` (or `Follow prompts/...`) — no need to paste
-  full prompt text. Committed `d36bea7` on `main`.
-- **Audio loading fixed (Capacitor iOS).** Baseline/coherence/sustained MP3 layers
-  now load via `XMLHttpRequest` with multiple URL candidates instead of `fetch()`.
-  Reason: in WKWebView, `fetch()` for custom-scheme (`capacitor://localhost/`)
-  assets returns opaque responses with `status: 0`, so `resp.ok` failed and audio
-  silently never loaded. Binaural beats were unaffected (they are synthesized).
-- **BrainBit channel diagnostics.** Per-channel stuck-at-0.4V detection +
-  `getBrainBitChannelDiagnostics()`, surfaced via `useBrainBitChannelActivity`
-  hook and a 4-node (A1/C3/C4/A2) activity UI; signal-status wording now reflects
-  partial connectivity.
-- **Documentation + merge to `main`.** Four-doc system (README, PROJECT,
-  ARCHITECTURE, PROJECT_STATE), `AGENTS.md`, session prompts; feature branch
-  merged; fresh clones on `main` get the full system.
+- **BrainBit channel honesty layer.** Added `stale` channel state, per-channel
+  classification from classifier rules (not horseshoe alone), signal confidence
+  (0–1), pre-session contact stabilization gate, and session-mode-driven audio
+  contact gates. UI: "Channel readiness" bar (not BLE strength), graph opacity
+  reflects confidence, 4-node activity in setup and active session.
+- **Fixed synchronized channel dots.** Chunk-level `forceContactDegradeAll` no
+  longer overwrites all four channels' display rules — dots can differ per pad.
+  Relaxed `goodMinVar` slightly (14 → 9) to reduce spurious stale-dc.
+- **Coherence SM grace for BrainBit.** Optional `minContactQualityWhenSignalValid`
+  + `contactGraceMs` when detector still trusts EEG during brief stale windows.
+- **Session event logging.** `logBrainBitSessionEvent` for session start, channel
+  recovery, coherence enter/exit, headset adjustment (console; foundation for replay).
+- **iOS log capture scripts.** `npm run logs:save` / `logs:ios` for Xcode debugging.
+- **iPad build synced.** `npm run cap:sync:ios` run multiple times this session;
+  app ready to Run from Xcode on physical iPad (no Mac cable needed after install).
 
 ## Known Issues / Watch List
 
-- **Slow EEG stream start (~10s+).** Time from session start to first valid EEG
-  chunk regressed to ~10s. The delay is in the BLE path (scan → connect →
-  StartSignal → first chunk) and its watchdog/retry recovery, not the WebSocket.
-  Not yet root-caused; no code change made yet pending investigation.
-- **BrainBit sentinel frames (~0.4V on all channels).** The device intermittently
-  emits stuck/identical samples; the relay detects streaks and triggers
-  signal-restart / full-reconnect recovery. Recovery works but contributes to
-  startup latency and occasional mid-session hiccups.
+- **Slow EEG stream start (~10s+).** BLE path (scan → connect → StartSignal → first
+  chunk) — not WebSocket. Still not root-caused.
+- **BrainBit sentinel frames (~0.4V).** Relay recovery works but adds startup latency
+  and mid-session hiccups.
+- **Stale vs active still flickers on device.** Per-channel UI fix landed; needs iPad
+  re-test to confirm dots behave independently and stabilization gate is not too
+  strict or too loose.
+- **MVP not yet validated at 20 minutes.** Code + UI improved; soak test with saved
+  logs still required for sign-off.
 - **EEG-only metrics.** No HR/HRV/recovery from BrainBit — summaries must not
   display these for BrainBit sessions.
 
 ## Key Decisions (recent)
 
-- **XHR over `fetch()` for local audio assets** in WKWebView (see above).
-- **Repo hygiene:** `src-tauri/target/` (Rust build artifacts, ~1.9GB), the
-  `brainbit-web/` vendor clone (separate git repo), and the iOS-bundled audio MP3s
-  (duplicates; excluded by Capacitor's generated `ios/.gitignore`) are kept out of
-  git.
-- **Coherence is "today's brain-state metric," not a permanent contract** — code
-  and docs should keep room for alternative/additional metrics.
-- **Session handoff is human-triggered.** `git pull` does not onboard agents;
-  collaborator says `session-start` / `session-end` (or references the prompt
-  files). Session-end must commit + push to close the loop.
+- **Connection ≠ usable EEG** — top bar shows channel readiness; stale is honest
+  yellow, not hidden behind 100% "connected."
+- **Chunk contamination vs per-channel display** — global degrade tightens audio/
+  aggregate gates only; channel dots use per-channel classifier rules.
+- **Pre-session stabilization** — require ~8–12s of acceptable channels (incl. stale
+  when stream live) before Start unlocks.
+- **Simulation ≠ MVP sign-off** — replay tests speed dev; real iPad + headset required
+  for human UX validation (documented in hiring/trial brief discussion).
 
 ## Next Priorities
 
-1. Investigate and reduce the ~10s EEG stream startup delay.
-2. Confirm audio fix on-device across full session lifecycle (start/stop/restart).
+1. **iPad device test** — connect BrainBit, verify independent channel dots, run toward
+   20-minute soak; save logs via `npm run logs:save`.
+2. Tune stale/stabilization thresholds if start gate blocks too long or stale too noisy.
+3. Investigate ~10s EEG stream startup delay (BLE path).
 
 ## Session Handoff
 
 > "Where the screwdriver was left." The practical state for the next person.
 
-> **Note for Mark:** Hey Mark! 👋 Just testing the session-end prompt flow — no
-> code changes this round. If you're seeing this, the handoff works.
-
-- **Current branch:** `main` (synced with `origin/main`)
-- **Safe stopping point:** Documentation and agent workflow complete and tested
-  (`session-start` / `session-end` shorthands work). No open code changes; BLE
-  startup delay still the top engineering item.
+- **Current branch:** `main` (synced with `origin/main` after this session-end)
+- **Safe stopping point:** BrainBit honesty/stabilization/confidence work committed;
+  iPad build synced locally via `cap:sync:ios`. Not yet device-validated post
+  channel-dot fix.
 - **Next developer should:**
   - `git checkout main && git pull`
-  - Say **`session-start`** (or `Follow prompts/session-start.md`) before changing code.
-  - Investigate the BLE startup delay *before* changing connection architecture.
-  - Say **`session-end`** when done to update this file and push.
+  - Say **`session-start`** before changing code.
+  - Run on **physical iPad** (BrainBit via BLE — no Mac cable during session).
+  - Build/deploy: `npm run cap:sync:ios` → Xcode → Run on iPad.
+  - After test: `npm run logs:save` if issues; say **`session-end`** when done.
 
 ## Project History
 
@@ -106,6 +105,25 @@ Keep each to Goal / Completed / Learned / Next — context, not a diary. When yo
 retire something from the dashboard above, fold its essence into an entry here
 rather than deleting it.
 
+### 2026-07-16
+
+**Goal** — BrainBit MVP UX honesty (stale signal, channel readiness, stabilization)
+and iPad test readiness.
+
+**Completed**
+- Channel state module (`stale`, session mode, stabilization hold, readiness bar).
+- Signal confidence → coherence graph opacity; BrainBit-specific audio/contact gates.
+- Pre-session stabilization gate + `BrainBitContactStabilization` UI.
+- Fixed all-four-dots-sync bug (chunk degrade no longer clones display rules).
+- iOS log scripts; multiple `cap:sync:ios` builds for Xcode deploy.
+
+**Learned** — Chunk-level stale detection was stamping the same label on all channels,
+which felt dishonest in UI; separating display rules from aggregate gates fixes that.
+iPad runs standalone after install (USB only for deploy/debug logs).
+
+**Next** — iPad soak test with saved logs; tune stale/stabilization if needed; BLE
+startup delay investigation.
+
 ### 2026-06-27 (orientation only)
 
 **Goal** — Load project context via `session-start`; no code or doc changes intended.
@@ -113,9 +131,6 @@ rather than deleting it.
 **Completed**
 - Ran the `session-start` workflow: read README, PROJECT, PROJECT_STATE, ARCHITECTURE.
 - Summarized product, architecture (relay→WebSocket→app→audio), known issues, and next priorities back to the operator.
-
-**Note from Tyler** — Hey Mark! 👋 Just testing out the session-end prompt flow
-here — nothing real this round, no code touched. If you're reading this, it works. 🎉
 
 **Learned** — Nothing new about the system; dashboard already accurate. Recording this session only to keep an honest handoff trail (no fabricated progress, no empty code commit).
 

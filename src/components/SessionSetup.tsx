@@ -17,6 +17,8 @@ import { useBrainBitStreamHealth } from '../hooks/useBrainBitStreamHealth';
 import { useBrainBitChannelActivity } from '../hooks/useBrainBitChannelActivity';
 import { BrainBitSignalStatus } from './BrainBitSignalStatus';
 import { BrainBitChannelActivity } from './BrainBitChannelActivity';
+import { useBrainBitContactStabilization } from '../hooks/useBrainBitContactStabilization';
+import { BrainBitContactStabilization } from './BrainBitContactStabilization';
 import {
   overallContactSummaryFromLegacyStatus,
   overallContactSummaryFromSites,
@@ -160,6 +162,7 @@ export function SessionSetup({
   const brainBitRelayStatus = useBrainBitRelayStatus(isBrainBit);
   const brainBitStreamHealth = useBrainBitStreamHealth(isBrainBit, connectionHealthState);
   const brainBitChannelActivity = useBrainBitChannelActivity(isBrainBit && museConnected);
+  const brainBitStabilization = useBrainBitContactStabilization(isBrainBit && museConnected, brainBitChannelActivity);
   const [newUserName, setNewUserName] = useState('');
   // showUserForm state removed - Lovable design doesn't show user switcher inline
 
@@ -170,7 +173,10 @@ export function SessionSetup({
     }
   };
 
-  const canStartSession = museConnected && currentUser;
+  const canStartSession =
+    museConnected &&
+    currentUser &&
+    (!isBrainBit || brainBitStabilization.isReady);
   const journeyId = currentUser ? getLastJourneyId(currentUser.id) : null;
   const journey = journeyId ? getJourneys().find((j) => j.id === journeyId) : null;
   const subtitle = journey ? `${journey.name} Journey` : '';
@@ -283,7 +289,10 @@ export function SessionSetup({
         </p>
       )}
       {isBrainBit ? (
-        <BrainBitChannelActivity activity={brainBitChannelActivity} />
+        <>
+          <BrainBitChannelActivity activity={brainBitChannelActivity} />
+          <BrainBitContactStabilization state={brainBitStabilization} />
+        </>
       ) : (
         <ElectrodeStatus
           sites={electrodeSites}
@@ -897,7 +906,11 @@ export function SessionSetup({
                 ? isBrainBit
                   ? 'Connect your BrainBit headset to begin'
                   : 'Connect your Muse device to begin'
-                : 'Select a user profile to begin')
+                : !currentUser
+                  ? 'Select a user profile to begin'
+                  : isBrainBit && brainBitStabilization.hint
+                    ? brainBitStabilization.hint
+                    : 'Hold steady contact before starting')
             : 'Ready to begin your session'}
         </p>
       </footer>

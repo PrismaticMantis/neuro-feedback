@@ -10,6 +10,10 @@ export interface CoherenceStateMachineConfig {
   exitSustainSeconds: number; // How long to sustain exit threshold to leave coherent (default 0.6)
   maxPacketGapMs: number; // Max time without data before forcing baseline (default 1000)
   minContactQuality: number; // Minimum electrode contact quality (0-1, default 0.5)
+  /** Optional lower gate when `SignalQuality.coherenceSignalValid` (BrainBit detector still trusts EEG). */
+  minContactQualityWhenSignalValid?: number;
+  /** Grace period before contact failure forces baseline (BrainBit — brief stale channel). */
+  contactGraceMs?: number;
   enableDebugLogging: boolean; // Enable debug logs (default false)
 }
 
@@ -27,11 +31,15 @@ export interface SignalQuality {
   isConnected: boolean;
   contactQuality: number; // 0-1
   timeSinceLastUpdate: number; // milliseconds
+  /** When true, use `minContactQualityWhenSignalValid` if configured (BrainBit). */
+  coherenceSignalValid?: boolean;
 }
 
 export class CoherenceStateMachine {
   private config: CoherenceStateMachineConfig;
   private state: CoherenceState = 'baseline';
+  /** When contact quality first dropped below threshold (for grace window). */
+  private contactBadSince: number | null = null;
   
   // Timers
   private enterTimerStart: number | null = null; // When we entered stabilizing
@@ -171,28 +179,47 @@ export class CoherenceStateMachine {
   private checkSignalQuality(signalQuality: SignalQuality): boolean {
     // Must be connected
     if (!signalQuality.isConnected) {
+      this.contactBadSince = null;
       if (this.config.enableDebugLogging) {
         console.log('[CoherenceStateMachine] Signal check failed: not connected');
       }
       return false;
     }
 
-    // Check contact quality
-    if (signalQuality.contactQuality < this.config.minContactQuality) {
+    const minContact =
+      signalQuality.coherenceSignalValid === true &&
+      this.config.minContactQualityWhenSignalValid != null
+        ? this.config.minContactQualityWhenSignalValid
+        : this.config.minContactQuality;
+
+    const contactOk = signalQuality.contactQuality >= minContact;
+    if (!contactOk) {
+      const now = Date.now();
+      if (this.contactBadSince === null) this.contactBadSince = now;
+      const grace = this.config.contactGraceMs ?? 0;
+      if (grace > 0 && now - this.contactBadSince < grace) {
+        return this.checkDataFreshness(signalQuality);
+      }
       if (this.config.enableDebugLogging) {
-        console.log(`[CoherenceStateMachine] Signal check failed: contact quality ${signalQuality.contactQuality.toFixed(2)} < ${this.config.minContactQuality}`);
+        console.log(
+          `[CoherenceStateMachine] Signal check failed: contact quality ${signalQuality.contactQuality.toFixed(2)} < ${minContact}` +
+            (signalQuality.coherenceSignalValid ? ' (signalValid bypass active)' : ''),
+        );
       }
       return false;
     }
 
-    // Check data freshness
+    this.contactBadSince = null;
+    return this.checkDataFreshness(signalQuality);
+  }
+
+  private checkDataFreshness(signalQuality: SignalQuality): boolean {
     if (signalQuality.timeSinceLastUpdate > this.config.maxPacketGapMs) {
       if (this.config.enableDebugLogging) {
         console.log(`[CoherenceStateMachine] Signal check failed: data gap ${signalQuality.timeSinceLastUpdate}ms > ${this.config.maxPacketGapMs}ms`);
       }
       return false;
     }
-
     return true;
   }
 
@@ -230,7 +257,7 @@ export class CoherenceStateMachine {
     this.state = 'baseline';
     this.enterTimerStart = null;
     this.exitTimerStart = null;
-    
+    this.contactBadSince = null;
     if (oldState !== 'baseline') {
       this.logStateChange(oldState, 'baseline', 0, 'Reset');
       this.onStateChange?.('baseline', oldState);

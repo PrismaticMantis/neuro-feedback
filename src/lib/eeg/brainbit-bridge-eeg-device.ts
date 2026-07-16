@@ -23,6 +23,10 @@ import {
   deriveBrainBitStreamHealth,
   type BrainBitStreamHealthSnapshot,
 } from './brainbit-stream-health';
+import {
+  classifyBrainBitChannelState,
+  rebuildBrainBitActivitySnapshot,
+} from './brainbit-channel-state';
 
 const STALL_MS = 4000;
 const ZERO_BANDS = { delta: 0, theta: 0, alpha: 0, beta: 0, gamma: 0 };
@@ -52,12 +56,12 @@ export const BRAINBIT_CONTACT_THRESHOLDS = {
   warmupSamples: 12,
   clipUv: 3200,
   /** Both absAmp AND vari must be below these to classify flat (horseshoe 4). */
-  flatAbsUv: 0.12,
-  flatVar: 0.85,
+  flatAbsUv: 0.05,
+  flatVar: 0.45,
   /** Good requires BOTH absAmp and vari in this band (not merely "not weak"). */
   goodMinAbsUv: 4,
   goodMaxAbsUv: 920,
-  goodMinVar: 14,
+  goodMinVar: 9,
   artifactAbsUv: 2800,
   artifactVar: 650_000,
   weakAbsUv: 1400,
@@ -103,10 +107,10 @@ function isBrainBitChannelSentinelValue(v: number): boolean {
  * ~96 samples ≈ 0.38 s at 250 Hz — real EEG always wiggles at µV scale, so a
  * channel holding exactly 0.4 V this long is saturated/stuck, not flat contact.
  */
-const BRAINBIT_CH_STUCK_04_SAMPLE_STREAK = 96;
+export const BRAINBIT_CH_STUCK_04_SAMPLE_STREAK = 96;
 
 /** Per-channel activity classification for the setup diagnostics (NOT pad impedance). */
-export type BrainBitChannelState = 'active' | 'usable' | 'low' | 'flat' | 'stuck';
+export type BrainBitChannelState = 'active' | 'usable' | 'stale' | 'low' | 'flat' | 'stuck';
 
 export interface BrainBitChannelActivity {
   label: string;
@@ -115,6 +119,8 @@ export interface BrainBitChannelActivity {
   stuck04Streak: number;
   /** Underlying contact horseshoe 1–4 (1 good … 4 off) for reference. */
   horseshoe: number;
+  /** Last classifier rule string (e.g. stale-dc, good, flat). */
+  rule: string;
 }
 
 export interface BrainBitChannelActivitySnapshot {
@@ -519,32 +525,21 @@ export class BrainBitBridgeEEGDevice implements EEGDevice {
     const channels: BrainBitChannelActivity[] = Array.from({ length: n }, (_, ch) => {
       const horseshoe = this.contactHorseshoe[ch] ?? 4;
       const stuck04Streak = this.contactStuck04Streak[ch] ?? 0;
+      const rule = this.contactLastRule[ch] ?? '';
       const label = labels[ch] ?? `Ch${ch}`;
-      let state: BrainBitChannelState;
-      if (!hasData) {
-        state = 'flat';
-      } else if (stuck04Streak >= BRAINBIT_CH_STUCK_04_SAMPLE_STREAK) {
-        state = 'stuck';
-      } else if (horseshoe <= 1) {
-        state = 'active';
-      } else if (horseshoe === 2) {
-        state = 'usable';
-      } else if (horseshoe === 3) {
-        state = 'low';
-      } else {
-        state = 'flat';
-      }
-      return { label, state, stuck04Streak, horseshoe };
+      const state = classifyBrainBitChannelState({
+        hasData,
+        horseshoe,
+        rule,
+        stuck04Streak,
+        stuckThreshold: BRAINBIT_CH_STUCK_04_SAMPLE_STREAK,
+      });
+      return { label, state, stuck04Streak, horseshoe, rule };
     });
 
-    const activeCount = channels.filter((c) => c.state === 'active' || c.state === 'usable').length;
-    let overallState: BrainBitChannelActivitySnapshot['overallState'];
-    if (!hasData) overallState = 'idle';
-    else if (activeCount === 0) overallState = 'none';
-    else if (activeCount >= n) overallState = 'full';
-    else overallState = 'partial';
-
-    return { channels, activeCount, totalCount: n, overallState };
+    return hasData
+      ? rebuildBrainBitActivitySnapshot(channels)
+      : { ...rebuildBrainBitActivitySnapshot(channels), overallState: 'idle' as const, activeCount: 0 };
   }
 
   getConnectionStateDetail(): EEGConnectionStateDetail {
@@ -788,7 +783,12 @@ export class BrainBitBridgeEEGDevice implements EEGDevice {
     return allChannelsFlat && avgSpread < th.minChunkSpreadVolts * 8;
   }
 
+  /**
+   * Chunk-level contamination — tightens aggregate horseshoe/EMA for audio gates.
+   * Does NOT overwrite per-channel `contactLastRule`; channel dots stay independent.
+   */
   private forceContactDegradeAll(minHorseshoe: number, reason: string): void {
+    void reason; // retained for future debug logging
     const n = this.contactHorseshoe.length;
     const targetScore = BrainBitBridgeEEGDevice.rawContactQToScore(minHorseshoe);
     for (let ch = 0; ch < n; ch++) {
@@ -800,7 +800,6 @@ export class BrainBitBridgeEEGDevice implements EEGDevice {
       const fromHyst = this.hysteresisHorseshoe(prev, this.contactDisplayEma[ch]!);
       this.contactHorseshoe[ch] = Math.max(fromHyst, minHorseshoe);
       this.contactLastRawQ[ch] = Math.max(this.contactLastRawQ[ch] ?? 4, minHorseshoe);
-      this.contactLastRule[ch] = `${reason} → min hs${minHorseshoe}`;
     }
     this.syncContactDerivedState();
   }
@@ -889,9 +888,16 @@ export class BrainBitBridgeEEGDevice implements EEGDevice {
     if (n === 0) return;
     let score = 0;
     for (let i = 0; i < n; i++) {
-      const h = this.contactHorseshoe[i];
-      if (h === 1) score += 1;
-      else if (h === 2) score += 0.5;
+      const rule = this.contactLastRule[i] ?? '';
+      if (rule.includes('stale-dc')) {
+        score += 0.35;
+      } else if (rule.startsWith('flat') || rule.startsWith('clip')) {
+        score += 0;
+      } else {
+        const h = this.contactHorseshoe[i];
+        if (h === 1) score += 1;
+        else if (h === 2) score += 0.5;
+      }
     }
     const cq = score / n;
     this._state.touching = cq > 0.05;

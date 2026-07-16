@@ -19,6 +19,7 @@ const STATE_META: Record<
 > = {
   active: { color: '#22c55e', label: 'Active', pulse: true },
   usable: { color: '#84cc16', label: 'Usable', pulse: false },
+  stale: { color: '#f59e0b', label: 'Stale', pulse: false },
   low: { color: '#f59e0b', label: 'Low', pulse: false },
   flat: { color: 'hsl(270 10% 45%)', label: 'Flat', pulse: false },
   stuck: { color: '#ef4444', label: 'Stuck 0.4V', pulse: false },
@@ -98,7 +99,7 @@ export function BrainBitChannelActivity({ activity, compact = false }: BrainBitC
               }}
             >
               <motion.div
-                key={`${ch.label}-${ch.state}`}
+                key={ch.label}
                 style={{
                   width: 12,
                   height: 12,

@@ -23,6 +23,8 @@
     "cap:open:ios": "npm run cap:resolve:ios && npx cap open ios",
     "cap:run:ios": "npm run cap:sync:ios && npx cap open ios",
     "dev:brainbit-ipad:ios": "npm run build:brainbit-ipad && npx cap run ios",
+    "logs:save": "bash scripts/save-xcode-log.sh",
+    "logs:ios": "bash scripts/capture-ios-log.sh",
     "desktop:dev": "tauri dev"
   },
   "dependencies": {

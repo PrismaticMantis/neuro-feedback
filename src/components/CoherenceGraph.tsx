@@ -55,6 +55,8 @@ interface CoherenceGraphProps {
   duration: number; // Current session duration in ms
   /** Top “Coherence” band starts here (default 0.7 = Muse `getCoherenceZone`). Athena passes lower. */
   flowZoneMin?: number;
+  /** BrainBit: line/fill opacity reflects signal confidence (raw coherence unchanged). */
+  signalConfidence?: number;
 }
 
 // Smoothing function for display (visual only, doesn't affect raw data)
@@ -67,6 +69,7 @@ export function CoherenceGraph({
   coherenceZone: _coherenceZone,
   duration,
   flowZoneMin,
+  signalConfidence = 1,
 }: CoherenceGraphProps) {
   void _coherenceZone; // Parent uses zone for copy; bands follow flowZoneMin / defaults
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -212,6 +215,9 @@ export function CoherenceGraph({
         ctx.rect(chartX, chartY, chartWidth, chartHeight);
         ctx.clip();
 
+        const lineAlpha = 0.35 + 0.65 * Math.max(0, Math.min(1, signalConfidence));
+        ctx.globalAlpha = lineAlpha;
+
         // Vertical gradient for fill (gold top, purple bottom)
         // Intentional deviation from Lovable: vertical layering yellow above purple.
         const fillGradient = ctx.createLinearGradient(0, chartY, 0, chartY + chartHeight);
@@ -243,11 +249,12 @@ export function CoherenceGraph({
         ctx.shadowColor = GRAPH_COLORS.lineGlow;
         ctx.stroke();
         ctx.shadowBlur = 0;
+        ctx.globalAlpha = 1;
 
         ctx.restore(); // Remove clip
       }
     }
-  }, [coherenceHistory, smoothedHistory, duration, flowZoneMin]);
+  }, [coherenceHistory, smoothedHistory, duration, flowZoneMin, signalConfidence]);
 
   // Format time display
   const formatTime = (ms: number) => {
@@ -269,6 +276,20 @@ export function CoherenceGraph({
       <div className="graph-container-lovable">
         <canvas ref={canvasRef} className="graph-canvas-lovable" />
       </div>
+
+      {signalConfidence < 0.75 && (
+        <p
+          style={{
+            margin: '6px 0 0',
+            paddingLeft: 52,
+            fontFamily: 'var(--font-sans)',
+            fontSize: 10,
+            color: 'var(--text-subtle)',
+          }}
+        >
+          Signal confidence {Math.round(signalConfidence * 100)}% — graph opacity reflects channel quality
+        </p>
+      )}
 
       {/* Time axis */}
       <div className="time-axis-lovable">

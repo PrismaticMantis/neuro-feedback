@@ -1,6 +1,6 @@
 // Neuro-Somatic Feedback App – Main Application
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import { useMuse } from './hooks/useMuse';
 import { useAudio } from './hooks/useAudio';
@@ -31,10 +31,12 @@ import { calculateCalmScore, calculateCreativeFlowScore } from './lib/flow-state
 import { deriveRecoveryPoints } from './lib/summary-pdf';
 import {
   averageContactScore01,
+  averageContactScore01BrainBitAudio,
   averageContactScore01FromLegacyStatus,
   hasEnoughGoodOrMediumContact,
   hasEnoughGoodOrMediumContactLegacy,
 } from './lib/eeg/contact-quality';
+import { logBrainBitSessionEvent } from './lib/eeg/brainbit-session-events';
 import type { ThresholdSettings } from './types';
 import './App.css';
 
@@ -120,10 +122,22 @@ function App() {
         : BRAINBIT_UI_FLOW_ZONE_MIN_MED
       : undefined;
 
+  const isBrainBit = isBrainBitBridgeEEGDevice(eegDevice);
+
   const hasGoodContact =
     muse.electrodeSites.length > 0
-      ? hasEnoughGoodOrMediumContact(muse.electrodeSites)
+      ? isBrainBit
+        ? muse.brainBitChannelSessionMode !== 'insufficient'
+        : hasEnoughGoodOrMediumContact(muse.electrodeSites)
       : hasEnoughGoodOrMediumContactLegacy(muse.electrodeStatus);
+
+  const brainBitChannelModeRef = useRef(muse.brainBitChannelSessionMode);
+  useEffect(() => {
+    if (!session.isSessionActive || !isBrainBit) return;
+    if (brainBitChannelModeRef.current === muse.brainBitChannelSessionMode) return;
+    brainBitChannelModeRef.current = muse.brainBitChannelSessionMode;
+    audioEngine.applyBrainBitContactGate(muse.brainBitChannelSessionMode);
+  }, [session.isSessionActive, isBrainBit, muse.brainBitChannelSessionMode]);
 
   useEffect(() => {
     // CRITICAL: Only skip if session is not active OR we have a REAL disconnect.
@@ -134,13 +148,18 @@ function App() {
 
     const contactQuality =
       muse.electrodeSites.length > 0
-        ? averageContactScore01(muse.electrodeSites)
+        ? isBrainBit
+          ? averageContactScore01BrainBitAudio(muse.electrodeSites)
+          : averageContactScore01(muse.electrodeSites)
         : averageContactScore01FromLegacyStatus(muse.electrodeStatus);
     const timeSinceLastUpdate = eegDevice.getConnectionStateDetail().timeSinceLastUpdate;
     const signalQuality = {
       isConnected: true, // guaranteed by the 'disconnected' early-return above
       contactQuality,
       timeSinceLastUpdate,
+      coherenceSignalValid: isBrainBit
+        ? muse.coherenceStatus.dwellDiagnostics?.signalValid
+        : undefined,
     };
 
     session.updateCoherenceStatus(muse.coherenceStatus.isActive, muse.coherence);
@@ -164,6 +183,7 @@ function App() {
     muse.coherenceStatus.isActive,
     muse.coherence,
     muse.coherenceStatus.signalVariance,
+    muse.coherenceStatus.dwellDiagnostics?.signalValid,
     muse.connectionHealthState,
     muse.state.touching,
     muse.state.bandsSmooth,
@@ -172,6 +192,7 @@ function App() {
     hasGoodContact,
     session.isSessionActive,
     eegDevice,
+    isBrainBit,
   ]);
 
   const handleStartSession = useCallback(async () => {
@@ -209,6 +230,11 @@ function App() {
       // BrainBit-only: re-apply CoherenceDetector bridge tuning after audio/movement wiring so the
       // in-session pipeline matches setup (variance dedupe, minVariance, dwell diagnostics). Idempotent.
       if (isBrainBitBridgeEEGDevice(eegDevice)) {
+        audioEngine.applyBrainBitContactGate(muse.brainBitChannelSessionMode);
+        logBrainBitSessionEvent('session_start', {
+          channelMode: muse.brainBitChannelSessionMode,
+          signalConfidence: Number(muse.brainBitSignalConfidence.toFixed(2)),
+        });
         const coherenceThreshold = sensitivityToCoherenceThreshold(thresholdSettings.coherenceSensitivity);
         const timeThreshold = sensitivityToTimeThreshold(thresholdSettings.coherenceSensitivity);
         const isEasyMode = thresholdSettings.coherenceSensitivity < 0.33;
@@ -321,6 +347,7 @@ function App() {
               coherenceHistory={session.coherenceHistory}
               coherenceZone={muse.coherenceZone}
               flowZoneMin={sessionFlowZoneMin}
+              signalConfidence={isBrainBit ? muse.brainBitSignalConfidence : undefined}
               museConnected={muse.state.connected}
               touching={muse.state.touching}
               electrodeStatus={muse.electrodeStatus}

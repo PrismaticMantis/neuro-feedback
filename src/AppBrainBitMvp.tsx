@@ -20,11 +20,10 @@ import { movementDetector } from './lib/movement-detector';
 import { calculateCalmScore, calculateCreativeFlowScore } from './lib/flow-state';
 import { deriveRecoveryPoints } from './lib/summary-pdf';
 import {
-  averageContactScore01,
+  averageContactScore01BrainBitAudio,
   averageContactScore01FromLegacyStatus,
-  hasEnoughGoodOrMediumContactBrainBit,
-  hasEnoughGoodOrMediumContactLegacy,
 } from './lib/eeg/contact-quality';
+import { logBrainBitSessionEvent } from './lib/eeg/brainbit-session-events';
 import type { ThresholdSettings } from './types';
 import './App.css';
 
@@ -82,9 +81,15 @@ export default function AppBrainBitMvp() {
   }, [muse.setThresholdSettings, eegDevice]);
 
   const hasGoodContact =
-    muse.electrodeSites.length > 0
-      ? hasEnoughGoodOrMediumContactBrainBit(muse.electrodeSites)
-      : hasEnoughGoodOrMediumContactLegacy(muse.electrodeStatus);
+    muse.brainBitChannelSessionMode !== 'insufficient';
+
+  const brainBitChannelModeRef = useRef(muse.brainBitChannelSessionMode);
+  useEffect(() => {
+    if (!session.isSessionActive || !isBrainBitBridgeEEGDevice(eegDevice)) return;
+    if (brainBitChannelModeRef.current === muse.brainBitChannelSessionMode) return;
+    brainBitChannelModeRef.current = muse.brainBitChannelSessionMode;
+    audioEngine.applyBrainBitContactGate(muse.brainBitChannelSessionMode);
+  }, [session.isSessionActive, muse.brainBitChannelSessionMode, eegDevice]);
 
   useEffect(() => {
     if (!session.isSessionActive) return;
@@ -92,13 +97,14 @@ export default function AppBrainBitMvp() {
 
     const contactQuality =
       muse.electrodeSites.length > 0
-        ? averageContactScore01(muse.electrodeSites)
+        ? averageContactScore01BrainBitAudio(muse.electrodeSites)
         : averageContactScore01FromLegacyStatus(muse.electrodeStatus);
     const timeSinceLastUpdate = eegDevice.getConnectionStateDetail().timeSinceLastUpdate;
     const signalQuality = {
       isConnected: true,
       contactQuality,
       timeSinceLastUpdate,
+      coherenceSignalValid: muse.coherenceStatus.dwellDiagnostics?.signalValid,
     };
 
     session.updateCoherenceStatus(muse.coherenceStatus.isActive, muse.coherence);
@@ -124,6 +130,7 @@ export default function AppBrainBitMvp() {
     muse.coherenceStatus.isActive,
     muse.coherence,
     muse.coherenceStatus.signalVariance,
+    muse.coherenceStatus.dwellDiagnostics?.signalValid,
     muse.connectionHealthState,
     muse.state.bandsSmooth,
     muse.electrodeStatus,
@@ -148,6 +155,11 @@ export default function AppBrainBitMvp() {
       movementDetector.start();
 
       if (isBrainBitBridgeEEGDevice(eegDevice)) {
+        audioEngine.applyBrainBitContactGate(muse.brainBitChannelSessionMode);
+        logBrainBitSessionEvent('session_start', {
+          channelMode: muse.brainBitChannelSessionMode,
+          signalConfidence: Number(muse.brainBitSignalConfidence.toFixed(2)),
+        });
         const coherenceThreshold = sensitivityToCoherenceThreshold(
           MVP_THRESHOLD_SETTINGS.coherenceSensitivity,
         );
@@ -165,7 +177,7 @@ export default function AppBrainBitMvp() {
     } catch (e) {
       console.error('[BrainBitMvp] Begin session failed:', e);
     }
-  }, [audio, session, navigate, eegDevice, muse.setThresholdSettings]);
+  }, [audio, session, navigate, eegDevice, muse.setThresholdSettings, muse.brainBitChannelSessionMode, muse.brainBitSignalConfidence]);
 
   const handleEndSession = useCallback(() => {
     movementDetector.stop();
@@ -235,6 +247,7 @@ export default function AppBrainBitMvp() {
               coherenceHistory={session.coherenceHistory}
               coherenceZone={muse.coherenceZone}
               flowZoneMin={BRAINBIT_UI_FLOW_ZONE_MIN_EASY}
+              signalConfidence={muse.brainBitSignalConfidence}
               museConnected={muse.state.connected}
               touching={muse.state.touching}
               electrodeStatus={muse.electrodeStatus}

@@ -24,9 +24,16 @@ import {
   BRAINBIT_AUDIO_SM_ENTER_SUSTAIN_EASY_SEC,
   BRAINBIT_AUDIO_SM_EXIT_EASY,
   BRAINBIT_AUDIO_SM_EXIT_MED,
+  BRAINBIT_AUDIO_MIN_CONTACT_QUALITY,
+  BRAINBIT_AUDIO_MIN_CONTACT_WHEN_SIGNAL_VALID,
+  BRAINBIT_AUDIO_CONTACT_GRACE_MS,
   BRAINBIT_COHERENCE_SUSTAINED_EASY,
   BRAINBIT_COHERENCE_SUSTAINED_MED,
 } from './eeg/brainbit-coherence-stability';
+import {
+  brainBitContactGateForMode,
+  type BrainBitChannelSessionMode,
+} from './eeg/brainbit-signal-confidence';
 import type { AthenaAudioRewardDebug } from '../types';
 import type { CoherenceState } from './coherence-state-machine';
 import { ENABLE_EXPRESSIVE_MODULATION } from './flow-state';
@@ -462,8 +469,30 @@ export class AudioEngine {
       console.log(`[AudioEngine] Difficulty preset: ${presetName}`, config, athena ? '(Athena)' : brainBit ? '(BrainBit)' : '');
     }
 
+    const contactGate = brainBit
+      ? {
+          minContactQuality: BRAINBIT_AUDIO_MIN_CONTACT_QUALITY,
+          minContactQualityWhenSignalValid: BRAINBIT_AUDIO_MIN_CONTACT_WHEN_SIGNAL_VALID,
+          contactGraceMs: BRAINBIT_AUDIO_CONTACT_GRACE_MS,
+        }
+      : {
+          minContactQuality: 0.5,
+          minContactQualityWhenSignalValid: undefined,
+          contactGraceMs: undefined,
+        };
+
     // Update state machine config
-    this.coherenceStateMachine.setConfig(config);
+    this.coherenceStateMachine.setConfig({ ...config, ...contactGate });
+  }
+
+  /** BrainBit: tighten/relax audio SM contact gate as healthy channel count changes mid-session. */
+  applyBrainBitContactGate(mode: BrainBitChannelSessionMode): void {
+    const gate = brainBitContactGateForMode(mode);
+    this.coherenceStateMachine.setConfig({
+      minContactQuality: gate.minContactQuality,
+      minContactQualityWhenSignalValid: gate.minContactWhenSignalValid,
+      contactGraceMs: BRAINBIT_AUDIO_CONTACT_GRACE_MS,
+    });
   }
 
   /**
