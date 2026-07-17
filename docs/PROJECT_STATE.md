@@ -1,5 +1,12 @@
 # NeuroSymphony — Project State
 
+> **Branch review notice:** This version belongs to
+> `codex/brainbit-contact-debugging-tyler` at the `bb4a996` checkpoint and describes
+> this branch's changes relative to GitHub `main` (`ab50b65`). GitHub `main` remains
+> the authoritative accepted project state. The physical-device findings below are
+> confirmed observations; the resistance fallback and signal-contact classifier are
+> experimental and should not be merged wholesale without further calibration.
+>
 > **Last updated:** 2026-07-16 (physical-iPad contact audit + fail-closed signal verification)
 >
 > This is the **living dashboard** of the project. The top sections always reflect
@@ -31,7 +38,24 @@ When ending a work session (see `prompts/session-end.md` for the full prompt):
 - Primary target: **BrainBit EEG on iPad (Capacitor)** — honest per-channel contact
   UX, responsive coherence graph/audio, stable 20-minute sessions (connection ≠
   usable EEG).
-- Primary branch: **`main`**.
+- Accepted project branch: **`main`**. Branch under review:
+  **`codex/brainbit-contact-debugging-tyler`**.
+
+## Branch Review Status
+
+- **Confirmed from labeled physical-iPad testing:** the SDK emitted sustained
+  `0.0 ohms` for all four channels both on-head and off-head; zero is not truthful
+  evidence of contact. Off-head false green, unstable normal on-head readings, and
+  pressure/release transients were reproduced while watching the UI and native logs.
+- **Strong carry-forward behavior:** invalid resistance must fail closed; Bluetooth
+  connection, EEG stream health, measured resistance contact, and signal-estimated
+  contact must remain distinct in both logic and UI copy.
+- **Experimental in this branch:** the bounded resistance-to-signal fallback,
+  centered-AC independence threshold, rejection hold, and sustained C3/C4 signal
+  verification.
+- **Observed limitation:** the stricter experimental build could remain
+  `Unverified` both on-head and off-head. The safety direction is useful, but its
+  exact thresholds and timing are not validated and may be too strict.
 
 ## Recent Progress
 
@@ -134,10 +158,13 @@ When ending a work session (see `prompts/session-end.md` for the full prompt):
 
 > "Where the screwdriver was left." The practical state for the next person.
 
-- **Current branch:** `main` with uncommitted local changes (not pushed).
+- **Current branch:** `codex/brainbit-contact-debugging-tyler`; this document is a
+  branch handoff relative to GitHub `main`, not a replacement for main's accepted
+  project state.
 - **Safe stopping point:** Zero-ohm resistance and signal-only contact both fail
   closed; centered channel independence plus sustained C3/C4 validation is built.
-  Awaiting final iOS sync and physical-device validation.
+  The branch is a reviewable experiment: confirmed findings should carry forward,
+  while the signal classifier requires labeled calibration before acceptance.
 - **Next developer should:**
   - Open `ios/App/App.xcworkspace` and Run on the connected physical iPad.
   - Keep the Xcode console filter clear while checking the web fallback warning;
