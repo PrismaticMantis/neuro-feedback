@@ -11,6 +11,9 @@ final class EEGWebSocketFanout: @unchecked Sendable {
     private var broadcastInvocationCount = 0
     /// Called when a new WebSocket client registers (used to start/resume BLE scan on iOS).
     var onClientConnected: (@Sendable () -> Void)?
+    /// Called with the raw text of an inbound WebSocket frame — control commands from the app
+    /// (e.g. `{"cmd":"contactProbe"}` / `{"cmd":"startSignal"}`).
+    var onCommand: (@Sendable (String) -> Void)?
 
     var clientCount: Int {
         lock.lock()
@@ -131,6 +134,14 @@ private final class EEGWebSocketSessionHandler: ChannelInboundHandler, @unchecke
             )
         case .connectionClose:
             context.close(promise: nil)
+        case .text:
+            var data = frame.data
+            if let mask = frame.maskKey {
+                data.webSocketUnmask(mask)
+            }
+            if let text = data.getString(at: data.readerIndex, length: data.readableBytes) {
+                fanout.onCommand?(text)
+            }
         default:
             break
         }

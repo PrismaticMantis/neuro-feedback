@@ -26,6 +26,7 @@ final class HeadphonesEEGRelay: @unchecked Sendable {
     private var fullReconnectAttempts = 0
     private var validChunkStreakSinceRecovery: UInt64 = 0
     private var lastRecoveryStartedAt: DispatchTime?
+    private var lastRecoveryExhaustedLogAt: DispatchTime?
     private var lastConnectedInfo: NTSensorInfo?
     private var lastBatteryPercent = -1
     private var chunkCount: UInt64 = 0
@@ -38,6 +39,9 @@ final class HeadphonesEEGRelay: @unchecked Sendable {
     private var resistSpikeInProgress = false
     private var resistSpikeSampleCount: UInt64 = 0
     private var resistSpikeEndWork: DispatchWorkItem?
+    /// True while the app has requested the setup contact probe: stream per-channel resistance
+    /// (honest contact) instead of signal EEG. Session EEG is default; this is opt-in per-setup.
+    private var contactProbeActive = false
 
     init(fanout: EEGWebSocketFanout) {
         self.fanout = fanout
@@ -112,11 +116,13 @@ final class HeadphonesEEGRelay: @unchecked Sendable {
             fullReconnectAttempts = 0
             validChunkStreakSinceRecovery = 0
             lastRecoveryStartedAt = nil
+            lastRecoveryExhaustedLogAt = nil
             lastConnectedInfo = nil
             lastBatteryPercent = -1
             resistSpikeCompleted = false
             resistSpikeInProgress = false
             resistSpikeSampleCount = 0
+            contactProbeActive = false
             print("[HeadphonesEEG] stopped")
         }
     }
@@ -418,6 +424,8 @@ final class HeadphonesEEGRelay: @unchecked Sendable {
                 "chunks=\(chunkCount) sentinelStreak=\(identicalSentinelStreak)"
         )
 
+        // Contact-probe (resist) mode intentionally leaves signal — do not treat as a stream stall.
+        if contactProbeActive { return }
         guard signalStarted || chunkCount > 0 else { return }
         let ok: Bool
         switch mode {
@@ -449,13 +457,166 @@ final class HeadphonesEEGRelay: @unchecked Sendable {
         guard !signalStarted, !signalStartInFlight, !resistSpikeInProgress else { return }
 
         if state == .inRange {
-            // Resist validation belongs in headphones2-truth-test only — session EEG is signal-only.
-            startSignalLocked(on: sensor, origin: origin)
+            if contactProbeActive {
+                startContactProbeLocked(on: sensor, origin: origin)
+            } else {
+                startSignalLocked(on: sensor, origin: origin)
+            }
             return
         }
 
         if origin == "post-connect" || origin.hasPrefix("poll+") {
             print("[HeadphonesEEG] still outOfRange at \(origin) — waiting for inRange or next poll")
+        }
+    }
+
+    // MARK: - Setup contact probe (app-driven resistance mode)
+
+    /// Route an inbound WebSocket command from the app.
+    func handleClientCommand(_ raw: String) {
+        guard
+            let data = raw.data(using: .utf8),
+            let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+            let cmd = obj["cmd"] as? String
+        else { return }
+        print("[HeadphonesEEG] client command: \(cmd)")
+        switch cmd {
+        case "contactProbe", "startResist":
+            requestContactProbe()
+        case "startSignal", "session", "stopContactProbe":
+            requestSignalMode()
+        default:
+            print("[HeadphonesEEG] unknown client command: \(cmd)")
+        }
+    }
+
+    /// App entered setup — stream per-channel resistance (honest contact) instead of signal EEG.
+    func requestContactProbe() {
+        deviceQueue.async { [self] in
+            guard !stopped else { return }
+            if contactProbeActive { return }
+            contactProbeActive = true
+            resistSpikeSampleCount = 0
+            connectWatchdogWork?.cancel(); connectWatchdogWork = nil
+            firstChunkWatchdogWork?.cancel(); firstChunkWatchdogWork = nil
+            print("[HeadphonesEEG] contact probe requested — resistance mode for setup")
+            if let sensor, connected {
+                startContactProbeLocked(on: sensor, origin: "command")
+            }
+            // Otherwise evaluateReadyToStream() will start the probe once the sensor is inRange.
+        }
+    }
+
+    /// App left setup / started the session — return to signal-only EEG.
+    func requestSignalMode() {
+        deviceQueue.async { [self] in
+            guard !stopped else { return }
+            guard contactProbeActive else { return }
+            contactProbeActive = false
+            resistSpikeInProgress = false
+            signalStarted = false
+            signalStartInFlight = false
+            print("[HeadphonesEEG] signal mode requested — ending contact probe")
+            let sensor = self.sensor
+            let wasConnected = connected
+            sensorCommandQueue.async { [self] in
+                if let sensor {
+                    sensor.setResistCallback(nil)
+                    if sensor.isSupportedCommand(.stopResist) {
+                        sensor.execCommand(.stopResist)
+                    }
+                }
+                deviceQueue.async { [self] in
+                    if let sensor, wasConnected {
+                        evaluateReadyToStream(origin: "post-contact-probe", sensor: sensor)
+                    }
+                }
+            }
+        }
+    }
+
+    /// Configure + start continuous resistance streaming (broadcast as `resist` frames).
+    private func startContactProbeLocked(on sensor: NTHeadphones2, origin: String) {
+        guard contactProbeActive, !resistSpikeInProgress else { return }
+        resistSpikeInProgress = true
+        signalStartInFlight = false
+        firstChunkWatchdogWork?.cancel(); firstChunkWatchdogWork = nil
+        print("[HeadphonesEEG] contact probe start origin=\(origin)")
+
+        sensorCommandQueue.async { [weak self] in
+            guard let self else { return }
+            sensor.setSignalDataCallback(nil)
+            sensor.setResistCallback(nil)
+            if sensor.isSupportedCommand(.stopSignal) {
+                sensor.execCommand(.stopSignal)
+            }
+            if sensor.isSupportedCommand(.stopResist) {
+                sensor.execCommand(.stopResist)
+            }
+            if sensor.isSupportedCommand(.idle) {
+                sensor.execCommand(.idle)
+            }
+            self.signalStarted = false
+
+            let settleMs = RelayConfiguration.signalStartSettleMs
+            if settleMs > 0 {
+                usleep(useconds_t(settleMs * 1000))
+            }
+
+            self.configureHeadphonesResistProbe(sensor)
+            sensor.setResistCallback { [weak self] data in
+                self?.broadcastResist(data, sensor: sensor)
+            }
+
+            guard sensor.isSupportedCommand(.startResist) else {
+                print("[HeadphonesEEG] contact probe aborted — StartResist not supported")
+                self.deviceQueue.async { self.resistSpikeInProgress = false }
+                return
+            }
+            print(
+                "[HeadphonesEEG] ExecCommand(startResist) origin=\(origin) " +
+                    "ampMode=\(Self.describeAmpMode(sensor.ampMode)) state=\(Self.describeState(sensor.state))"
+            )
+            sensor.execCommand(.startResist)
+        }
+    }
+
+    /// Broadcast per-channel electrode resistance (ohms) to the app; non-positive/non-finite →
+    /// null (invalid or no contact).
+    private func broadcastResist(_ data: [NTHeadphones2ResistData], sensor: NTHeadphones2) {
+        guard contactProbeActive, let sample = data.last else { return }
+        let raw = [
+            sample.ch1.floatValue,
+            sample.ch2.floatValue,
+            sample.ch3.floatValue,
+            sample.ch4.floatValue,
+        ]
+        // A physical electrode cannot have exactly zero resistance. Headphones2 can emit an
+        // all-zero frame while the resist path is initializing or otherwise invalid; forwarding
+        // zero as a real measurement makes the web classifier report perfect contact off-head.
+        // Fail closed here so invalid/non-contact values cross the WebSocket boundary as null.
+        let values: [Float?] = raw.map { v in (v.isFinite && v > 0) ? v : nil }
+
+        resistSpikeSampleCount &+= 1
+        let verbose = resistSpikeSampleCount <= 5 || resistSpikeSampleCount % 20 == 0
+        if verbose {
+            print(
+                "[HeadphonesEEG] RESIST sample #\(resistSpikeSampleCount) packNum=\(sample.packNum) " +
+                    "A1=\(raw[0]) C3=\(raw[1]) C4=\(raw[2]) A2=\(raw[3]) ohms " +
+                    "ampMode=\(Self.describeAmpMode(sensor.ampMode))"
+            )
+        }
+
+        let payload = ResistWebSocketPayload(
+            labels: RelayConfiguration.defaultChannelLabels,
+            values: values,
+            timestamp: sequence
+        )
+        sequence &+= 1
+        do {
+            fanout.broadcastJSON(try payload.encodedJSON())
+        } catch {
+            print("[HeadphonesEEG] resist JSON encode failed: \(error)")
         }
     }
 
@@ -519,20 +680,30 @@ final class HeadphonesEEGRelay: @unchecked Sendable {
     }
 
     private func configureHeadphonesResistProbe(_ sensor: NTHeadphones2) {
+        // Match the vendor sample: preserve the device/SDK channel-use and generator-current
+        // defaults, changing only the documented per-channel gain before StartResist.
+        // Our previous guessed false/true/6nA configuration produced sustained all-zero ohms.
+        let existing = sensor.amplifierParam
+        print(
+            "[HeadphonesEEG] resistance amplifier READ (vendor-default-before-gain) " +
+                "ChSignalUse=\(existing.chSignalUse1),\(existing.chSignalUse2),\(existing.chSignalUse3),\(existing.chSignalUse4) " +
+                "ChResistUse=\(existing.chResistUse1),\(existing.chResistUse2),\(existing.chResistUse3),\(existing.chResistUse4) " +
+                "current=\(existing.current.rawValue)"
+        )
         let param = NTHeadphones2AmplifierParam(
-            chSignalUse1: false,
-            chSignalUse2: false,
-            chSignalUse3: false,
-            chSignalUse4: false,
-            chResistUse1: true,
-            chResistUse2: true,
-            chResistUse3: true,
-            chResistUse4: true,
-            chGain1: .gain6,
-            chGain2: .gain6,
-            chGain3: .gain6,
-            chGain4: .gain6,
-            current: .genCurr6nA
+            chSignalUse1: existing.chSignalUse1,
+            chSignalUse2: existing.chSignalUse2,
+            chSignalUse3: existing.chSignalUse3,
+            chSignalUse4: existing.chSignalUse4,
+            chResistUse1: existing.chResistUse1,
+            chResistUse2: existing.chResistUse2,
+            chResistUse3: existing.chResistUse3,
+            chResistUse4: existing.chResistUse4,
+            chGain1: .gain3,
+            chGain2: .gain3,
+            chGain3: .gain3,
+            chGain4: .gain3,
+            current: existing.current
         )
         sensor.amplifierParam = param
         let readback = sensor.amplifierParam
@@ -690,11 +861,21 @@ final class HeadphonesEEGRelay: @unchecked Sendable {
                 if self.fullReconnectAttempts < RelayConfiguration.streamingRecoveryMaxFullReconnects {
                     self.performFullSensorReconnect(reason: reason)
                 } else {
-                    print(
-                        "[HeadphonesEEG] streaming recovery exhausted " +
-                            "signalRestarts=\(self.consecutiveSignalRecoveries) " +
-                            "fullReconnects=\(self.fullReconnectAttempts) reason=\(reason)"
-                    )
+                    let now = DispatchTime.now()
+                    let shouldLog: Bool
+                    if let last = self.lastRecoveryExhaustedLogAt {
+                        shouldLog = Double(now.uptimeNanoseconds - last.uptimeNanoseconds) / 1e9 >= 5
+                    } else {
+                        shouldLog = true
+                    }
+                    if shouldLog {
+                        self.lastRecoveryExhaustedLogAt = now
+                        print(
+                            "[HeadphonesEEG] streaming recovery exhausted " +
+                                "signalRestarts=\(self.consecutiveSignalRecoveries) " +
+                                "fullReconnects=\(self.fullReconnectAttempts) reason=\(reason)"
+                        )
+                    }
                 }
                 return
             }
@@ -1035,7 +1216,7 @@ final class HeadphonesEEGRelay: @unchecked Sendable {
             ch4.append(sample.ch4.floatValue)
         }
 
-        let firstFour = [ch1.first ?? 0, ch2.first ?? 0, ch3.first ?? 0, ch4.first ?? 0]
+        let firstFour: [Float] = [ch1.first ?? 0, ch2.first ?? 0, ch3.first ?? 0, ch4.first ?? 0]
         let identical = ch1.elementsEqual(ch2) && ch2.elementsEqual(ch3) && ch3.elementsEqual(ch4)
         let sentinel = Self.isSentinelSample(firstFour)
 

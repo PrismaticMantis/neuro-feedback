@@ -34,6 +34,9 @@ final class RelayRuntime: @unchecked Sendable {
             fanout.onClientConnected = { [weak headphonesRelay] in
                 headphonesRelay?.resumeScanIfNeeded(reason: "ws-client")
             }
+            fanout.onCommand = { [weak headphonesRelay] cmd in
+                headphonesRelay?.handleClientCommand(cmd)
+            }
             let server = try EEGWebSocketServer(
                 host: RelayConfiguration.webSocketHost,
                 port: RelayConfiguration.webSocketPort,

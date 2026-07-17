@@ -5,6 +5,7 @@ import {
   brainBitStabilizationHoldMs,
   c3c4LookStale,
   c3c4NeedAdjustment,
+  countBrainBitChannelBuckets,
   countBrainBitStabilizationAcceptable,
   isBrainBitStabilizationTick,
 } from '../lib/eeg/brainbit-channel-state';
@@ -27,8 +28,8 @@ const EMPTY: BrainBitContactStabilizationState = {
 };
 
 /**
- * Pre-session gate: require continuous active/usable channels before start.
- * Stale (chunk plateau / contamination) does not count toward ready.
+ * Pre-session gate: require continuous *active* C3/C4 (and ≥2 active channels).
+ * Quiet/usable or off-head flat must not unlock Start.
  */
 export function useBrainBitContactStabilization(
   enabled: boolean,
@@ -66,19 +67,30 @@ export function useBrainBitContactStabilization(
       const c3c4Stale = c3c4LookStale(activity);
       const stableMs = stableMsRef.current;
       const isReady = stableMs >= holdMs && tickOk;
+      const buckets = activity ? countBrainBitChannelBuckets(activity.channels) : null;
+      const allFlat =
+        !!activity &&
+        activity.channels.length > 0 &&
+        activity.channels.every((c) => c.state === 'flat' || c.state === 'stuck');
 
       let hint: string | null = null;
       if (!activity || activity.overallState === 'idle') {
         hint = 'Waiting for channel data…';
+      } else if (activity.source === 'signal' && activity.verificationState !== 'verified') {
+        hint = activity.verificationState === 'rejected'
+          ? `Contact unverified — ${activity.verificationReason ?? 'reseat the headphones and hold still'}`
+          : `Checking contact — ${activity.verificationReason ?? 'hold still'}`;
+      } else if (allFlat || (buckets && buckets.active === 0 && buckets.usable === 0)) {
+        hint = 'Headphones look off your head — put them on and seat C3 / C4';
       } else if (countBrainBitStabilizationAcceptable(activity.channels) < 2) {
-        hint = 'Need at least 2 active or usable channels (not stale, flat, or stuck)';
+        hint = 'Need at least 2 active channels (quiet / usable is not enough to start)';
       } else if (c3c4Weak) {
         hint = 'Adjust C3 / C4 — cortical pads look off or weak';
       } else if (c3c4Stale && !isReady) {
         hint = 'C3 / C4 signal stalled — hold steady or reseat pads';
       } else if (!isReady) {
         const secLeft = Math.ceil((holdMs - stableMs) / 1000);
-        hint = `Hold steady contact ~${secLeft}s more`;
+        hint = `Hold steady on-head contact ~${secLeft}s more (C3 & C4 must stay active)`;
       }
 
       if (isReady && !wasReadyRef.current) {

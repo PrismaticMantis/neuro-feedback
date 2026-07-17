@@ -1,6 +1,6 @@
 /**
  * BrainBit per-channel display state — derived from classifier *rules*, not horseshoe alone.
- * Chunk-level stale-dc-window must not render green; quiet live EEG maps to usable.
+ * Off-head / common-mode must read flat; quiet on-head maps to usable but does not unlock Start.
  */
 
 import type {
@@ -9,7 +9,7 @@ import type {
   BrainBitChannelState,
 } from './brainbit-bridge-eeg-device';
 
-/** Hold when ≥2 channels are active or usable. */
+/** Hold when cortical pads are actively contacting (not merely quiet/usable). */
 export const BRAINBIT_STABILIZATION_HOLD_MS = 12_000;
 
 const CORTICAL = new Set(['C3', 'C4']);
@@ -19,6 +19,7 @@ export function brainBitCoherenceElectrodeQuality01(
   snapshot: BrainBitChannelActivitySnapshot | null,
 ): number {
   if (!snapshot || snapshot.totalCount === 0) return 0;
+  if (snapshot.source === 'signal' && snapshot.verificationState !== 'verified') return 0;
   const cortical = snapshot.channels.filter((ch) => CORTICAL.has(ch.label.toUpperCase()));
   if (cortical.length > 0) {
     const ok = cortical.filter((ch) => isBrainBitChannelHealthy(ch.state)).length;
@@ -30,8 +31,8 @@ export function brainBitCoherenceElectrodeQuality01(
 
 const STATE_READINESS_WEIGHT: Record<BrainBitChannelState, number> = {
   active: 1,
-  usable: 0.88,
-  stale: 0.4,
+  usable: 0.45,
+  stale: 0.25,
   low: 0.15,
   flat: 0,
   stuck: 0,
@@ -47,16 +48,17 @@ export function classifyBrainBitChannelState(args: {
   const { hasData, horseshoe, rule, stuck04Streak, stuckThreshold = 96 } = args;
   if (!hasData) return 'flat';
   if (stuck04Streak >= stuckThreshold) return 'stuck';
-  if (rule.startsWith('flat')) return 'flat';
+  if (rule.startsWith('flat') || rule.includes('off-head')) return 'flat';
   // Chunk-level plateau / contamination only — not per-channel quiet AC.
   if (rule.includes('stale-dc') && !rule.includes('→ min hs')) return 'stale';
+  // Forced poor horseshoe (common-mode / sentinel) wins over a stale quiet rule.
+  if (horseshoe >= 4) return 'flat';
   if (rule.startsWith('good')) return 'active';
   if (rule.startsWith('artifact') || rule.startsWith('clip')) return 'low';
   if (rule.startsWith('quiet') || rule.startsWith('weak') || rule.startsWith('warmup')) {
     return 'usable';
   }
   if (rule.includes('var<') && !rule.startsWith('good')) return 'low';
-  if (horseshoe >= 4) return 'flat';
   if (horseshoe === 3) return 'low';
   return 'usable';
 }
@@ -65,9 +67,12 @@ export function isBrainBitChannelHealthy(state: BrainBitChannelState): boolean {
   return state === 'active' || state === 'usable';
 }
 
-/** Pre-session: only active/usable — stale alone must not unlock Start. */
+/**
+ * Pre-session unlock — only `active` counts.
+ * Quiet/usable means weak on-head signal; off-head must be flat and must not unlock Start.
+ */
 export function isBrainBitStabilizationAcceptable(state: BrainBitChannelState): boolean {
-  return state === 'active' || state === 'usable';
+  return state === 'active';
 }
 
 /** 0–1 for the setup “channel readiness” bar (not BLE link strength). */
@@ -75,6 +80,7 @@ export function brainBitChannelReadiness01(
   snapshot: BrainBitChannelActivitySnapshot | null,
 ): number {
   if (!snapshot || snapshot.totalCount === 0) return 0;
+  if (snapshot.source === 'signal' && snapshot.verificationState !== 'verified') return 0;
   let sum = 0;
   for (const ch of snapshot.channels) {
     sum += STATE_READINESS_WEIGHT[ch.state] ?? 0;
@@ -85,24 +91,34 @@ export function brainBitChannelReadiness01(
 export function brainBitStabilizationHoldMs(
   _snapshot: BrainBitChannelActivitySnapshot | null,
 ): number {
+  void _snapshot;
   return BRAINBIT_STABILIZATION_HOLD_MS;
 }
 
 export function countBrainBitChannelBuckets(channels: BrainBitChannelActivity[]): {
   activeUsable: number;
+  active: number;
+  usable: number;
   stale: number;
   bad: number;
   total: number;
 } {
   let activeUsable = 0;
+  let active = 0;
+  let usable = 0;
   let stale = 0;
   let bad = 0;
   for (const ch of channels) {
-    if (isBrainBitChannelHealthy(ch.state)) activeUsable += 1;
-    else if (ch.state === 'stale') stale += 1;
+    if (ch.state === 'active') {
+      active += 1;
+      activeUsable += 1;
+    } else if (ch.state === 'usable') {
+      usable += 1;
+      activeUsable += 1;
+    } else if (ch.state === 'stale') stale += 1;
     else bad += 1;
   }
-  return { activeUsable, stale, bad, total: channels.length };
+  return { activeUsable, active, usable, stale, bad, total: channels.length };
 }
 
 export type BrainBitChannelSessionMode = 'normal' | 'fallback' | 'insufficient';
@@ -139,18 +155,38 @@ export function c3c4LookStale(snapshot: BrainBitChannelActivitySnapshot | null):
   return false;
 }
 
+export function c3c4BothActive(snapshot: BrainBitChannelActivitySnapshot | null): boolean {
+  if (!snapshot) return false;
+  let saw = 0;
+  let active = 0;
+  for (const ch of snapshot.channels) {
+    if (!CORTICAL.has(ch.label.toUpperCase())) continue;
+    saw += 1;
+    if (ch.state === 'active') active += 1;
+  }
+  return saw >= 2 && active >= 2;
+}
+
 export function countBrainBitStabilizationAcceptable(channels: BrainBitChannelActivity[]): number {
   return channels.filter((c) => isBrainBitStabilizationAcceptable(c.state)).length;
 }
 
+/**
+ * Stabilization tick: C3 and C4 must both be actively contacting, plus ≥2 active channels total.
+ * Quiet/usable alone is not enough — that was unlocking Start with headphones off.
+ */
 export function isBrainBitStabilizationTick(
   snapshot: BrainBitChannelActivitySnapshot | null,
 ): boolean {
   if (!snapshot || snapshot.overallState === 'idle') return false;
+  if (snapshot.source === 'signal' && snapshot.verificationState !== 'verified') return false;
   if (countBrainBitStabilizationAcceptable(snapshot.channels) < 2) return false;
+  if (!c3c4BothActive(snapshot)) return false;
   for (const ch of snapshot.channels) {
     if (!CORTICAL.has(ch.label.toUpperCase())) continue;
-    if (ch.state === 'flat' || ch.state === 'stuck' || ch.state === 'stale') return false;
+    if (ch.state === 'flat' || ch.state === 'stuck' || ch.state === 'stale' || ch.state === 'usable') {
+      return false;
+    }
   }
   return true;
 }
@@ -161,9 +197,8 @@ export function rebuildBrainBitActivitySnapshot(
   const activeCount = channels.filter((c) => isBrainBitChannelHealthy(c.state)).length;
   const n = channels.length;
   let overallState: BrainBitChannelActivitySnapshot['overallState'];
-  if (n === 0 || channels.every((c) => c.state === 'flat' && c.stuck04Streak === 0)) {
-    overallState = 'idle';
-  } else if (activeCount === 0) overallState = 'none';
+  if (n === 0) overallState = 'idle';
+  else if (activeCount === 0) overallState = 'none';
   else if (activeCount >= n) overallState = 'full';
   else overallState = 'partial';
   return { channels, activeCount, totalCount: n, overallState };

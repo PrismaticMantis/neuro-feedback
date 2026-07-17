@@ -20,6 +20,8 @@ interface BrainBitSignalStatusProps {
   streamHealth: BrainBitStreamHealthSnapshot | null;
   /** Per-channel activity — refines the "Overall signal" wording when only some channels are active. */
   channelActivity?: BrainBitChannelActivitySnapshot | null;
+  /** Setup-only resistance measurement is active; EEG is intentionally paused. */
+  contactProbeActive?: boolean;
   compact?: boolean;
 }
 
@@ -70,9 +72,14 @@ export function BrainBitSignalStatus({
   deviceName,
   streamHealth,
   channelActivity = null,
+  contactProbeActive = false,
   compact = false,
 }: BrainBitSignalStatusProps) {
-  const banner = streamHealth ? brainBitStreamBannerMessage(streamHealth) : null;
+  const banner = contactProbeActive
+    ? 'Measuring electrode contact. EEG begins after setup is complete.'
+    : streamHealth
+      ? brainBitStreamBannerMessage(streamHealth)
+      : null;
   const streamUsable = streamHealth ? brainBitStreamIsUsable(streamHealth) : false;
   const displayQuality = streamHealth ? brainBitDisplaySignalQuality01(streamHealth) : 0;
   const overall = streamHealth
@@ -84,14 +91,27 @@ export function BrainBitSignalStatus({
   // rather than a bare "Usable" — keeps facilitators informed but calm.
   const partialChannels =
     streamUsable && channelActivity && channelActivity.overallState === 'partial';
-  const overallSignalValue = !streamHealth
+  const signalContactUnverified =
+    channelActivity?.source === 'signal' && channelActivity.verificationState !== 'verified';
+  const overallSignalValue = contactProbeActive
+    ? channelActivity?.overallState === 'full'
+      ? 'Contact detected on all channels'
+      : channelActivity?.overallState === 'partial'
+        ? `Partial contact — ${channelActivity.activeCount}/${channelActivity.totalCount}`
+        : 'No valid electrode contact detected'
+    : signalContactUnverified
+      ? channelActivity?.verificationState === 'rejected'
+        ? 'EEG streaming; physical contact unverified'
+        : 'EEG streaming; checking independent contact signal'
+    : !streamHealth
     ? '—'
     : partialChannels
-      ? `Partial — ${channelActivity!.activeCount}/${channelActivity!.totalCount} channels active`
+      ? `Partial — ${channelActivity!.activeCount}/${channelActivity!.totalCount} channels on head or weak`
       : streamUsable && channelActivity && channelActivity.overallState === 'none'
-        ? 'Stream healthy, no active channels'
+        ? 'Stream healthy, headphones look off head'
         : `${overall.label}${streamUsable ? '' : ' (waiting)'}`;
   const preparing =
+    !contactProbeActive &&
     bluetoothConnected &&
     streamHealth &&
     (streamHealth.streamState === 'waiting' || streamHealth.streamState === 'recovering');
@@ -106,14 +126,24 @@ export function BrainBitSignalStatus({
     },
     {
       key: 'stream',
-      label: 'EEG stream',
-      value: streamHealth ? brainBitStreamStateLabel(streamHealth.streamState) : preparing ? 'Preparing…' : '—',
-      dot: streamHealth ? streamDotColor(streamHealth.streamState) : 'hsl(270 10% 40%)',
-      pulse: Boolean(preparing),
+      label: contactProbeActive ? 'Contact probe' : 'EEG stream',
+      value: contactProbeActive
+        ? 'Measuring resistance'
+        : streamHealth
+          ? brainBitStreamStateLabel(streamHealth.streamState)
+          : preparing
+            ? 'Preparing…'
+            : '—',
+      dot: contactProbeActive
+        ? '#60a5fa'
+        : streamHealth
+          ? streamDotColor(streamHealth.streamState)
+          : 'hsl(270 10% 40%)',
+      pulse: Boolean(preparing || contactProbeActive),
     },
     {
       key: 'quality',
-      label: 'Overall signal',
+      label: contactProbeActive ? 'Contact result' : 'Overall signal',
       value: overallSignalValue,
       dot: overallColor,
       pulse: false,
@@ -133,18 +163,18 @@ export function BrainBitSignalStatus({
               padding: '10px 12px',
               borderRadius: '8px',
               background:
-                streamHealth?.streamState === 'waiting' || streamHealth?.streamState === 'recovering'
+                contactProbeActive || streamHealth?.streamState === 'waiting' || streamHealth?.streamState === 'recovering'
                   ? 'hsl(210 40% 14% / 0.55)'
                   : 'hsl(35 60% 14% / 0.55)',
               border:
-                streamHealth?.streamState === 'waiting' || streamHealth?.streamState === 'recovering'
+                contactProbeActive || streamHealth?.streamState === 'waiting' || streamHealth?.streamState === 'recovering'
                   ? '1px solid hsl(210 40% 32% / 0.45)'
                   : '1px solid hsl(35 50% 32% / 0.45)',
               fontFamily: 'var(--font-sans)',
               fontSize: '12px',
               lineHeight: 1.45,
               color:
-                streamHealth?.streamState === 'waiting' || streamHealth?.streamState === 'recovering'
+                contactProbeActive || streamHealth?.streamState === 'waiting' || streamHealth?.streamState === 'recovering'
                   ? 'hsl(210 90% 82%)'
                   : 'hsl(40 90% 78%)',
             }}
@@ -229,7 +259,9 @@ export function BrainBitSignalStatus({
             color: 'var(--text-subtle)',
           }}
         >
-          Signal-only EEG — stream health above reflects usable data, not per-pad contact impedance.
+          {contactProbeActive
+            ? 'Resistance contact check — invalid or zero readings fail closed as off head.'
+            : 'Signal-only EEG — stream health above reflects usable data, not per-pad contact impedance.'}
         </p>
       )}
     </div>

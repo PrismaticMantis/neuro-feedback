@@ -2504,15 +2504,6 @@ export class AudioEngine {
       currentCoherenceTimeMs += activeDuration;
     }
     
-    // Debug logging (can be removed after verification)
-    console.log('[AudioEngine] getCoherenceMetrics:', {
-      accumulated: this.totalCoherenceAudioTime,
-      activeStart: this.coherenceGainActiveStart,
-      isSessionActive: this.isSessionActive,
-      currentTotal: currentCoherenceTimeMs,
-      currentTotalSeconds: (currentCoherenceTimeMs / 1000).toFixed(2),
-    });
-    
     return {
       ...this.metrics,
       totalCoherenceAudioTimeMs: currentCoherenceTimeMs, // Use actual tracked time, not metrics object

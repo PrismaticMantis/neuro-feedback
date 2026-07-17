@@ -49,18 +49,23 @@ const BRAINBIT_CONTACT_INPUT_TO_UV =
 const BRIDGE_CONTACT_SMOOTH = 0.82;
 
 /**
- * BrainBit relay only — contact reflects electrode touch, not transport health.
- * Scale is relay volts × 1000 → µV. Quiet resting AC often lands ~0.05–6 µV absAmp;
- * flat must stay below that band so live quiet EEG maps to quiet→usable, not flat.
+ * BrainBit relay only — heuristic contact from signal AC (not SDK resist/impedance).
+ *
+ * Off-head floating pads still produce ~0.05–0.25 V DC with tiny AC; that must map to
+ * flat/off — not quiet→usable. Quiet is reserved for on-head low-amplitude live EEG
+ * that still has independent channel motion (absAmp near the good floor).
  */
 export const BRAINBIT_CONTACT_THRESHOLDS = {
   warmupSamples: 12,
   clipUv: 3200,
-  /** Below both for several samples → open / dead (not quiet resting AC). */
-  flatAbsUv: 0.02,
-  flatVar: 0.25,
-  /** Require this many consecutive flat samples before labeling flat (avoids EMA dips). */
-  flatConfirmSamples: 4,
+  /**
+   * Open / off-head floor. Device logs: off-head absAmp often ~0.10–0.30 µV with var≈0;
+   * on-head quiet/active sits ~0.4+ µV with real variance.
+   */
+  flatAbsUv: 0.3,
+  flatVar: 0.32,
+  /** Consecutive below-floor samples before labeling flat (still damps one-sample EMA dips). */
+  flatConfirmSamples: 3,
   /** Good requires BOTH absAmp and vari in this band (not merely "not weak"). */
   goodMinAbsUv: 0.4,
   goodMaxAbsUv: 920,
@@ -69,10 +74,13 @@ export const BRAINBIT_CONTACT_THRESHOLDS = {
   artifactVar: 650_000,
   weakAbsUv: 1400,
   weakVar: 140_000,
-  /** Chunk-level: min raw spread (V) across channels for independent electrodes. */
-  minChunkSpreadVolts: 5e-9,
-  /** Chunks where all channels match within this spread are treated as fake/stale. */
-  identicalSpreadVolts: 1e-10,
+  /**
+   * Below this cross-channel spread (V) → treat as common-mode / not on-head montage.
+   * Off-head float often ~1e-4 V; on-head independent pads typically >> 5e-3 V.
+   */
+  minChunkSpreadVolts: 5e-3,
+  /** Channels matching within this spread are treated as identical / off-head. */
+  identicalSpreadVolts: 2e-3,
   /** Fraction of non-sentinel rows required for a chunk to be "valid". */
   minValidRowRatio: 0.55,
   /** Consecutive sentinel-heavy chunks before forced degrade (brief bursts tolerated). */
@@ -80,9 +88,15 @@ export const BRAINBIT_CONTACT_THRESHOLDS = {
   /** Rolling chunk window: per-channel mean variance below this → stale DC plateau. */
   staleChunkMeanVarVoltsSq: 1e-18,
   staleWindowChunks: 6,
+  /** Minimum centered cross-channel AC separation before signal contact can be trusted. */
+  independentResidualRmsUv: 0.35,
 } as const;
 
 const BRAINBIT_CONTACT_CHUNK_HIST_LEN = 8;
+/** Signal-only contact must remain independently active this long before it is shown as probable contact. */
+export const BRAINBIT_SIGNAL_CONTACT_SETTLE_MS = 4_000;
+/** A contaminated/movement chunk keeps signal contact unverified briefly after the event. */
+const BRAINBIT_SIGNAL_CONTACT_REJECT_HOLD_MS = 1_500;
 
 /** Fast recovery; slower degradation so brief glitches do not flash red/off. */
 const BRAINBIT_CONTACT_DISPLAY_EMA_IMPROVE = 0.32;
@@ -112,6 +126,21 @@ function isBrainBitChannelSentinelValue(v: number): boolean {
  */
 export const BRAINBIT_CH_STUCK_04_SAMPLE_STREAK = 96;
 
+/**
+ * Native electrode-resistance → contact state (ohms), used during the setup contact probe.
+ * Headphones2 resistance is the honest, hardware-native contact signal: low ohms = good skin
+ * contact, very high / null (SDK `inf`) = open pad / off head.
+ *
+ * TODO(device-calibrate): these are conservative defaults — tune from the on-device
+ * `[HeadphonesEEG] RESIST sample …` logs (finite on-head vs inf off-head).
+ */
+export const BRAINBIT_RESIST_GOOD_OHMS = 2_000_000; // ≤ 2 MΩ → active (on head, good contact)
+export const BRAINBIT_RESIST_USABLE_OHMS = 8_000_000; // ≤ 8 MΩ → usable (weak); above/null → flat (off)
+/** Zero/non-positive is an invalid SDK frame, never perfect electrode contact. */
+export const BRAINBIT_RESIST_MIN_VALID_OHMS = 1;
+/** Invalid resistance frames tolerated before falling back to live EEG contact validation. */
+export const BRAINBIT_RESIST_INVALID_FRAME_FALLBACK = 24;
+
 /** Per-channel activity classification for the setup diagnostics (NOT pad impedance). */
 export type BrainBitChannelState = 'active' | 'usable' | 'stale' | 'low' | 'flat' | 'stuck';
 
@@ -128,6 +157,11 @@ export interface BrainBitChannelActivity {
 
 export interface BrainBitChannelActivitySnapshot {
   channels: BrainBitChannelActivity[];
+  /** Which hardware path produced this contact assessment. */
+  source?: 'resistance' | 'signal';
+  /** Resistance is hardware-verified; signal is only verified after sustained independent AC. */
+  verificationState?: 'verified' | 'settling' | 'rejected';
+  verificationReason?: string;
   /** Channels in `active` or `usable` state. */
   activeCount: number;
   totalCount: number;
@@ -230,6 +264,43 @@ type BrainBitEegJson = {
   timestampUs: number;
 };
 
+type BrainBitResistJson = {
+  type: 'resist';
+  labels: string[];
+  values: (number | null)[];
+};
+
+/** Parse a relay `resist` frame — per-channel electrode resistance in ohms (null = open/no contact). */
+function tryParseBrainBitResistJson(raw: unknown): BrainBitResistJson | null {
+  if (raw == null || typeof raw !== 'object') return null;
+  const o = raw as Record<string, unknown>;
+  if (o.type !== 'resist') return null;
+  const labels = o.labels;
+  const values = o.values;
+  if (!Array.isArray(labels) || !Array.isArray(values)) return null;
+  const vals = values.map((v) =>
+    typeof v === 'number' && Number.isFinite(v) && v >= BRAINBIT_RESIST_MIN_VALID_OHMS
+      ? v
+      : null,
+  );
+  const labs = labels.map((x) => (typeof x === 'string' ? x : String(x)));
+  return { type: 'resist', labels: labs, values: vals };
+}
+
+/** Map a single channel's resistance (ohms; null = open) to a contact state. */
+function resistOhmsToChannelState(ohms: number | null): BrainBitChannelState {
+  if (
+    ohms == null ||
+    !Number.isFinite(ohms) ||
+    ohms < BRAINBIT_RESIST_MIN_VALID_OHMS ||
+    ohms > BRAINBIT_RESIST_USABLE_OHMS
+  ) {
+    return 'flat';
+  }
+  if (ohms <= BRAINBIT_RESIST_GOOD_OHMS) return 'active';
+  return 'usable';
+}
+
 export class BrainBitBridgeEEGDevice implements EEGDevice {
   private _runtimeChannelCount = BRAINBIT_BRIDGE_DEVICE_CAPABILITIES.eegChannelCount;
   private _runtimeLabels: readonly string[] = DEFAULT_LABELS;
@@ -243,6 +314,11 @@ export class BrainBitBridgeEEGDevice implements EEGDevice {
 
   private ws: WebSocket | null = null;
   private _connected = false;
+  /** Setup contact probe: when active, dots come from native resistance frames, not signal volts. */
+  private contactProbeActive = false;
+  private resistActivity: BrainBitChannelActivitySnapshot | null = null;
+  private resistLastMs = 0;
+  private resistInvalidFrameStreak = 0;
   private latest: BrainBitBridgeLatestSample | null = null;
   private lastWsError: string | null = null;
   private _state: MuseState = baseState(false, null, 'disconnected');
@@ -269,7 +345,6 @@ export class BrainBitBridgeEEGDevice implements EEGDevice {
   private contactLastRawQ: number[] = [];
   /** Effective relay→µV scale for contact heuristic (bootstrapped once from first live packet). */
   private contactUvScaleEffective = BRAINBIT_CONTACT_INPUT_TO_UV;
-  private contactUvScaleLocked = false;
   private contactSentinelChunkStreak = 0;
   private contactChunkHist: {
     spreadVolts: number;
@@ -278,6 +353,11 @@ export class BrainBitBridgeEEGDevice implements EEGDevice {
   }[] = [];
   private contactLastValidRowRatio = 1;
   private contactLastChunkSpreadVolts = 0;
+  private contactIndependentResidualRmsUv = 0;
+  private signalContactVerificationState: 'verified' | 'settling' | 'rejected' = 'settling';
+  private signalContactVerificationReason = 'waiting for independent channel activity';
+  private signalContactIndependentSinceMs: number | null = null;
+  private signalContactRejectUntilMs = 0;
 
   /**
    * Feeds `CoherenceDetector` only — lighter EMA than `_state.bandsSmooth` so α/β variance clears `minVariance`.
@@ -512,17 +592,103 @@ export class BrainBitBridgeEEGDevice implements EEGDevice {
 
   getElectrodeQuality(): number[] {
     const n = this._runtimeChannelCount;
+    if (this.signalContactVerificationState !== 'verified') {
+      return Array.from({ length: n }, () => 4);
+    }
     if (this.contactHorseshoe.length === n) return [...this.contactHorseshoe];
     return Array.from({ length: n }, () => 4);
   }
 
   /**
-   * Per-channel EEG activity for the setup diagnostics panel.
-   * This is channel *activity* (does usable data move on this channel?), not pad
-   * contact / impedance — BrainBit signal-only mode reports no real impedance.
-   * A channel pinned at the 0.4 V relay sentinel is reported as `stuck`.
+   * Per-channel headset contact for the setup diagnostics panel.
+   * Signal-heuristic only (not pad impedance). Flat ≈ off head; usable ≈ weak;
+   * active ≈ good on-head motion. Sentinel 0.4 V pin → `stuck`.
    */
+  /**
+   * Setup contact probe control. During setup we ask the relay to stream native per-channel
+   * electrode resistance (honest contact) instead of signal EEG; on session start we return to
+   * signal. No-op / harmless if the relay predates the command (it simply keeps streaming signal).
+   */
+  startContactProbe(): void {
+    this.contactProbeActive = true;
+    this.resistInvalidFrameStreak = 0;
+    this.sendRelayCommand({ cmd: 'contactProbe' });
+  }
+
+  stopContactProbe(): void {
+    if (!this.contactProbeActive) return;
+    this.contactProbeActive = false;
+    this.resistActivity = null;
+    this.resistInvalidFrameStreak = 0;
+    this.sendRelayCommand({ cmd: 'startSignal' });
+  }
+
+  private sendRelayCommand(obj: Record<string, unknown>): void {
+    const ws = this.ws;
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      try {
+        ws.send(JSON.stringify(obj));
+      } catch {
+        /* control channel best-effort */
+      }
+    }
+  }
+
+  private ingestResist(p: BrainBitResistJson, nowMs: number): void {
+    const validCount = p.values.filter((ohms) => ohms != null).length;
+    const channels: BrainBitChannelActivity[] = p.values.map((ohms, i) => {
+      const label = p.labels[i] ?? this._runtimeLabels[i] ?? `Ch${i}`;
+      const state = resistOhmsToChannelState(ohms);
+      const horseshoe = state === 'active' ? 1 : state === 'usable' ? 2 : 4;
+      return {
+        label,
+        state,
+        stuck04Streak: 0,
+        horseshoe,
+        rule: `resist ${ohms == null ? 'inf' : `${Math.round(ohms)}Ω`}`,
+      };
+    });
+    this.resistActivity = {
+      ...rebuildBrainBitActivitySnapshot(channels),
+      source: 'resistance',
+      verificationState: 'verified',
+      verificationReason: 'native electrode resistance',
+    };
+    this.resistLastMs = nowMs;
+
+    if (validCount > 0) {
+      this.resistInvalidFrameStreak = 0;
+      return;
+    }
+
+    this.resistInvalidFrameStreak += 1;
+    if (
+      this.contactProbeActive &&
+      this.resistInvalidFrameStreak >= BRAINBIT_RESIST_INVALID_FRAME_FALLBACK
+    ) {
+      // The SDK is delivering no usable impedance truth (observed as sustained all-zero frames).
+      // Do not strand setup in resist mode: fail closed, switch to real EEG, and let the existing
+      // differentiated-signal classifier validate on-head contact.
+      console.warn(
+        `[BrainBit] resistance probe produced ${this.resistInvalidFrameStreak} invalid frames; falling back to live EEG contact validation`,
+      );
+      this.contactProbeActive = false;
+      this.resistActivity = null;
+      this.sendRelayCommand({ cmd: 'startSignal' });
+    }
+  }
+
   getBrainBitChannelDiagnostics(): BrainBitChannelActivitySnapshot {
+    // During the setup contact probe, report honest resistance-derived contact (finite ohms = on
+    // head, inf/high = off head) instead of the signal-volt heuristic.
+    if (
+      this.contactProbeActive &&
+      this.resistActivity !== null &&
+      Date.now() - this.resistLastMs < 4000
+    ) {
+      return this.resistActivity;
+    }
+
     const n = this._runtimeChannelCount;
     const labels = this._runtimeLabels;
     const hasData = this._connected && this.latest !== null;
@@ -542,9 +708,32 @@ export class BrainBitBridgeEEGDevice implements EEGDevice {
       return { label, state, stuck04Streak, horseshoe, rule };
     });
 
+    const verificationState = this.signalContactVerificationState;
+    const displayChannels =
+      hasData && verificationState !== 'verified'
+        ? channels.map((channel) => ({
+            ...channel,
+            state: 'low' as const,
+            horseshoe: 3,
+            rule: `signal-${verificationState}: ${this.signalContactVerificationReason}`,
+          }))
+        : channels;
+
     return hasData
-      ? rebuildBrainBitActivitySnapshot(channels)
-      : { ...rebuildBrainBitActivitySnapshot(channels), overallState: 'idle' as const, activeCount: 0 };
+      ? {
+          ...rebuildBrainBitActivitySnapshot(displayChannels),
+          source: 'signal' as const,
+          verificationState,
+          verificationReason: this.signalContactVerificationReason,
+        }
+      : {
+          ...rebuildBrainBitActivitySnapshot(displayChannels),
+          source: 'signal' as const,
+          verificationState: 'settling' as const,
+          verificationReason: 'waiting for EEG data',
+          overallState: 'idle' as const,
+          activeCount: 0,
+        };
   }
 
   getConnectionStateDetail(): EEGConnectionStateDetail {
@@ -615,40 +804,10 @@ export class BrainBitBridgeEEGDevice implements EEGDevice {
     this.coherenceDetectorBands = { ...ZERO_BANDS };
     this.coherenceDetectorChunkFeed = [];
     this.fft = new FFTProcessor({ fftSize: BRIDGE_WIN, sampleRateHz: BRAINBIT_FFT_SAMPLE_RATE_HZ });
+    // NeuroSDK documents Headphones2 signal values in volts. Keep the explicit
+    // volts→µV conversion; the large per-channel DC offset is removed by the
+    // centered classifier below and must not be mistaken for the unit scale.
     this.contactUvScaleEffective = BRAINBIT_CONTACT_INPUT_TO_UV;
-    this.contactUvScaleLocked = false;
-  }
-
-  /**
-   * Capsule relay unit scale varies by SDK/build. FFT bands are scale-invariant, but contact
-   * thresholds are absolute µV — bootstrap once from the first live packet so streaming EEG
-   * does not read as permanently flat/off when env scale is misconfigured.
-   */
-  private bootstrapContactUvScaleFromPacket(pkt: BrainBitEegJson): void {
-    if (this.contactUvScaleLocked) return;
-
-    let maxAbsRaw = 0;
-    for (let ch = 0; ch < pkt.channelCount; ch++) {
-      const row = pkt.samples[ch]!;
-      for (let s = 0; s < pkt.sampleCount; s++) {
-        const v = row[s]!;
-        if (Math.abs(v - BRAINBIT_STREAMING_SENTINEL_VOLTS) <= BRAINBIT_STREAMING_SENTINEL_TOL) {
-          continue;
-        }
-        maxAbsRaw = Math.max(maxAbsRaw, Math.abs(v));
-      }
-    }
-    if (maxAbsRaw <= 0) return;
-
-    const trialUv = maxAbsRaw * this.contactUvScaleEffective;
-    if (trialUv >= 1 && trialUv <= 5000) {
-      this.contactUvScaleLocked = true;
-      return;
-    }
-
-    this.contactUvScaleEffective = 80 / maxAbsRaw;
-    this.contactUvScaleLocked = true;
-    this.resetContactArrays(pkt.channelCount);
   }
 
   private resetContactArrays(n: number): void {
@@ -669,6 +828,11 @@ export class BrainBitBridgeEEGDevice implements EEGDevice {
     this.contactChunkHist = [];
     this.contactLastValidRowRatio = 1;
     this.contactLastChunkSpreadVolts = 0;
+    this.contactIndependentResidualRmsUv = 0;
+    this.signalContactVerificationState = 'settling';
+    this.signalContactVerificationReason = 'waiting for independent channel activity';
+    this.signalContactIndependentSinceMs = null;
+    this.signalContactRejectUntilMs = 0;
   }
 
   private ensureChannelLayout(channels: number, labels: readonly string[]): void {
@@ -743,9 +907,9 @@ export class BrainBitBridgeEEGDevice implements EEGDevice {
     if (n < th.warmupSamples) {
       q = 2;
       rule = `warmup n=${n}<${th.warmupSamples}→medium`;
-    } else if (Math.abs(sampleUv) >= th.clipUv) {
+    } else if (Math.abs(sampleUv - mean) >= th.clipUv) {
       q = 3;
-      rule = `clip |uv|≥${th.clipUv} (${Math.abs(sampleUv).toFixed(0)}µV)`;
+      rule = `clip centered |uv|≥${th.clipUv} (${Math.abs(sampleUv - mean).toFixed(0)}µV)`;
     } else if (flatConfirmed) {
       q = 4;
       rule = `flat absAmp<${th.flatAbsUv} && var<${th.flatVar} (abs=${absAmp.toFixed(2)} var=${vari.toFixed(1)})`;
@@ -762,10 +926,15 @@ export class BrainBitBridgeEEGDevice implements EEGDevice {
     ) {
       q = 1;
       rule = `good ${th.goodMinAbsUv}≤abs≤${th.goodMaxAbsUv} && var≥${th.goodMinVar}`;
+    } else if (absAmp < th.goodMinAbsUv && vari < th.goodMinVar) {
+      // Below good band but above flat floor — still too dead for "on head quiet".
+      // Off-head float often lands here; keep it flat/off so setup cannot unlock.
+      q = 4;
+      rule = `flat off-head abs=${absAmp.toFixed(2)} var=${vari.toFixed(1)}`;
     } else {
-      // Live stream with quiet AC — not flat, not artifact. UI maps to usable (not stale).
-      // Includes brief dips below the flat floor before flatConfirmSamples.
-      q = 2;
+      // On-head quiet: enough absAmp for live EEG, variance not yet in good band.
+      // rawQ=3 so display stays amber — must not polish to green horseshoe 1.
+      q = 3;
       rule = `quiet abs=${absAmp.toFixed(2)} var=${vari.toFixed(1)}`;
     }
 
@@ -801,12 +970,17 @@ export class BrainBitBridgeEEGDevice implements EEGDevice {
 
   /**
    * Chunk-level contamination — tightens aggregate horseshoe/EMA for audio gates.
-   * Does NOT overwrite per-channel `contactLastRule`; channel dots stay independent.
+   * Hard off-head cases (minHorseshoe ≥ 4) also overwrite per-channel rules so dots stay honest.
    */
   private forceContactDegradeAll(minHorseshoe: number, reason: string): void {
-    void reason; // retained for future debug logging
     const n = this.contactHorseshoe.length;
     const targetScore = BrainBitBridgeEEGDevice.rawContactQToScore(minHorseshoe);
+    const overwriteRule =
+      minHorseshoe >= 4
+        ? reason.includes('identical') || reason.includes('low-cross')
+          ? `flat off-head ${reason}`
+          : `flat ${reason}`
+        : null;
     for (let ch = 0; ch < n; ch++) {
       const ema = this.contactDisplayEma[ch] ?? targetScore;
       this.contactDisplayEma[ch] =
@@ -816,6 +990,11 @@ export class BrainBitBridgeEEGDevice implements EEGDevice {
       const fromHyst = this.hysteresisHorseshoe(prev, this.contactDisplayEma[ch]!);
       this.contactHorseshoe[ch] = Math.max(fromHyst, minHorseshoe);
       this.contactLastRawQ[ch] = Math.max(this.contactLastRawQ[ch] ?? 4, minHorseshoe);
+      // Channel dots key off `rule` before horseshoe — overwrite so common-mode/off-head
+      // cannot keep showing quiet→usable while aggregate horseshoe is forced poor.
+      if (overwriteRule) {
+        this.contactLastRule[ch] = overwriteRule;
+      }
     }
     this.syncContactDerivedState();
   }
@@ -827,11 +1006,22 @@ export class BrainBitBridgeEEGDevice implements EEGDevice {
     skippedSentinelRows: number;
     lastRowVolts: number[] | null;
     chMeanVolts: number[];
+    independentResidualRmsUv: number;
+    nowMs: number;
   }): 'valid' | 'mixed' | 'sentinel' | 'stale' {
     const th = BRAINBIT_CONTACT_THRESHOLDS;
-    const { validRows, sampleCount, skippedSentinelRows, lastRowVolts, chMeanVolts } = args;
+    const {
+      validRows,
+      sampleCount,
+      skippedSentinelRows,
+      lastRowVolts,
+      chMeanVolts,
+      independentResidualRmsUv,
+      nowMs,
+    } = args;
     const validRatio = sampleCount > 0 ? validRows / sampleCount : 0;
     this.contactLastValidRowRatio = validRatio;
+    this.contactIndependentResidualRmsUv = independentResidualRmsUv;
 
     if (validRows === 0) {
       this.contactSentinelChunkStreak += 1;
@@ -839,6 +1029,7 @@ export class BrainBitBridgeEEGDevice implements EEGDevice {
       const minHs =
         this.contactSentinelChunkStreak >= th.sentinelChunkDegradeStreak ? 4 : 2;
       this.forceContactDegradeAll(minHs, 'all-sentinel-chunk');
+      this.rejectSignalContact('sentinel EEG frame', nowMs);
       return 'sentinel';
     }
 
@@ -866,6 +1057,9 @@ export class BrainBitBridgeEEGDevice implements EEGDevice {
       validRatio >= th.minValidRowRatio ? 'valid' : 'mixed';
     if (skippedSentinelRows === sampleCount) frameQuality = 'sentinel';
 
+    // Raw voltage contains a large shared DC component, so absolute channel spread is not a
+    // truthful independence check. `independentResidualRmsUv` subtracts each channel's chunk
+    // mean first and measures only differentiated AC behavior.
     const nearIdentical =
       lastRowVolts &&
       lastRowVolts.length > 1 &&
@@ -873,7 +1067,7 @@ export class BrainBitBridgeEEGDevice implements EEGDevice {
     const lowIndependence = spreadVolts < th.minChunkSpreadVolts;
     const staleWindow = this.isStaleContactWindow(th);
 
-    if (nearIdentical || lowIndependence) {
+    if ((nearIdentical || lowIndependence) && independentResidualRmsUv < th.independentResidualRmsUv) {
       frameQuality = 'mixed';
       this.forceContactDegradeAll(4, nearIdentical ? 'identical-channels' : 'low-cross-channel-spread');
     } else if (this.contactSentinelChunkStreak >= th.sentinelChunkDegradeStreak) {
@@ -896,7 +1090,62 @@ export class BrainBitBridgeEEGDevice implements EEGDevice {
       this.forceContactDegradeAll(2, `low-valid-ratio=${validRatio.toFixed(2)}`);
     }
 
+    const corticalRules = this._runtimeLabels
+      .map((label, i) => ({ label: label.toUpperCase(), rule: this.contactLastRule[i] ?? '' }))
+      .filter(({ label }) => BRAINBIT_CORTICAL_BAND_LABELS.has(label));
+    const corticalActivelyLive =
+      corticalRules.length >= 2 && corticalRules.every(({ rule }) => rule.startsWith('good'));
+    const independentlyLive = independentResidualRmsUv >= th.independentResidualRmsUv;
+    const cleanFrame =
+      frameQuality === 'valid' &&
+      validRatio >= th.minValidRowRatio &&
+      skippedSentinelRows === 0 &&
+      !staleWindow;
+
+    if (!cleanFrame) {
+      this.rejectSignalContact(`unreliable ${frameQuality} EEG frame`, nowMs);
+    } else if (!independentlyLive) {
+      this.forceContactDegradeAll(4, 'identical-channel-ac');
+      this.rejectSignalContact('channels are not independently active', nowMs);
+    } else if (!corticalActivelyLive) {
+      this.rejectSignalContact('C3 and C4 are not both independently active', nowMs);
+    } else {
+      this.advanceSignalContactVerification(nowMs);
+    }
+
     return frameQuality;
+  }
+
+  private rejectSignalContact(reason: string, nowMs: number): void {
+    this.signalContactVerificationState = 'rejected';
+    this.signalContactVerificationReason = reason;
+    this.signalContactIndependentSinceMs = null;
+    this.signalContactRejectUntilMs = Math.max(
+      this.signalContactRejectUntilMs,
+      nowMs + BRAINBIT_SIGNAL_CONTACT_REJECT_HOLD_MS,
+    );
+  }
+
+  private advanceSignalContactVerification(nowMs: number): void {
+    if (nowMs < this.signalContactRejectUntilMs) {
+      this.signalContactVerificationState = 'settling';
+      this.signalContactVerificationReason = 'settling after movement or contaminated signal';
+      this.signalContactIndependentSinceMs = null;
+      return;
+    }
+    if (this.signalContactIndependentSinceMs == null) {
+      this.signalContactIndependentSinceMs = nowMs;
+    }
+    const stableMs = nowMs - this.signalContactIndependentSinceMs;
+    if (stableMs < BRAINBIT_SIGNAL_CONTACT_SETTLE_MS) {
+      this.signalContactVerificationState = 'settling';
+      this.signalContactVerificationReason = `independent signal settling (${Math.ceil(
+        (BRAINBIT_SIGNAL_CONTACT_SETTLE_MS - stableMs) / 1000,
+      )}s)`;
+      return;
+    }
+    this.signalContactVerificationState = 'verified';
+    this.signalContactVerificationReason = 'sustained independent C3/C4 signal (estimated contact)';
   }
 
   private syncContactDerivedState(): void {
@@ -908,7 +1157,8 @@ export class BrainBitBridgeEEGDevice implements EEGDevice {
       if (rule.includes('stale-dc')) {
         score += 0.35;
       } else if (rule.startsWith('quiet')) {
-        score += 0.55;
+        // Quiet = weak on-head — never count as solid contact for readiness bar.
+        score += 0.28;
       } else if (rule.startsWith('flat') || rule.startsWith('clip')) {
         score += 0;
       } else {
@@ -979,7 +1229,7 @@ export class BrainBitBridgeEEGDevice implements EEGDevice {
   }
 
   /** One multichannel sample (µV) — mirrors Athena bridge ingest row. */
-  private ingestOneRow(u: readonly number[], labels: readonly string[], _nowMs: number): void {
+  private ingestOneRow(u: readonly number[], labels: readonly string[]): void {
     const n = u.length;
     this.ensureChannelLayout(n, labels);
 
@@ -1028,12 +1278,12 @@ export class BrainBitBridgeEEGDevice implements EEGDevice {
   }
 
   private ingestBrainBitChunk(pkt: BrainBitEegJson, nowMs: number): void {
-    this.bootstrapContactUvScaleFromPacket(pkt);
     this.retuneChunkRate(nowMs, pkt.sampleCount);
 
     let lastU: number[] | null = null;
     let skippedSentinelRows = 0;
     let validRows = 0;
+    const validRowsVolts: number[][] = [];
     const chSumVolts = Array(pkt.channelCount).fill(0);
     const chCountVolts = Array(pkt.channelCount).fill(0);
 
@@ -1047,17 +1297,31 @@ export class BrainBitBridgeEEGDevice implements EEGDevice {
         continue;
       }
       validRows += 1;
+      validRowsVolts.push([...u]);
       for (let ch = 0; ch < pkt.channelCount; ch++) {
         chSumVolts[ch]! += u[ch]!;
         chCountVolts[ch]! += 1;
       }
-      this.ingestOneRow(u, pkt.labels, nowMs);
+      this.ingestOneRow(u, pkt.labels);
       lastU = u;
     }
 
     const chMeanVolts = chSumVolts.map((sum, ch) =>
       chCountVolts[ch]! > 0 ? sum / chCountVolts[ch]! : 0,
     );
+    let residualSpreadSqSum = 0;
+    let residualSpreadCount = 0;
+    for (const row of validRowsVolts) {
+      const centered = row.map((value, ch) => value - (chMeanVolts[ch] ?? 0));
+      if (centered.length < 2) continue;
+      const spread = Math.max(...centered) - Math.min(...centered);
+      residualSpreadSqSum += spread * spread;
+      residualSpreadCount += 1;
+    }
+    const independentResidualRmsUv =
+      residualSpreadCount > 0
+        ? Math.sqrt(residualSpreadSqSum / residualSpreadCount) * this.contactUvScaleEffective
+        : 0;
     const frameQuality = this.finalizeChunkContact({
       channelCount: pkt.channelCount,
       validRows,
@@ -1065,6 +1329,8 @@ export class BrainBitBridgeEEGDevice implements EEGDevice {
       skippedSentinelRows,
       lastRowVolts: lastU,
       chMeanVolts,
+      independentResidualRmsUv,
+      nowMs,
     });
 
     if (skippedSentinelRows > 0 && DEBUG_BRAINBIT_BRIDGE) {
@@ -1118,8 +1384,7 @@ export class BrainBitBridgeEEGDevice implements EEGDevice {
           const rawMax = Math.max(...lastU);
           const rawSpread = rawMax - rawMin;
           const channelsNearIdentical =
-            lastU.length > 1 &&
-            rawSpread <= th.identicalSpreadVolts;
+            this.contactIndependentResidualRmsUv < th.independentResidualRmsUv;
           console.log('[BrainBitBridge] contact classification', {
             relayToUv: this.contactUvScaleEffective,
             thresholds: th,
@@ -1127,6 +1392,7 @@ export class BrainBitBridgeEEGDevice implements EEGDevice {
               frameQuality,
               validRowRatio: Number(this.contactLastValidRowRatio.toFixed(3)),
               chunkSpreadVolts: Number(this.contactLastChunkSpreadVolts.toExponential(3)),
+              independentResidualRmsUv: Number(this.contactIndependentResidualRmsUv.toFixed(3)),
               sentinelChunkStreak: this.contactSentinelChunkStreak,
               staleWindow: this.isStaleContactWindow(th),
             },
@@ -1134,6 +1400,8 @@ export class BrainBitBridgeEEGDevice implements EEGDevice {
             rawSpreadVolts: Number(rawSpread.toExponential(3)),
             channelsNearIdentical,
             connectionQuality01: Number(cq.toFixed(3)),
+            verificationState: this.signalContactVerificationState,
+            verificationReason: this.signalContactVerificationReason,
             channels: perCh.map((p, i) => {
               const hsLabel =
                 p.horseshoe === 1 ? 'green' : p.horseshoe === 2 ? 'amber' : p.horseshoe === 3 ? 'red' : 'off';
@@ -1166,7 +1434,7 @@ export class BrainBitBridgeEEGDevice implements EEGDevice {
           });
           if (channelsNearIdentical) {
             console.warn(
-              '[BrainBitBridge] channels nearly identical — contact forced poor/off (not independent electrodes)'
+              '[BrainBitBridge] centered channel AC is not independent — signal contact remains unverified'
             );
           }
         }
@@ -1198,6 +1466,8 @@ export class BrainBitBridgeEEGDevice implements EEGDevice {
         this._connected = true;
         this.resetSignalPipeline();
         this._state = baseState(true, 'BrainBit native relay', 'healthy');
+        // Re-assert contact-probe mode if setup is active across a reconnect.
+        if (this.contactProbeActive) this.sendRelayCommand({ cmd: 'contactProbe' });
         resolve();
       };
 
@@ -1223,6 +1493,11 @@ export class BrainBitBridgeEEGDevice implements EEGDevice {
         }
         const parsed = tryParseBrainBitEegJson(raw);
         if (!parsed.ok) {
+          const resist = tryParseBrainBitResistJson(raw);
+          if (resist) {
+            this.ingestResist(resist, Date.now());
+            return;
+          }
           this.lastRxRejectReason = parsed.reason;
           const t = Date.now();
           if (DEBUG_BRAINBIT_BRIDGE && t - this.lastRejectLogMs >= 1500) {

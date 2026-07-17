@@ -40,7 +40,7 @@ export function BrainBitContactStabilization({ state }: BrainBitContactStabiliza
             color: ready ? '#86efac' : 'var(--text-primary)',
           }}
         >
-          {ready ? 'Contact stable — ready to begin' : 'Stabilizing contact'}
+          {ready ? 'On-head contact stable — ready to begin' : 'Checking on-head contact'}
         </span>
         {!ready && (
           <span

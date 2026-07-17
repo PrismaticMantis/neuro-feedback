@@ -1,7 +1,7 @@
 // UI reference: design/targets/3 - Session Setup.png, design/targets/4 - Session Setup (Muse Connected).png
 // Lovable design tokens applied: two-column layout, card styling, button styling
 
-import { useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { getLastJourneyId, getJourneys } from '../lib/session-storage';
@@ -166,6 +166,26 @@ export function SessionSetup({
   const [newUserName, setNewUserName] = useState('');
   // showUserForm state removed - Lovable design doesn't show user switcher inline
 
+  // Setup contact probe: while a BrainBit is connected on this setup screen, ask the relay to
+  // stream native electrode resistance so the contact dots reflect real skin contact (finite ohms
+  // = on head, inf = off head) instead of the signal-volt heuristic. Return to signal EEG when the
+  // session starts or this screen unmounts.
+  useEffect(() => {
+    if (!isBrainBit || !museConnected || !isBrainBitBridgeEEGDevice(eegDevice)) return;
+    eegDevice.startContactProbe();
+    return () => {
+      eegDevice.stopContactProbe();
+    };
+  }, [isBrainBit, museConnected, eegDevice]);
+
+  const handleStartSession = useCallback(() => {
+    if (isBrainBitBridgeEEGDevice(eegDevice)) {
+      // Ensure signal EEG is flowing before the session begins.
+      eegDevice.stopContactProbe();
+    }
+    onStartSession();
+  }, [eegDevice, onStartSession]);
+
   const handleCreateUser = () => {
     if (newUserName.trim()) {
       onCreateUser(newUserName.trim());
@@ -270,6 +290,7 @@ export function SessionSetup({
             deviceName={museDeviceName}
             streamHealth={brainBitStreamHealth}
             channelActivity={brainBitChannelActivity}
+            contactProbeActive={brainBitChannelActivity?.source !== 'signal'}
           />
         </div>
       )}
@@ -865,7 +886,7 @@ export function SessionSetup({
       >
         <motion.button
           className="btn btn-primary"
-          onClick={onStartSession}
+          onClick={handleStartSession}
           disabled={!canStartSession}
           whileHover={{ scale: canStartSession ? 1.02 : 1, y: canStartSession ? -2 : 0 }}
           whileTap={{ scale: canStartSession ? 0.98 : 1 }}
